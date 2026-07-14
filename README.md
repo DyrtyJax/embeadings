@@ -72,8 +72,11 @@ tune that policy. Lower-threshold sensitivity runs protect the candidates select
 thresholds before admitting additions, so a permissive run cannot silently replace the baseline queue.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
-as no-signal, disconnected signal groups remain separate, and epics are excluded by default; pass
-`--include-epics` when broad container records are intentionally part of the review population.
+as no-signal, and epics are excluded by default; pass `--include-epics` when broad container records
+are intentionally part of the review population. `--size` is a hard artifact maximum. Connected
+review units remain connected when a large component is split. Independent echo-only singletons are
+packed into bounded, explicitly labeled agent envelopes rather than emitted as hundreds of files.
+Sweep reports include deterministic component, fragmentation, envelope, and cross-batch-edge counts.
 
 See [the product and technical specification](docs/spec.md) for the proposed contracts, safety
 invariants, batch format, architecture, and milestones.

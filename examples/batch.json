@@ -3,6 +3,8 @@
   "report_type": "batch",
   "run_id": "synthetic-run-1",
   "batch": 1,
+  "kind": "singleton-envelope",
+  "review_units": [{ "issue_ids": ["demo-1"] }],
   "snapshot": {
     "workspace_id": "synthetic-workspace",
     "beads_version": "1.0.5",

@@ -9,6 +9,23 @@
     "report_type": { "const": "batch" },
     "run_id": { "type": "string", "minLength": 1 },
     "batch": { "type": "integer", "minimum": 1 },
+    "kind": { "enum": ["connected-component", "singleton-envelope"] },
+    "review_units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["issue_ids"],
+        "properties": {
+          "issue_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
     "policy": { "$ref": "#/$defs/policy" },
     "snapshot": { "$ref": "#/$defs/snapshot" },
     "model": { "$ref": "#/$defs/model" },

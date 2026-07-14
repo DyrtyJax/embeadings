@@ -15,7 +15,7 @@ from typing import Any
 
 from platformdirs import user_cache_path, user_state_path
 
-from .analysis import SimilarityIndex, candidate_batches, nearest_neighbors
+from .analysis import SimilarityIndex, nearest_neighbors, package_candidate_batches
 from .beads import BeadsAdapter, BeadsError
 from .cache import VectorCache
 from .explain import explain_candidate
@@ -62,7 +62,9 @@ def _parser() -> argparse.ArgumentParser:
     neighbors.add_argument("--output", type=Path)
 
     sweep = subparsers.add_parser("sweep", help="Create disposable semantic review batches")
-    sweep.add_argument("--size", type=int, default=9)
+    sweep.add_argument(
+        "--size", type=int, default=9, help="Hard maximum issues per agent review artifact"
+    )
     sweep.add_argument(
         "--status",
         action="append",
@@ -80,7 +82,9 @@ def _parser() -> argparse.ArgumentParser:
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
     batch = subparsers.add_parser("batch", help="Alias for a synchronous sweep")
-    batch.add_argument("--size", type=int, default=9)
+    batch.add_argument(
+        "--size", type=int, default=9, help="Hard maximum issues per agent review artifact"
+    )
     batch.add_argument("--status", action="append")
     batch.add_argument("--echo-threshold", type=float, default=0.72)
     batch.add_argument("--overlap-threshold", type=float, default=0.82)
@@ -360,13 +364,14 @@ def _sweep(args: argparse.Namespace) -> int:
     candidates = list(ranking.candidates)
     candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
-    batches = candidate_batches(
+    packaging = package_candidate_batches(
         population,
         candidates,
         vectors,
-        target_size=args.size,
+        max_batch_size=args.size,
         similarity_index=similarity_index,
     )
+    batches = packaging.batches
     batching_ms = round((time.monotonic() - phase_started) * 1000)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
     run_dir = args.output or state_path / run_id
@@ -374,9 +379,14 @@ def _sweep(args: argparse.Namespace) -> int:
     manifests: list[dict[str, Any]] = []
     model = _model_metadata(provider)
     snapshot_payload = asdict(snapshot)
-    for index, batch_issues in enumerate(batches, start=1):
+    for index, review_batch in enumerate(batches, start=1):
+        batch_issues = review_batch.issues
         member_ids = {issue.id for issue in batch_issues}
-        batch_evidence = [item for item in candidates if item["issue_id"] in member_ids]
+        batch_evidence = [
+            item
+            for item in candidates
+            if item["issue_id"] in member_ids or item["related_issue_id"] in member_ids
+        ]
         manifest = build_batch_manifest(
             run_id,
             index,
@@ -386,12 +396,19 @@ def _sweep(args: argparse.Namespace) -> int:
             snapshot=snapshot_payload,
             model=model,
             cache=cache_stats,
+            batch_kind=review_batch.kind,
+            review_units=[{"issue_ids": list(unit)} for unit in review_batch.review_units],
         )
         manifests.append(manifest)
         _atomic_text(run_dir / f"batch-{index}.json", _json_text(manifest))
         _atomic_text(run_dir / f"batch-{index}.md", render_batch_markdown(manifest))
     summary_batches = [
-        {"batch": item["batch"], "issue_ids": [issue["id"] for issue in item["issues"]]}
+        {
+            "batch": item["batch"],
+            "kind": item["kind"],
+            "issue_ids": [issue["id"] for issue in item["issues"]],
+            "review_units": item["review_units"],
+        }
         for item in manifests
     ]
     ranking_warnings = []
@@ -406,6 +423,11 @@ def _sweep(args: argparse.Namespace) -> int:
     if ranking.dropped_by_lane_cap:
         ranking_warnings.append(
             f"Lane candidate budgets omitted {ranking.dropped_by_lane_cap} qualified pairs."
+        )
+    if packaging.diagnostics.cross_batch_candidate_edges:
+        ranking_warnings.append(
+            f"Hard batch limit split {packaging.diagnostics.cross_batch_candidate_edges} "
+            "candidate edges across review artifacts."
         )
     population_ids = {issue.id for issue in population}
     candidate_issue_ids = {
@@ -455,6 +477,7 @@ def _sweep(args: argparse.Namespace) -> int:
             "issue_ids": sorted(issue.id for issue in excluded_epics),
         },
         target_batch_size=args.size,
+        batch_diagnostics=asdict(packaging.diagnostics),
         duration_ms=round((time.monotonic() - started) * 1000),
     )
     payload["timings_ms"] = {

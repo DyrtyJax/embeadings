@@ -234,18 +234,21 @@ Broad container records such as epics are excluded from the default review popul
 explicitly. Parent/child similarity is structural context and potential counterevidence, not sufficient
 evidence of overlap by itself.
 
-Given `n` review-signal issues and target size `t`:
+Given a candidate graph and configured hard maximum `t`:
 
-1. Choose a batch count close to `n / t`.
-2. Distribute capacity so batch sizes differ by at most one.
-3. Select a deterministic dense seed from remaining candidates.
-4. Fill the batch with its closest remaining neighbors.
-5. Repeat until every candidate appears exactly once.
+1. Find deterministic connected components over active candidate endpoints.
+2. Emit components of at most `t` as connected review units.
+3. Split larger components by growing a connected unit from a deterministic boundary seed, preferring
+   nodes that keep the most candidate edges inside the unit; recursively process connected remainder
+   components. This avoids cutting transitive bridge chains near their middle.
+4. Pack independent singleton components into bounded agent envelopes, retaining each singleton as
+   an explicit one-issue review unit rather than presenting the envelope as a semantic cluster.
+5. Report component counts, fragmented components, singleton envelopes, maximum observed size, and
+   candidate edges crossing artifacts.
 
-Batch sizes should be balanced where semantic cohesion supports it. A sparse long tail may produce
-smaller batches rather than mixing unrelated work to fill capacity. The implementation remains
-deterministic, and evaluation fixtures compare candidate-focused batching with forced partitioning and
-more complex alternatives before adopting a new algorithm.
+No artifact may exceed `t`. Every multi-issue review unit has a connected induced candidate graph.
+The implementation remains deterministic, candidate-only, and advisory; closed echo targets remain
+evidence rather than artifact members.
 
 ## 13. Batch manifest
 
@@ -256,6 +259,8 @@ Each batch manifest is versioned JSON containing:
   "schema_version": 1,
   "run_id": "...",
   "batch": 1,
+  "kind": "connected-component",
+  "review_units": [{"issue_ids": ["bd-1", "bd-2"]}],
   "snapshot": {
     "workspace_id": "...",
     "beads_version": "...",

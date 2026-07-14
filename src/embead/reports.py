@@ -179,17 +179,32 @@ def build_batch_manifest(
     snapshot: Any,
     model: Any,
     cache: Any | None = None,
+    batch_kind: str = "connected-component",
+    review_units: Iterable[Any] | None = None,
 ) -> dict[str, Any]:
     """Build one deterministic, disposable review-batch manifest."""
 
     ordered_issues = sorted(issues, key=_identity)
     ordered_evidence = sorted(neighbor_evidence, key=_evidence_key)
     rubric = [_jsonable(item) for item in review_rubric]
+    normalized_units = (
+        [_jsonable(item) for item in review_units]
+        if review_units is not None
+        else [
+            {
+                "issue_ids": [
+                    str(_field(issue, "id", "issue_id", default="")) for issue in ordered_issues
+                ]
+            }
+        ]
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "report_type": "batch",
         "run_id": str(run_id),
         "batch": int(batch),
+        "kind": str(batch_kind),
+        "review_units": normalized_units,
         "snapshot": _jsonable(snapshot),
         "model": _jsonable(model),
         "cache": _jsonable(cache or {}),
@@ -220,6 +235,7 @@ def build_sweep_payload(
     no_signal: Any | None = None,
     excluded: Any | None = None,
     target_batch_size: int | None = None,
+    batch_diagnostics: Any | None = None,
     warnings: Iterable[str] = (),
     duration_ms: int | float | None = None,
 ) -> dict[str, Any]:
@@ -246,12 +262,14 @@ def build_sweep_payload(
             "thresholds": _jsonable(thresholds or {}),
             "candidate_policy": _jsonable(candidate_policy or {}),
             "target_batch_size": target_batch_size,
+            "max_batch_size": target_batch_size,
         },
         "candidates": [_record(candidate) for candidate in ordered_candidates],
         "batches": normalized_batches,
         "no_signal": _jsonable(no_signal or {"count": 0, "issue_ids": []}),
         "excluded": _jsonable(excluded or {"count": 0, "by_reason": {}, "issue_ids": []}),
         "warnings": sorted(str(warning) for warning in warnings),
+        "batch_diagnostics": _jsonable(batch_diagnostics or {}),
     }
     if duration_ms is not None:
         payload["duration_ms"] = _jsonable(duration_ms)
@@ -386,6 +404,7 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
     issues = payload.get("issues") or []
     evidence = payload.get("neighbor_evidence") or []
     rubric = payload.get("review_rubric") or []
+    batch_kind = payload.get("kind", "connected-component")
     lines = [
         f"# Review batch {_escape(batch)}",
         "",
@@ -398,6 +417,14 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
         f"## Issues ({len(issues)})",
         "",
     ]
+    if batch_kind == "singleton-envelope":
+        lines.extend(
+            [
+                "This is an agent envelope of independent one-issue review units; "
+                "its items are not presented as a semantic cluster.",
+                "",
+            ]
+        )
     for issue in issues:
         lines.append(
             f"- `{_escape(_field(issue, 'id', 'issue_id', default='unknown'))}` "
@@ -468,6 +495,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     excluded = payload.get("excluded") or {}
     candidate_policy = _field(payload.get("parameters") or {}, "candidate_policy", default={}) or {}
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
+    diagnostics = payload.get("batch_diagnostics") or {}
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
     lines = [
@@ -484,6 +512,10 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- Other review candidates: {len(candidates) - echo_count - overlap_count}",
         f"- No-signal records: {_field(no_signal, 'count', default=0)}",
         f"- Excluded records: {_field(excluded, 'count', default=0)}",
+        f"- Singleton components: {_field(diagnostics, 'singleton_component_count', default=0)}",
+        f"- Singleton agent envelopes: {_field(diagnostics, 'agent_envelope_count', default=0)}",
+        "- Cross-batch candidate edges: "
+        + str(_field(diagnostics, "cross_batch_candidate_edges", default=0)),
         "",
     ]
     lines.extend(["## Candidate lanes", ""])
@@ -563,7 +595,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         number = _field(batch, "batch", "batch_number", default="?")
         members = _field(batch, "issues", "issue_ids", default=[]) or []
         issue_count = len(members)
-        lines.append(f"- Batch {_escape(number)}: {issue_count} issues")
+        kind = _field(batch, "kind", default="connected-component")
+        lines.append(f"- Batch {_escape(number)}: {issue_count} issues ({_escape(kind)})")
     if warnings:
         lines.extend(["", "## Warnings", ""])
         lines.extend(f"- {_escape(warning)}" for warning in warnings)

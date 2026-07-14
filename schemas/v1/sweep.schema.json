@@ -19,12 +19,14 @@
         "filters": { "type": "object" },
         "thresholds": { "type": "object" },
         "candidate_policy": { "$ref": "#/$defs/candidate-policy" },
-        "target_batch_size": { "type": ["integer", "null"], "minimum": 1 }
+        "target_batch_size": { "type": ["integer", "null"], "minimum": 1 },
+        "max_batch_size": { "type": ["integer", "null"], "minimum": 1 }
       },
       "additionalProperties": true
     },
     "candidates": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
     "batches": { "type": "array", "items": { "$ref": "#/$defs/batch-summary" } },
+    "batch_diagnostics": { "$ref": "#/$defs/batch-diagnostics" },
     "no_signal": { "$ref": "#/$defs/population-summary" },
     "excluded": { "$ref": "#/$defs/excluded-summary" },
     "warnings": { "type": "array", "items": { "type": "string" } },
@@ -159,6 +161,23 @@
       "required": ["batch"],
       "properties": {
         "batch": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["connected-component", "singleton-envelope"] },
+        "review_units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["issue_ids"],
+            "properties": {
+              "issue_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
         "issue_ids": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -168,6 +187,19 @@
         "candidate_count": { "type": "integer", "minimum": 0 }
       },
       "anyOf": [{ "required": ["issue_ids"] }, { "required": ["issues"] }],
+      "additionalProperties": true
+    },
+    "batch-diagnostics": {
+      "type": "object",
+      "properties": {
+        "component_count": { "type": "integer", "minimum": 0 },
+        "singleton_component_count": { "type": "integer", "minimum": 0 },
+        "agent_envelope_count": { "type": "integer", "minimum": 0 },
+        "fragmented_component_count": { "type": "integer", "minimum": 0 },
+        "cross_batch_candidate_edges": { "type": "integer", "minimum": 0 },
+        "max_batch_size": { "type": "integer", "minimum": 0 },
+        "configured_max_batch_size": { "type": "integer", "minimum": 1 }
+      },
       "additionalProperties": true
     },
     "population-summary": {

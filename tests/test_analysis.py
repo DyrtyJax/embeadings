@@ -8,6 +8,7 @@ from embead.analysis import (
     candidate_batches,
     cosine_similarity,
     nearest_neighbors,
+    package_candidate_batches,
 )
 
 
@@ -126,3 +127,54 @@ def test_candidate_batches_include_active_echo_source_but_not_closed_target_or_n
     )
 
     assert [[item.id for item in batch] for batch in batches] == [["active"]]
+
+
+def test_packaging_envelopes_many_singleton_echoes_under_hard_limit() -> None:
+    issues = [Issue(f"active-{index:03}") for index in range(107)]
+    vectors = {issue.id: [1, index / 1000] for index, issue in enumerate(issues)}
+    candidates = [
+        {"issue_id": issue.id, "related_issue_id": f"closed-{index:03}"}
+        for index, issue in enumerate(issues)
+    ]
+
+    result = package_candidate_batches(issues, candidates, vectors, max_batch_size=9)
+
+    assert len(result.batches) == 12
+    assert all(batch.kind == "singleton-envelope" for batch in result.batches)
+    assert max(len(batch.issues) for batch in result.batches) == 9
+    assert all(len(unit) == 1 for batch in result.batches for unit in batch.review_units)
+    assert result.diagnostics.singleton_component_count == 107
+    assert result.diagnostics.agent_envelope_count == 12
+    assert result.diagnostics.cross_batch_candidate_edges == 0
+
+
+def test_packaging_splits_bridged_component_into_connected_bounded_units() -> None:
+    issues = [Issue(str(index)) for index in range(12)]
+    vectors = {issue.id: [1, int(issue.id) / 100] for issue in issues}
+    edges = [(str(index), str(index + 1)) for index in range(11)]
+    candidates = [{"issue_id": left, "related_issue_id": right} for left, right in reversed(edges)]
+
+    first = package_candidate_batches(issues, candidates, vectors, max_batch_size=4)
+    second = package_candidate_batches(
+        list(reversed(issues)), list(reversed(candidates)), vectors, max_batch_size=4
+    )
+
+    first_units = [[issue.id for issue in batch.issues] for batch in first.batches]
+    assert first_units == [[issue.id for issue in batch.issues] for batch in second.batches]
+    assert max(map(len, first_units)) <= 4
+    for unit in first_units:
+        unit_ids = set(unit)
+        reachable = {unit[0]}
+        while True:
+            expanded = (
+                reachable
+                | {right for left, right in edges if left in reachable and right in unit_ids}
+                | {left for left, right in edges if right in reachable and left in unit_ids}
+            )
+            if expanded == reachable:
+                break
+            reachable = expanded
+        assert reachable == unit_ids
+    assert first.diagnostics.fragmented_component_count == 1
+    assert first.diagnostics.cross_batch_candidate_edges == len(first.batches) - 1
+    assert first.diagnostics.max_batch_size <= 4

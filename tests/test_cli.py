@@ -183,7 +183,16 @@ def test_sweep_batches_only_signal_issues_and_reports_no_signal_and_epics(
     assert cli.main(["sweep", "--size", "5", "--output", str(output), "--json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["batches"] == [{"batch": 1, "issue_ids": ["active-a", "active-b"]}]
+    assert payload["batches"] == [
+        {
+            "batch": 1,
+            "kind": "connected-component",
+            "issue_ids": ["active-a", "active-b"],
+            "review_units": [{"issue_ids": ["active-a", "active-b"]}],
+        }
+    ]
+    assert payload["batch_diagnostics"]["max_batch_size"] == 2
+    assert payload["batch_diagnostics"]["configured_max_batch_size"] == 5
     assert payload["no_signal"] == {"count": 1, "issue_ids": ["no-signal"]}
     assert payload["excluded"] == {
         "by_reason": {"epic": 1},

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "report_type": "sweep",
+  "run_id": "synthetic-run-1",
+  "policy": {
+    "read_only": true,
+    "tracker_mutation_allowed": false,
+    "advisory": true,
+    "notice": "Synthetic read-only example. Verify advisory evidence against current project state."
+  },
+  "snapshot": {
+    "workspace_id": "synthetic-workspace",
+    "beads_version": "1.0.5",
+    "workspace_path": null
+  },
+  "model": {
+    "model_id": "synthetic-local-model",
+    "model_revision": "example-revision"
+  },
+  "cache": { "hits": 2, "misses": 0 },
+  "parameters": {
+    "filters": { "status": ["open"] },
+    "thresholds": { "completed_work_echo": 0.72, "possible_overlap": 0.82 },
+    "target_batch_size": 5
+  },
+  "candidates": [
+    {
+      "kind": "completed-work-echo",
+      "issue_id": "demo-1",
+      "related_issue_id": "demo-2",
+      "similarity": 0.91,
+      "structural_context": "same parent demo-epic",
+      "what_to_verify": "Confirm whether the completed implementation changed the documentation scope."
+    }
+  ],
+  "batches": [{ "batch": 1, "issue_ids": ["demo-1"] }],
+  "warnings": [],
+  "duration_ms": 12,
+  "output_directory": "/tmp/synthetic-embead-run"
+}

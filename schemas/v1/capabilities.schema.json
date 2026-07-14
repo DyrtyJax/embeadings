@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/capabilities.schema.json",
+  "title": "emBEADings consumer capability document, protocol version 1",
+  "type": "object",
+  "required": ["document_type", "protocol_version", "role", "schema_versions", "report_types", "capabilities"],
+  "properties": {
+    "document_type": { "const": "embeadings-capabilities" },
+    "protocol_version": { "const": 1 },
+    "role": { "enum": ["producer", "consumer"] },
+    "schema_versions": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "report_types": {
+      "type": "array",
+      "items": { "enum": ["neighbors", "batch", "sweep"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": true
+}

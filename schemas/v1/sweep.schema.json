@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/sweep.schema.json",
+  "title": "emBEADings sweep report, schema version 1",
+  "type": "object",
+  "required": ["schema_version", "report_type", "run_id", "policy", "snapshot", "model", "cache", "parameters", "candidates", "batches", "warnings"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report_type": { "const": "sweep" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "policy": { "$ref": "#/$defs/policy" },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "model": { "$ref": "#/$defs/model" },
+    "cache": { "$ref": "#/$defs/cache" },
+    "parameters": {
+      "type": "object",
+      "required": ["filters", "thresholds", "target_batch_size"],
+      "properties": {
+        "filters": { "type": "object" },
+        "thresholds": { "type": "object" },
+        "target_batch_size": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "candidates": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "batches": { "type": "array", "items": { "$ref": "#/$defs/batch-summary" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "duration_ms": { "type": "number", "minimum": 0 },
+    "output_directory": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "required": ["read_only", "tracker_mutation_allowed", "advisory", "notice"],
+      "properties": {
+        "read_only": { "const": true },
+        "tracker_mutation_allowed": { "const": false },
+        "advisory": { "const": true },
+        "notice": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["workspace_id", "beads_version"],
+      "properties": {
+        "workspace_id": { "type": "string", "minLength": 1 },
+        "beads_version": { "type": "string", "minLength": 1 },
+        "workspace_path": { "type": ["string", "null"] },
+        "source_revision": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "model": {
+      "type": "object",
+      "required": ["model_id", "model_revision"],
+      "properties": {
+        "model_id": { "type": "string", "minLength": 1 },
+        "model_revision": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "hits": { "type": "integer", "minimum": 0 },
+        "misses": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "issue_id", "related_issue_id", "similarity", "what_to_verify"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "issue_id": { "type": "string", "minLength": 1 },
+        "related_issue_id": { "type": "string", "minLength": 1 },
+        "similarity": { "type": "number", "minimum": -1, "maximum": 1 },
+        "structural_context": { "type": "string" },
+        "what_to_verify": { "type": "string", "minLength": 1 },
+        "counterevidence": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "batch-summary": {
+      "type": "object",
+      "required": ["batch"],
+      "properties": {
+        "batch": { "type": "integer", "minimum": 1 },
+        "issue_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "issues": { "type": "array" },
+        "candidate_count": { "type": "integer", "minimum": 0 }
+      },
+      "anyOf": [{ "required": ["issue_ids"] }, { "required": ["issues"] }],
+      "additionalProperties": true
+    }
+  }
+}

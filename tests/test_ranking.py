@@ -269,6 +269,25 @@ def test_dependency_lane_is_admitted_before_semantic_candidates() -> None:
     assert result.lanes["overlap"].dropped_by_run_cap == 1
 
 
+def test_high_confidence_echo_is_admitted_before_overlap_under_total_budget() -> None:
+    active = [issue("A"), issue("B"), issue("C")]
+    closed = issue("Z", status="closed")
+    scores = Scores({("A", "Z"): 0.9, ("B", "C"): 0.99})
+
+    result = rank_candidates(
+        active,
+        [*active, closed],
+        scores,
+        policy(max_total=1, max_per_issue=3),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0]["kind"] == "completed-work-echo"
+    assert result.candidates[0]["admission_reason"] == "semantic-threshold"
+    assert result.lanes["echo"].admitted == 1
+    assert result.lanes["overlap"].dropped_by_run_cap == 1
+
+
 def test_lane_budgets_are_independent_and_report_drops() -> None:
     active = [
         issue("A", dependencies=("B",)),

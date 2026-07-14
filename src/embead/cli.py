@@ -124,7 +124,18 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
         default=3,
         help="Independent per-issue allowance for typed dependency candidates",
     )
-    parser.add_argument("--max-candidates", type=int, default=250)
+    total_budget = parser.add_mutually_exclusive_group()
+    total_budget.add_argument("--max-candidates", type=int, default=None)
+    total_budget.add_argument(
+        "--weekly-review-budget",
+        "--review-budget",
+        type=int,
+        metavar="CANDIDATES",
+        help=(
+            "Bound a weekly queue to this many candidates, selecting typed dependencies "
+            "before high-confidence completed-work echoes and possible overlaps"
+        ),
+    )
     parser.add_argument(
         "--max-dependency-candidates",
         type=int,
@@ -354,6 +365,13 @@ def _candidate_evidence(
 def _sweep(args: argparse.Namespace) -> int:
     if args.size < 1:
         raise ValueError("--size must be positive")
+    max_candidates = (
+        args.weekly_review_budget
+        if args.weekly_review_budget is not None
+        else args.max_candidates
+        if args.max_candidates is not None
+        else 250
+    )
     policy = CandidatePolicy(
         echo_threshold=args.echo_threshold,
         overlap_threshold=args.overlap_threshold,
@@ -361,7 +379,7 @@ def _sweep(args: argparse.Namespace) -> int:
         reciprocal_rank=args.reciprocal_rank,
         max_per_issue=args.max_candidates_per_issue,
         max_dependencies_per_issue=args.max_dependency_candidates_per_issue,
-        max_total=args.max_candidates,
+        max_total=max_candidates,
         max_dependencies=args.max_dependency_candidates,
         max_echoes=args.max_echo_candidates,
         max_overlaps=args.max_overlap_candidates,
@@ -418,7 +436,7 @@ def _sweep(args: argparse.Namespace) -> int:
         reciprocal_rank=args.reciprocal_rank,
         max_candidates_per_issue=args.max_candidates_per_issue,
         max_dependency_candidates_per_issue=args.max_dependency_candidates_per_issue,
-        max_candidates=args.max_candidates,
+        max_candidates=max_candidates,
         max_dependency_candidates=args.max_dependency_candidates,
         max_echo_candidates=args.max_echo_candidates,
         max_overlap_candidates=args.max_overlap_candidates,
@@ -531,6 +549,20 @@ def _sweep(args: argparse.Namespace) -> int:
         "deleted_since_checkpoint_count": len(scope.deleted_ids) if scope else 0,
         "checkpoint_created_at": scope.checkpoint_created_at if scope else None,
     }
+    review_budget = {
+        "mode": "weekly" if args.weekly_review_budget is not None else "standard",
+        "candidate_limit": max_candidates,
+        "admitted_candidates": len(candidates),
+        "omitted_candidates": ranking.dropped_by_run_cap,
+        "priority_order": [
+            "typed-dependency",
+            "high-confidence-completed-work-echo",
+            "possible-overlap",
+        ],
+        "omitted_by_lane": {
+            lane: metrics.dropped_by_run_cap for lane, metrics in (ranking.lanes or {}).items()
+        },
+    }
     payload = build_sweep_payload(
         run_id,
         candidates,
@@ -552,7 +584,8 @@ def _sweep(args: argparse.Namespace) -> int:
             "reciprocal_rank": args.reciprocal_rank,
             "max_per_issue": args.max_candidates_per_issue,
             "max_dependencies_per_issue": args.max_dependency_candidates_per_issue,
-            "max_total": args.max_candidates,
+            "max_total": max_candidates,
+            "review_budget": review_budget,
             "lane_caps": {
                 "dependency": args.max_dependency_candidates,
                 "echo": args.max_echo_candidates,

@@ -42,6 +42,58 @@ _STOP_WORDS = frozenset(
     }
 )
 
+# Only terms from these fixed vocabularies may be copied into an explanation.
+# Arbitrary tracker tokens can contain customer names, credentials, or internal
+# identifiers, so shared free-form terms remain counts rather than report text.
+_SAFE_OPERATIONS = (
+    "authenticate",
+    "authorize",
+    "batch",
+    "cache",
+    "configure",
+    "delete",
+    "deploy",
+    "embed",
+    "export",
+    "import",
+    "migrate",
+    "parse",
+    "persist",
+    "rank",
+    "render",
+    "retry",
+    "search",
+    "store",
+    "test",
+    "validate",
+)
+_SAFE_ENTITIES = (
+    "api",
+    "artifact",
+    "batch",
+    "cache",
+    "configuration",
+    "database",
+    "dependency",
+    "embedding",
+    "issue",
+    "model",
+    "permission",
+    "queue",
+    "report",
+    "schema",
+    "session",
+    "token",
+    "workflow",
+)
+_OWNERSHIP_TERMS = frozenset({"assign", "assigned", "handoff", "owner", "ownership", "transfer"})
+_INVARIANT_TERMS = frozenset(
+    {"ensure", "fix", "invariant", "must", "never", "prevent", "regression", "repair", "restore"}
+)
+_IMPLEMENTATION_TERMS = frozenset(
+    {"architecture", "backend", "configure", "design", "implement", "implementation", "provider"}
+)
+
 
 def _tokens(value: str) -> frozenset[str]:
     return frozenset(
@@ -131,6 +183,61 @@ def _join_fields(fields: Iterable[dict[str, Any]]) -> str:
     return " and ".join(f"{item['field']} ({item['score']:.2f})" for item in selected)
 
 
+def _all_tokens(issue: IssueRecord) -> frozenset[str]:
+    return frozenset().union(*(_tokens(getattr(issue, attribute)) for _label, attribute in _FIELDS))
+
+
+def _verification_anchor(
+    left: IssueRecord,
+    right: IssueRecord,
+    *,
+    kind: str,
+    fields: list[dict[str, Any]],
+) -> dict[str, str]:
+    left_tokens = _all_tokens(left)
+    right_tokens = _all_tokens(right)
+    combined = left_tokens | right_tokens
+    shared = left_tokens & right_tokens
+    source_field = fields[0]["field"] if fields else "whole-record semantics"
+    source_attribute = next(
+        (attribute for label, attribute in _FIELDS if label == source_field),
+        None,
+    )
+    source_shared = (
+        _tokens(getattr(left, source_attribute)) & _tokens(getattr(right, source_attribute))
+        if source_attribute
+        else frozenset()
+    )
+
+    if combined & _OWNERSHIP_TERMS:
+        category = "transferred ownership"
+    elif combined & _INVARIANT_TERMS:
+        category = "repaired invariant"
+    elif combined & _IMPLEMENTATION_TERMS or any(
+        item["field"] == "design" and item["score"] >= 0.2 for item in fields
+    ):
+        category = "implementation choice"
+    elif kind == "completed-work-echo":
+        category = "completed outcome"
+    else:
+        category = "intended outcome"
+
+    operation = next(
+        (term for term in _SAFE_OPERATIONS if term in source_shared),
+        next((term for term in _SAFE_OPERATIONS if term in shared), "satisfy"),
+    )
+    entity = next(
+        (term for term in _SAFE_ENTITIES if term in source_shared),
+        next((term for term in _SAFE_ENTITIES if term in shared), "system behavior"),
+    )
+    return {
+        "category": category,
+        "operation": operation,
+        "entity_class": entity,
+        "source_field": source_field,
+    }
+
+
 def explain_candidate(
     left: IssueRecord,
     right: IssueRecord,
@@ -144,6 +251,7 @@ def explain_candidate(
     fields = _field_evidence(left, right)
     counterevidence = _counterevidence(left, right, fields, structural_context)
     pattern = _pattern(kind, left, right, fields)
+    anchor = _verification_anchor(left, right, kind=kind, fields=fields)
     strongest = _join_fields(fields)
     lifecycle = f"{left.status or 'unknown'} to {right.status or 'unknown'}"
     why = (
@@ -151,20 +259,27 @@ def explain_candidate(
         f"lifecycle contrast: {lifecycle}; structure: {structural_context}."
     )
 
+    anchor_text = (
+        f"{anchor['category']} — {anchor['operation']} {anchor['entity_class']} "
+        f"(derived from {anchor['source_field']})"
+    )
     if kind == "completed-work-echo":
         verify = (
-            f"Compare {strongest} in active issue {left.id} with the delivered outcome and "
-            f"acceptance criteria of closed issue {right.id}."
+            f"Verify this locally derived contract anchor: {anchor_text}. Confirm whether the "
+            f"delivered outcome of closed issue {right.id} already satisfies active issue "
+            f"{left.id}."
         )
     else:
         verify = (
-            f"Compare {strongest} and the acceptance criteria of {left.id} and {right.id} "
-            "to determine whether their intended outcomes differ."
+            f"Verify this locally derived contract anchor: {anchor_text}. Compare the acceptance "
+            f"conditions of {left.id} and {right.id} to determine whether the anchored "
+            "outcomes differ."
         )
     return {
         "pattern": pattern,
         "why_surfaced": why,
         "field_evidence": fields[:3],
         "counterevidence": counterevidence,
+        "verification_anchor": anchor,
         "what_to_verify": verify,
     }

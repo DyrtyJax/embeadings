@@ -31,6 +31,11 @@ Current sweep producers include additive `no_signal` and `excluded` summaries. C
 batch manifests contain only active issues participating in accepted review signals; a completed
 echo target can remain in candidate evidence without becoming a batch member.
 
+Candidate evidence may include a `verification_anchor` derived locally from a fixed safe vocabulary.
+Its category, operation, entity class, and source-field label make review prompts more concrete
+without copying arbitrary issue terms. Consumers must still treat the anchor as advisory and must
+inspect the private source records locally before reaching a conclusion.
+
 ## Capability handshake
 
 An optional dispatcher or UI should exchange a capability document before consuming artifacts. The

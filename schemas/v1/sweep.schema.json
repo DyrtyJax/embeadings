@@ -80,8 +80,24 @@
         "related_issue_id": { "type": "string", "minLength": 1 },
         "similarity": { "type": "number", "minimum": -1, "maximum": 1 },
         "structural_context": { "type": "string" },
+        "verification_anchor": {
+          "type": "object",
+          "required": ["category", "operation", "entity_class", "source_field"],
+          "properties": {
+            "category": { "type": "string", "minLength": 1 },
+            "operation": { "type": "string", "minLength": 1 },
+            "entity_class": { "type": "string", "minLength": 1 },
+            "source_field": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": true
+        },
         "what_to_verify": { "type": "string", "minLength": 1 },
-        "counterevidence": { "type": "string" }
+        "counterevidence": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        }
       },
       "additionalProperties": true
     },

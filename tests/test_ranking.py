@@ -237,6 +237,23 @@ def test_lane_budgets_are_independent_and_report_drops() -> None:
     assert result.dropped_by_lane_cap == 1
 
 
+def test_multiple_completed_dependency_edges_are_not_collapsed_into_one_echo() -> None:
+    active = issue("A", dependencies=("X", "Y"))
+    closed = [issue("X", status="closed"), issue("Y", status="closed")]
+    scores = Scores({("A", "X"): 0.81, ("A", "Y"): 0.82})
+
+    result = rank_candidates(
+        [active],
+        [active, *closed],
+        scores,
+        policy(max_dependencies=5, max_echoes=5, max_per_issue=3),
+    )
+
+    assert {
+        (item["issue_id"], item["related_issue_id"], item["lane"]) for item in result.candidates
+    } == {("A", "X", "dependency"), ("A", "Y", "dependency")}
+
+
 def test_sensitivity_run_preserves_baseline_queue_under_caps() -> None:
     issues = [issue(identifier) for identifier in "ABCD"]
     scores = Scores({("A", "B"): 0.9, ("C", "D"): 0.7})

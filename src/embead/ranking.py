@@ -191,6 +191,7 @@ def _qualifying_candidates(
 
     for active_issue in active:
         echoes: list[dict[str, Any]] = []
+        dependency_echoes: list[dict[str, Any]] = []
         for completed_issue in closed:
             if issue_id(active_issue) == issue_id(completed_issue):
                 continue
@@ -210,7 +211,11 @@ def _qualifying_candidates(
                 ),
             )
             if candidate is not None:
-                echoes.append(candidate)
+                if candidate["lane"] == "dependency":
+                    dependency_echoes.append(candidate)
+                else:
+                    echoes.append(candidate)
+        qualified.extend(dependency_echoes)
         if echoes:
             qualified.append(min(echoes, key=_ranking_key))
     return qualified
@@ -263,7 +268,11 @@ def _select_candidates(
             # Keep the established one-echo-per-active-record invariant even
             # when a sensitivity run finds another lower-scoring closed issue.
             kind_issue = (candidate["kind"], left_id)
-            if candidate["kind"] == "completed-work-echo" and kind_issue in seen_issues_by_kind:
+            if (
+                candidate["lane"] == "echo"
+                and candidate["kind"] == "completed-work-echo"
+                and kind_issue in seen_issues_by_kind
+            ):
                 values["dropped_by_issue_cap"] += 1
                 continue
             admitted = {**candidate, "baseline_protected": protected}
@@ -271,7 +280,8 @@ def _select_candidates(
             counts[left_id] += 1
             counts[right_id] += 1
             lane_counts[lane] += 1
-            seen_issues_by_kind.add(kind_issue)
+            if candidate["lane"] == "echo":
+                seen_issues_by_kind.add(kind_issue)
             values["admitted"] += 1
             values["baseline_protected"] += int(protected)
 

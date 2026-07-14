@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from embead.beads import BeadsAdapter, BeadsError
+from embead.beads import (
+    BeadsAdapter,
+    BeadsError,
+    _canonical_state_digest,
+    _state_divergence_reasons,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -225,6 +230,7 @@ def test_load_warns_when_equal_count_export_has_different_state(tmp_path) -> Non
     assert records[0].updated_at == "2026-07-14T00:00:00Z"
     assert snapshot.live_issue_count == snapshot.export_issue_count == 1
     assert snapshot.live_source_digest != snapshot.export_source_digest
+    assert snapshot.source_divergence_reasons == ("status", "update_marker")
     assert snapshot.source_warnings == (
         "Live Beads data and the discoverable JSONL export have matching issue counts but "
         "different canonical state digests; live data was used.",
@@ -257,7 +263,64 @@ def test_load_accepts_matching_canonical_export_despite_private_text_difference(
     snapshot, _records = BeadsAdapter(runner=runner).load()
 
     assert snapshot.live_source_digest == snapshot.export_source_digest
+    assert snapshot.source_divergence_reasons == ()
     assert snapshot.source_warnings == ()
+
+
+@pytest.mark.parametrize(
+    "fixture_name", ["digest-opencode-roundtrip.json", "digest-exact-match.json"]
+)
+def test_supported_timestamp_roundtrips_have_equal_state_digests(fixture_name: str) -> None:
+    fixture = json.loads((FIXTURES / fixture_name).read_text())
+
+    assert _canonical_state_digest(fixture["live"]) == _canonical_state_digest(fixture["export"])
+    assert _state_divergence_reasons(fixture["live"], fixture["export"]) == ()
+
+
+def test_true_stale_export_has_privacy_safe_divergence_categories() -> None:
+    fixture = json.loads((FIXTURES / "digest-ralph-stale.json").read_text())
+
+    assert _canonical_state_digest(fixture["live"]) != _canonical_state_digest(fixture["export"])
+    assert _state_divergence_reasons(fixture["live"], fixture["export"]) == (
+        "dependency_structure",
+        "issue_identity",
+        "issue_type",
+        "priority",
+        "record_count",
+        "status",
+        "update_marker",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "changed", "reason"),
+    [
+        ("id", "different-id", "issue_identity"),
+        ("status", "closed", "status"),
+        ("issue_type", "bug", "issue_type"),
+        ("priority", 4, "priority"),
+        ("updated_at", "2026-07-14T00:00:02Z", "update_marker"),
+        (
+            "dependencies",
+            [{"depends_on_id": "other-target", "type": "blocks"}],
+            "dependency_structure",
+        ),
+    ],
+)
+def test_material_state_changes_remain_detectable(field: str, changed: object, reason: str) -> None:
+    baseline = {
+        "id": "issue-1",
+        "title": "Private",
+        "status": "open",
+        "issue_type": "task",
+        "priority": 1,
+        "updated_at": "2026-07-14T00:00:00Z",
+        "dependencies": [{"depends_on_id": "target", "type": "blocks"}],
+    }
+    divergent = {**baseline, field: changed}
+
+    assert _canonical_state_digest([baseline]) != _canonical_state_digest([divergent])
+    assert reason in _state_divergence_reasons([baseline], [divergent])
 
 
 def test_list_parses_legacy_envelope_and_aliases() -> None:

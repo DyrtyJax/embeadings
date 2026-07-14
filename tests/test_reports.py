@@ -69,6 +69,25 @@ def test_neighbors_markdown_is_advisory_and_compact() -> None:
     assert "matrix" not in markdown.lower()
 
 
+def test_markdown_exposes_only_controlled_source_divergence_categories() -> None:
+    private_identifier = "private-issue-never-render"
+    payload = build_neighbors_payload(
+        Issue("bd-1", "Canonical issue", "open"),
+        [],
+        snapshot={
+            **SNAPSHOT,
+            "source_divergence_reasons": ["dependency_structure", "status"],
+        },
+        model=MODEL,
+        cache=CACHE,
+    )
+
+    markdown = render_neighbors_markdown(payload)
+
+    assert "Source divergence categories: `dependency_structure`, `status`" in markdown
+    assert private_identifier not in markdown
+
+
 def test_batch_manifest_sorts_issues_and_evidence() -> None:
     manifest = build_batch_manifest(
         "run-1",

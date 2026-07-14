@@ -56,7 +56,22 @@
         "workspace_id": { "type": "string", "minLength": 1 },
         "beads_version": { "type": "string", "minLength": 1 },
         "workspace_path": { "type": ["string", "null"] },
-        "source_revision": { "type": ["string", "null"] }
+        "source_revision": { "type": ["string", "null"] },
+        "source_divergence_reasons": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "dependency_structure",
+              "issue_identity",
+              "issue_type",
+              "priority",
+              "record_count",
+              "status",
+              "update_marker"
+            ]
+          },
+          "uniqueItems": true
+        }
       },
       "additionalProperties": true
     },

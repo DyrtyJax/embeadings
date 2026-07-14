@@ -19,6 +19,32 @@ class Neighbor:
     status: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ReviewBatch:
+    """One bounded agent handoff containing one or more explicit review units."""
+
+    issues: tuple[Any, ...]
+    kind: str
+    review_units: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BatchDiagnostics:
+    component_count: int
+    singleton_component_count: int
+    agent_envelope_count: int
+    fragmented_component_count: int
+    cross_batch_candidate_edges: int
+    max_batch_size: int
+    configured_max_batch_size: int
+
+
+@dataclass(frozen=True, slots=True)
+class CandidatePackaging:
+    batches: tuple[ReviewBatch, ...]
+    diagnostics: BatchDiagnostics
+
+
 class SimilarityIndex:
     """Validate vectors once and reuse their pairwise cosine similarities.
 
@@ -246,8 +272,36 @@ def candidate_batches(
     they are not members of ``issues``.
     """
 
-    if target_size < 1:
-        raise ValueError("target_size must be positive")
+    return [
+        list(batch.issues)
+        for batch in package_candidate_batches(
+            issues,
+            candidates,
+            vectors,
+            max_batch_size=target_size,
+            similarity_index=similarity_index,
+        ).batches
+    ]
+
+
+def package_candidate_batches(
+    issues: Sequence[Any],
+    candidates: Sequence[Mapping[str, Any]],
+    vectors: Mapping[str, Vector],
+    *,
+    max_batch_size: int = 9,
+    similarity_index: SimilarityIndex | None = None,
+) -> CandidatePackaging:
+    """Create bounded review handoffs and deterministic fragmentation diagnostics.
+
+    Connected candidate components are split into connected induced review units.
+    Independent singleton components are explicitly packaged into bounded envelopes;
+    they remain separate one-issue review units rather than being presented as a
+    semantic cluster.
+    """
+
+    if max_batch_size < 1:
+        raise ValueError("max_batch_size must be positive")
 
     by_id: dict[str, Any] = {}
     for issue in issues:
@@ -286,18 +340,117 @@ def candidate_batches(
         components.append(sorted(component))
 
     index = similarity_index or SimilarityIndex(vectors)
-    batches: list[list[Any]] = []
-    for component in components:
-        component_issues = [by_id[identifier] for identifier in component]
-        batches.extend(
-            balanced_batches(
-                component_issues,
-                vectors,
-                target_size=target_size,
-                similarity_index=index,
+    singleton_ids = [component[0] for component in components if len(component) == 1]
+    non_singletons = [component for component in components if len(component) > 1]
+    review_batches: list[ReviewBatch] = []
+    assignment: dict[str, int] = {}
+    fragmented = 0
+
+    for component in non_singletons:
+        units = _split_connected_component(component, adjacency, index, max_batch_size)
+        fragmented += len(units) > 1
+        for unit in units:
+            batch_number = len(review_batches)
+            assignment.update({identifier: batch_number for identifier in unit})
+            review_batches.append(
+                ReviewBatch(
+                    issues=tuple(by_id[identifier] for identifier in unit),
+                    kind="connected-component",
+                    review_units=(tuple(unit),),
+                )
+            )
+
+    for offset in range(0, len(singleton_ids), max_batch_size):
+        envelope = singleton_ids[offset : offset + max_batch_size]
+        batch_number = len(review_batches)
+        assignment.update({identifier: batch_number for identifier in envelope})
+        review_batches.append(
+            ReviewBatch(
+                issues=tuple(by_id[identifier] for identifier in envelope),
+                kind="singleton-envelope",
+                review_units=tuple((identifier,) for identifier in envelope),
             )
         )
-    return batches
+
+    edges = {
+        tuple(sorted((identifier, neighbor)))
+        for identifier, neighbors in adjacency.items()
+        for neighbor in neighbors
+        if identifier != neighbor
+    }
+    cut_edges = sum(assignment[left] != assignment[right] for left, right in edges)
+    diagnostics = BatchDiagnostics(
+        component_count=len(components),
+        singleton_component_count=len(singleton_ids),
+        agent_envelope_count=(len(singleton_ids) + max_batch_size - 1) // max_batch_size,
+        fragmented_component_count=fragmented,
+        cross_batch_candidate_edges=cut_edges,
+        max_batch_size=max((len(batch.issues) for batch in review_batches), default=0),
+        configured_max_batch_size=max_batch_size,
+    )
+    return CandidatePackaging(tuple(review_batches), diagnostics)
+
+
+def _split_connected_component(
+    component: Sequence[str],
+    adjacency: Mapping[str, set[str]],
+    index: SimilarityIndex,
+    max_size: int,
+) -> list[list[str]]:
+    """Greedily peel connected units while favoring candidate edges kept inside."""
+
+    pending_components = [set(component)]
+    units: list[list[str]] = []
+    while pending_components:
+        remaining = pending_components.pop(0)
+        if len(remaining) <= max_size:
+            units.append(sorted(remaining))
+            continue
+        seed = min(
+            remaining,
+            # Start at a boundary node so bridge-shaped components are peeled
+            # from the edge rather than split into several remainder islands.
+            key=lambda identifier: (len(adjacency[identifier] & remaining), identifier),
+        )
+        unit = {seed}
+        while len(unit) < max_size:
+            frontier = {neighbor for member in unit for neighbor in adjacency[member] & remaining}
+            frontier.difference_update(unit)
+            if not frontier:
+                break
+            candidate = min(
+                frontier,
+                key=lambda identifier: (
+                    -len(adjacency[identifier] & unit),
+                    -sum(index.score(identifier, member) for member in unit),
+                    identifier,
+                ),
+            )
+            unit.add(candidate)
+        units.append(sorted(unit))
+        leftover = remaining - unit
+        pending_components = _connected_id_components(leftover, adjacency) + pending_components
+    return units
+
+
+def _connected_id_components(
+    identifiers: set[str], adjacency: Mapping[str, set[str]]
+) -> list[set[str]]:
+    components: list[set[str]] = []
+    unseen = set(identifiers)
+    while unseen:
+        start = min(unseen)
+        component = {start}
+        pending = [start]
+        unseen.remove(start)
+        while pending:
+            current = pending.pop()
+            neighbors = adjacency[current] & unseen
+            unseen.difference_update(neighbors)
+            component.update(neighbors)
+            pending.extend(sorted(neighbors, reverse=True))
+        components.append(component)
+    return components
 
 
 def issue_id(issue: Any) -> str:

@@ -33,7 +33,8 @@
         "overlap": { "qualified": 0, "admitted": 0, "baseline_protected": 0, "dropped_by_lane_cap": 0, "dropped_by_issue_cap": 0, "dropped_by_run_cap": 0 }
       }
     },
-    "target_batch_size": 5
+    "target_batch_size": 5,
+    "max_batch_size": 5
   },
   "candidates": [
     {
@@ -52,7 +53,23 @@
       "what_to_verify": "Verify the redacted completed-outcome anchor for rendering a report."
     }
   ],
-  "batches": [{ "batch": 1, "issue_ids": ["demo-1"] }],
+  "batches": [
+    {
+      "batch": 1,
+      "kind": "singleton-envelope",
+      "issue_ids": ["demo-1"],
+      "review_units": [{ "issue_ids": ["demo-1"] }]
+    }
+  ],
+  "batch_diagnostics": {
+    "component_count": 1,
+    "singleton_component_count": 1,
+    "agent_envelope_count": 1,
+    "fragmented_component_count": 0,
+    "cross_batch_candidate_edges": 0,
+    "max_batch_size": 1,
+    "configured_max_batch_size": 5
+  },
   "no_signal": { "count": 1, "issue_ids": ["demo-3"] },
   "excluded": { "count": 1, "by_reason": { "epic": 1 }, "issue_ids": ["demo-epic"] },
   "warnings": [],

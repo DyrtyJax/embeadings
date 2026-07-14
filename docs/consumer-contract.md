@@ -29,7 +29,10 @@ consumers.
 
 Current sweep producers include additive `no_signal` and `excluded` summaries. Candidate-focused
 batch manifests contain only active issues participating in accepted review signals; a completed
-echo target can remain in candidate evidence without becoming a batch member.
+echo target can remain in candidate evidence without becoming a batch member. `kind` distinguishes
+a connected component from a `singleton-envelope`; consumers must treat each envelope `review_unit`
+as an independent one-issue review, not infer relationships between envelope members. The sweep's
+`batch_diagnostics` records deterministic fragmentation and cross-artifact candidate-edge counts.
 
 Candidate evidence may include a `verification_anchor` derived locally from a fixed safe vocabulary.
 Its category, operation, entity class, and source-field label make review prompts more concrete

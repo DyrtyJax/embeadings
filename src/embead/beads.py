@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypeAlias
 
-from .models import IssueRecord, WorkspaceSnapshot
+from .models import DependencyLink, IssueRecord, WorkspaceSnapshot
 
 
 class BeadsError(RuntimeError):
@@ -101,7 +103,17 @@ class BeadsAdapter:
     def load(self) -> tuple[WorkspaceSnapshot, tuple[IssueRecord, ...]]:
         """Return snapshot metadata and all issues from the live workspace."""
 
-        return self.workspace_snapshot(), self.list_issues()
+        snapshot = self.workspace_snapshot()
+        issues = self.list_issues()
+        relationship_types = Counter(
+            link.relationship_type for issue in issues for link in issue.dependency_links
+        )
+        snapshot = replace(
+            snapshot,
+            dependency_count=sum(relationship_types.values()),
+            dependency_type_counts=tuple(sorted(relationship_types.items())),
+        )
+        return snapshot, issues
 
 
 def _first(payload: Mapping[str, Any], *keys: str) -> Any:
@@ -173,23 +185,52 @@ def _parse_labels(value: Any) -> tuple[str, ...]:
     return tuple(sorted(set(labels)))
 
 
-def _parse_dependencies(value: Any) -> tuple[str, ...]:
+def _parse_dependencies(
+    value: Any, *, source_id: str
+) -> tuple[tuple[str, ...], tuple[DependencyLink, ...]]:
     if value is None:
-        return ()
+        return (), ()
     if not isinstance(value, list):
         raise BeadsError("issue dependencies must be an array")
     dependencies: list[str] = []
+    links: list[DependencyLink] = []
     for dependency in value:
         if isinstance(dependency, str):
             dependency_id = dependency
+            relationship_type = "depends-on"
         elif isinstance(dependency, Mapping):
-            dependency_id = _first(dependency, "id", "issue_id", "dependency_id", "depends_on_id")
+            # Current Beads payloads contain both ``issue_id`` (the source) and
+            # ``depends_on_id`` (the target). Target-specific fields must win.
+            dependency_id = _first(
+                dependency, "depends_on_id", "dependency_id", "target_id", "id", "issue_id"
+            )
+            relationship_type = (
+                _first(dependency, "type", "dependency_type", "relationship_type") or "depends-on"
+            )
         else:
             raise BeadsError("issue dependency has an unsupported shape")
         if not isinstance(dependency_id, str) or not dependency_id.strip():
             raise BeadsError("issue dependency contains no valid ID")
-        dependencies.append(dependency_id.strip())
-    return tuple(sorted(set(dependencies)))
+        if not isinstance(relationship_type, str) or not relationship_type.strip():
+            raise BeadsError("issue dependency contains no valid relationship type")
+        target_id = dependency_id.strip()
+        if target_id == source_id:
+            raise BeadsError(f"issue {source_id} contains a self-dependency")
+        dependencies.append(target_id)
+        links.append(
+            DependencyLink(
+                source_id=source_id,
+                target_id=target_id,
+                relationship_type=relationship_type.strip(),
+            )
+        )
+    ordered_links = tuple(
+        sorted(
+            set(links),
+            key=lambda link: (link.target_id, link.relationship_type, link.source_id),
+        )
+    )
+    return tuple(sorted(set(dependencies))), ordered_links
 
 
 def _parse_issue(raw: Any) -> IssueRecord:
@@ -201,8 +242,12 @@ def _parse_issue(raw: Any) -> IssueRecord:
     if parent is not None and (not isinstance(parent, str) or not parent.strip()):
         raise BeadsError("issue parent must be an issue ID")
 
+    issue_id = _required_string(raw, "id")
+    dependencies, dependency_links = _parse_dependencies(
+        _first(raw, "dependencies", "depends_on", "dependency_ids"), source_id=issue_id
+    )
     return IssueRecord(
-        id=_required_string(raw, "id"),
+        id=issue_id,
         title=_required_string(raw, "title"),
         description=_optional_string(raw, "description", "body"),
         status=_required_string(raw, "status"),
@@ -210,9 +255,8 @@ def _parse_issue(raw: Any) -> IssueRecord:
         priority=_parse_priority(raw.get("priority")),
         labels=_parse_labels(raw.get("labels")),
         parent_id=parent.strip() if isinstance(parent, str) else None,
-        dependencies=_parse_dependencies(
-            _first(raw, "dependencies", "depends_on", "dependency_ids")
-        ),
+        dependencies=dependencies,
+        dependency_links=dependency_links,
         acceptance_criteria=_optional_string(
             raw, "acceptance_criteria", "acceptanceCriteria", "acceptance"
         ),

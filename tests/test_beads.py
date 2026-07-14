@@ -6,6 +6,8 @@ import pytest
 
 from embead.beads import BeadsAdapter, BeadsError
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
 
 class FakeRunner:
     def __init__(self, responses: list[tuple[int, object, str]]) -> None:
@@ -52,6 +54,92 @@ def test_list_invocation_is_read_only_and_parses_current_shape() -> None:
     assert records[0].labels == ("semantic", "storage")
     assert records[0].dependencies == ("bd-0",)
     assert records[0].acceptance_criteria == "Atomic writes"
+
+
+def test_beads_1_0_5_relationship_fixture_preserves_targets_direction_and_type() -> None:
+    payload = json.loads((FIXTURES / "beads-1.0.5-list.json").read_text())
+    runner = FakeRunner([(0, payload, "")])
+
+    records = BeadsAdapter(runner=runner).list_issues()
+
+    assert sum(len(issue.dependency_links) for issue in records) == 3
+    assert records[0].dependencies == ("sample-parent", "sample-prerequisite")
+    assert [
+        (link.source_id, link.target_id, link.relationship_type)
+        for link in records[0].dependency_links
+    ] == [
+        ("sample-child", "sample-parent", "parent-child"),
+        ("sample-child", "sample-prerequisite", "blocks"),
+    ]
+    assert records[1].dependency_links[0].relationship_type == "discovered-from"
+
+
+def test_current_shape_prefers_target_over_source_issue_id() -> None:
+    runner = FakeRunner(
+        [
+            (
+                0,
+                [
+                    {
+                        "id": "source",
+                        "title": "Source",
+                        "status": "open",
+                        "dependencies": [
+                            {
+                                "issue_id": "source",
+                                "depends_on_id": "target",
+                                "type": "blocks",
+                            }
+                        ],
+                    }
+                ],
+                "",
+            )
+        ]
+    )
+    issue = BeadsAdapter(runner=runner).list_issues()[0]
+    assert issue.dependencies == ("target",)
+
+
+def test_self_dependency_fails_closed_with_identifier_only_diagnostic() -> None:
+    runner = FakeRunner(
+        [
+            (
+                0,
+                [
+                    {
+                        "id": "self-link",
+                        "title": "No private body in error",
+                        "description": "PRIVATE BODY",
+                        "status": "open",
+                        "dependencies": [{"depends_on_id": "self-link", "type": "blocks"}],
+                    }
+                ],
+                "",
+            )
+        ]
+    )
+    with pytest.raises(BeadsError, match="issue self-link contains a self-dependency") as error:
+        BeadsAdapter(runner=runner).list_issues()
+    assert "PRIVATE BODY" not in str(error.value)
+
+
+def test_load_reports_relationship_counts_in_snapshot() -> None:
+    payload = json.loads((FIXTURES / "beads-1.0.5-list.json").read_text())
+    runner = FakeRunner(
+        [
+            (0, {"project_id": "project", "beads_dir": "/tmp/project/.beads"}, ""),
+            (0, {"version": "1.0.5"}, ""),
+            (0, payload, ""),
+        ]
+    )
+    snapshot, _records = BeadsAdapter(runner=runner).load()
+    assert snapshot.dependency_count == 3
+    assert snapshot.dependency_type_counts == (
+        ("blocks", 1),
+        ("discovered-from", 1),
+        ("parent-child", 1),
+    )
 
 
 def test_list_parses_legacy_envelope_and_aliases() -> None:

@@ -1,4 +1,4 @@
-from embead.models import IssueRecord
+from embead.models import DependencyLink, IssueRecord
 from embead.ranking import CandidatePolicy, rank_candidates
 
 
@@ -51,6 +51,47 @@ def test_dependency_admits_bounded_threshold_exception() -> None:
     result = rank_candidates(issues, issues, Scores({("A", "B"): 0.71}), policy())
 
     assert result.candidates[0]["admission_reason"] == "dependency-threshold-exception"
+
+
+def test_typed_dependency_preserves_direction_and_type_in_context() -> None:
+    issues = [
+        IssueRecord(
+            id="A",
+            title="A",
+            status="open",
+            dependencies=("B",),
+            dependency_links=(DependencyLink("A", "B", "blocks"),),
+        ),
+        issue("B"),
+    ]
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.78}),
+        CandidatePolicy(overlap_threshold=0.82, exception_margin=0.08),
+    )
+    assert result.candidates[0]["structural_context"] == "A depends on B (blocks)"
+    assert result.candidates[0]["admission_reason"] == "dependency-threshold-exception"
+
+
+def test_typed_parent_child_link_does_not_enable_dependency_exception() -> None:
+    issues = [
+        IssueRecord(
+            id="A",
+            title="A",
+            status="open",
+            dependencies=("B",),
+            dependency_links=(DependencyLink("A", "B", "parent-child"),),
+        ),
+        issue("B"),
+    ]
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.78}),
+        CandidatePolicy(overlap_threshold=0.82, exception_margin=0.08, reciprocal_rank=0),
+    )
+    assert result.candidates == ()
 
 
 def test_parent_child_is_counterevidence_not_an_exception() -> None:

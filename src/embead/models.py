@@ -13,6 +13,15 @@ DEFAULT_FIELD_LIMIT: Final[int] = 16_000
 
 
 @dataclass(frozen=True, slots=True)
+class DependencyLink:
+    """A typed, directed relationship emitted by Beads for one issue."""
+
+    source_id: str
+    target_id: str
+    relationship_type: str
+
+
+@dataclass(frozen=True, slots=True)
 class IssueRecord:
     """The tracker fields used by semantic and structural analysis."""
 
@@ -25,6 +34,7 @@ class IssueRecord:
     labels: tuple[str, ...] = field(default_factory=tuple)
     parent_id: str | None = None
     dependencies: tuple[str, ...] = field(default_factory=tuple)
+    dependency_links: tuple[DependencyLink, ...] = field(default_factory=tuple)
     acceptance_criteria: str = ""
     design: str = ""
     notes: str = ""
@@ -37,6 +47,8 @@ class WorkspaceSnapshot:
     workspace_id: str
     beads_version: str
     workspace_path: str | None = None
+    dependency_count: int | None = None
+    dependency_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
 
 
 def _normalize_text(value: str, *, limit: int) -> str:

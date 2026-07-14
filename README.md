@@ -72,6 +72,7 @@ Research notes:
 
 - [Open-source semantic search and Beads ecosystem sweep](docs/ecosystem-sweep.md)
 - [Anonymized aggregate findings from the first private pilot](docs/research/private-pilot-01.md)
+- [Public synthetic warm-path performance benchmark](docs/performance.md)
 
 ## Principles
 

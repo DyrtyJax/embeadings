@@ -7,6 +7,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 Vector = Sequence[float]
 
 
@@ -15,6 +17,84 @@ class Neighbor:
     issue_id: str
     similarity: float
     status: str | None = None
+
+
+class SimilarityIndex:
+    """Validate vectors once and reuse their pairwise cosine similarities.
+
+    Providers and the on-disk cache already return normalized vectors, but the
+    index deliberately validates and normalizes its input once at the analysis
+    boundary.  The dense score matrix keeps a 1,000-record workspace small
+    (about 8 MB with float64 values) while avoiding repeated Python dot products.
+    """
+
+    def __init__(self, vectors: Mapping[str, Vector]) -> None:
+        self._ids = tuple(sorted(vectors))
+        self._positions = {identifier: index for index, identifier in enumerate(self._ids)}
+        if not self._ids:
+            self._scores = np.empty((0, 0), dtype=np.float64)
+            return
+
+        rows: list[list[float]] = []
+        dimension: int | None = None
+        for identifier in self._ids:
+            values = [float(value) for value in vectors[identifier]]
+            if not values or any(not math.isfinite(value) for value in values):
+                raise ValueError(f"vector for {identifier!r} must be non-empty and finite")
+            if dimension is None:
+                dimension = len(values)
+            elif len(values) != dimension:
+                raise ValueError("vectors must have the same dimension")
+            rows.append(values)
+
+        matrix = np.asarray(rows, dtype=np.float64)
+        norms = np.linalg.norm(matrix, axis=1)
+        if np.any(norms == 0):
+            identifier = self._ids[int(np.flatnonzero(norms == 0)[0])]
+            raise ValueError(f"cannot normalize zero vector for {identifier!r}")
+        matrix /= norms[:, np.newaxis]
+        self._scores = matrix @ matrix.T
+        np.clip(self._scores, -1.0, 1.0, out=self._scores)
+
+    @property
+    def ids(self) -> tuple[str, ...]:
+        return self._ids
+
+    def score(self, left_id: str, right_id: str) -> float:
+        """Return a cached cosine score for two indexed IDs."""
+
+        return float(self._scores[self._position(left_id), self._position(right_id)])
+
+    def ranked(self, query_id: str, candidate_ids: Sequence[str]) -> list[tuple[str, float]]:
+        """Rank candidate IDs by descending score, then ascending ID."""
+
+        self._position(query_id)
+        unique_ids = set(candidate_ids)
+        ranked = [(identifier, self.score(query_id, identifier)) for identifier in unique_ids]
+        ranked.sort(key=lambda item: (-item[1], item[0]))
+        return ranked
+
+    def sum_scores(
+        self,
+        query_ids: Sequence[str],
+        candidate_ids: Sequence[str],
+    ) -> dict[str, float]:
+        """Return vectorized score sums for density updates."""
+
+        queries = list(query_ids)
+        candidates = list(candidate_ids)
+        if not candidates:
+            return {identifier: 0.0 for identifier in queries}
+        query_positions = [self._position(identifier) for identifier in queries]
+        candidate_positions = [self._position(identifier) for identifier in candidates]
+        totals = self._scores[np.ix_(query_positions, candidate_positions)].sum(axis=1)
+        return dict(zip(queries, (float(value) for value in totals), strict=True))
+
+    def _position(self, identifier: str) -> int:
+        try:
+            return self._positions[identifier]
+        except KeyError as exc:
+            raise KeyError(f"missing vector for issue {identifier!r}") from exc
 
 
 def normalize(vector: Vector) -> list[float]:
@@ -48,6 +128,7 @@ def nearest_neighbors(
     *,
     limit: int = 10,
     include_closed: bool = False,
+    similarity_index: SimilarityIndex | None = None,
 ) -> list[Neighbor]:
     """Rank candidates by similarity, breaking equal scores by issue ID.
 
@@ -58,10 +139,9 @@ def nearest_neighbors(
     if limit < 0:
         raise ValueError("limit cannot be negative")
     query_id = issue_id(query)
-    try:
-        query_vector = vectors[query_id]
-    except KeyError as exc:
-        raise KeyError(f"missing vector for query issue {query_id!r}") from exc
+    if query_id not in vectors:
+        raise KeyError(f"missing vector for query issue {query_id!r}")
+    index = similarity_index or SimilarityIndex(vectors)
 
     ranked: list[Neighbor] = []
     for candidate in candidates:
@@ -71,15 +151,13 @@ def nearest_neighbors(
         status = issue_status(candidate)
         if not include_closed and _is_closed(status):
             continue
-        try:
-            vector = vectors[candidate_id]
-        except KeyError as exc:
-            raise KeyError(f"missing vector for candidate issue {candidate_id!r}") from exc
+        if candidate_id not in vectors:
+            raise KeyError(f"missing vector for candidate issue {candidate_id!r}")
         ranked.append(
             Neighbor(
                 issue_id=candidate_id,
                 status=status,
-                similarity=cosine_similarity(query_vector, vector),
+                similarity=index.score(query_id, candidate_id),
             )
         )
     ranked.sort(key=lambda neighbor: (-neighbor.similarity, neighbor.issue_id))
@@ -91,6 +169,7 @@ def balanced_batches(
     vectors: Mapping[str, Vector],
     *,
     target_size: int = 9,
+    similarity_index: SimilarityIndex | None = None,
 ) -> list[list[Any]]:
     """Partition issues into deterministic, balanced semantic neighborhoods.
 
@@ -120,20 +199,34 @@ def balanced_batches(
     quotient, remainder = divmod(count, batch_count)
     capacities = [quotient + (index < remainder) for index in range(batch_count)]
 
+    index = similarity_index or SimilarityIndex(
+        {identifier: vectors[identifier] for identifier in by_id}
+    )
     remaining = set(by_id)
+    ordered_ids = sorted(remaining)
+    totals = index.sum_scores(ordered_ids, ordered_ids)
+    for identifier in ordered_ids:
+        totals[identifier] -= index.score(identifier, identifier)
     batches: list[list[Any]] = []
     for capacity in capacities:
-        seed = _dense_seed(remaining, vectors)
-        ordered = sorted(
-            remaining - {seed},
-            key=lambda identifier: (
-                -cosine_similarity(vectors[seed], vectors[identifier]),
-                identifier,
-            ),
-        )
+        if len(remaining) == 1:
+            seed = next(iter(remaining))
+        else:
+            seed = min(
+                remaining,
+                key=lambda identifier: (-totals[identifier] / (len(remaining) - 1), identifier),
+            )
+        ordered = [
+            identifier
+            for identifier, _score in index.ranked(seed, sorted(remaining - {seed}))
+        ]
         member_ids = [seed, *ordered[: capacity - 1]]
         batches.append([by_id[identifier] for identifier in member_ids])
         remaining.difference_update(member_ids)
+        if remaining:
+            reductions = index.sum_scores(sorted(remaining), member_ids)
+            for identifier, reduction in reductions.items():
+                totals[identifier] -= reduction
     return batches
 
 
@@ -156,18 +249,6 @@ def issue_text(issue: Any) -> str:
     if value is None:
         raise ValueError("issue must have text or canonical_text")
     return str(value)
-
-
-def _dense_seed(remaining: set[str], vectors: Mapping[str, Vector]) -> str:
-    if len(remaining) == 1:
-        return next(iter(remaining))
-
-    def density(identifier: str) -> float:
-        others = sorted(remaining - {identifier})
-        total = sum(cosine_similarity(vectors[identifier], vectors[other]) for other in others)
-        return total / len(others)
-
-    return min(remaining, key=lambda identifier: (-density(identifier), identifier))
 
 
 def _field(issue: Any, name: str, default: Any) -> Any:

@@ -59,6 +59,14 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema_version"] == 1
     assert len(payload["batches"]) == 2
+    assert set(payload["timings_ms"]) == {
+        "acquisition",
+        "embedding_and_cache",
+        "similarity_scoring",
+        "candidate_analysis",
+        "batching",
+    }
+    assert all(value >= 0 for value in payload["timings_ms"].values())
     assert (output / "report.json").is_file()
     assert (output / "report.md").is_file()
     assert sorted(path.name for path in output.glob("batch-*.json")) == [

@@ -60,8 +60,12 @@ without copying their contents; a count mismatch is reported through `source_war
 sweep warning list. Consumers must not substitute a stale export for the live snapshot.
 
 Equal issue counts do not prove that an export is current. The producer also records canonical
-SHA-256 state digests over issue ID, normalized status, and update marker—never titles or body text.
+SHA-256 state digests over issue ID, normalized status, issue type, priority, typed dependencies,
+and update marker—never titles or body text. RFC 3339 update markers are converted to UTC and
+rounded to whole seconds, matching the supported Beads 1.0.x JSONL-to-Dolt timestamp round trip.
 Different live/export digests produce a non-content warning even when record counts match.
+`source_divergence_reasons` supplies only controlled metadata categories such as `status`,
+`dependency_structure`, or `record_count`; it never identifies records or includes issue text.
 
 ## Capability handshake
 

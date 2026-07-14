@@ -1,0 +1,9 @@
+{
+  "export": [
+    {"id": "ralph-1", "title": "Private", "status": "open", "issue_type": "task", "priority": 1, "updated_at": "2026-01-01T00:00:00Z", "dependencies": [{"depends_on_id": "ralph-root", "type": "parent-child"}]},
+    {"id": "ralph-export-only", "title": "Private", "status": "closed", "issue_type": "task", "priority": 2, "updated_at": "2026-01-01T00:00:00Z", "dependencies": []}
+  ],
+  "live": [
+    {"id": "ralph-1", "title": "Private", "status": "closed", "issue_type": "bug", "priority": 3, "updated_at": "2026-02-01T00:00:00Z", "dependencies": [{"depends_on_id": "ralph-prerequisite", "type": "blocks"}]}
+  ]
+}

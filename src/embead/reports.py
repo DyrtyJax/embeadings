@@ -345,6 +345,7 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     source = _field(snapshot, "acquisition_source", default="unknown")
     live_count = _field(snapshot, "live_issue_count", default="unknown")
     export_count = _field(snapshot, "export_issue_count", default=None)
+    divergence_reasons = _field(snapshot, "source_divergence_reasons", default=[]) or []
     warnings = _field(snapshot, "source_warnings", default=[]) or []
     lines = [
         f"- Workspace snapshot: `{_escape(workspace)}` (Beads `{_escape(beads_version)}`)",
@@ -354,6 +355,11 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     ]
     if export_count is not None:
         lines.append(f"- Discoverable JSONL export: {_escape(export_count)} issues")
+    if divergence_reasons:
+        lines.append(
+            "- Source divergence categories: "
+            + ", ".join(f"`{_escape(reason)}`" for reason in divergence_reasons)
+        )
     lines.extend(f"- Source warning: {_escape(warning)}" for warning in warnings)
     return lines
 

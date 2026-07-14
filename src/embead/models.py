@@ -55,6 +55,7 @@ class WorkspaceSnapshot:
     export_issue_count: int | None = None
     live_source_digest: str | None = None
     export_source_digest: str | None = None
+    source_divergence_reasons: tuple[str, ...] = field(default_factory=tuple)
     source_warnings: tuple[str, ...] = field(default_factory=tuple)
 
 

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeAlias
 
@@ -20,6 +22,10 @@ class BeadsError(RuntimeError):
 
 Runner: TypeAlias = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 _ALLOWED_COMMANDS = frozenset({"version", "context", "list"})
+_RFC3339_PATTERN = re.compile(
+    r"^(?P<date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
+    r"(?:\.(?P<fraction>\d+))?(?P<offset>Z|[+-]\d{2}:\d{2})$"
+)
 
 
 def _default_runner(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -109,9 +115,9 @@ class BeadsAdapter:
             link.relationship_type for issue in issues for link in issue.dependency_links
         )
         live_digest = _canonical_state_digest(issues)
-        export_count, export_digest, source_warnings = _export_diagnostics(
+        export_count, export_digest, divergence_reasons, source_warnings = _export_diagnostics(
             snapshot.workspace_path,
-            live_count=len(issues),
+            live_records=issues,
             live_digest=live_digest,
         )
         snapshot = replace(
@@ -122,6 +128,7 @@ class BeadsAdapter:
             export_issue_count=export_count,
             live_source_digest=live_digest,
             export_source_digest=export_digest,
+            source_divergence_reasons=divergence_reasons,
             source_warnings=source_warnings,
         )
         return snapshot, issues
@@ -134,39 +141,119 @@ def _first(payload: Mapping[str, Any], *keys: str) -> Any:
     return None
 
 
-def _canonical_state_digest(records: Sequence[Any]) -> str:
-    markers: list[tuple[str, str, str]] = []
-    for record in records:
+def _normalized_update_marker(value: str) -> str:
+    """Normalize supported Beads timestamps to UTC, rounded to whole seconds."""
+
+    stripped = value.strip()
+    match = _RFC3339_PATTERN.fullmatch(stripped)
+    if match is None:
+        return stripped
+    try:
+        offset = match.group("offset")
+        parsed = datetime.fromisoformat(
+            f"{match.group('date')}{'+00:00' if offset == 'Z' else offset}"
+        )
+    except ValueError:
+        return stripped
+    fraction = match.group("fraction") or ""
+    # Beads 1.0.x rounds nanosecond JSONL timestamps to whole seconds when
+    # importing into Dolt. Compare at that supported round-trip precision.
+    if fraction and fraction[0] >= "5":
+        parsed += timedelta(seconds=1)
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _canonical_state_marker(record: Any) -> dict[str, Any]:
+    if isinstance(record, Mapping):
+        identifier = _first(record, "id", "issue_id")
+        status = _first(record, "status")
+        issue_type = _first(record, "issue_type", "type") or ""
+        priority = record.get("priority")
+        updated_at = _first(record, "updated_at", "updatedAt") or ""
+        dependencies_value = _first(record, "dependencies", "depends_on", "dependency_ids")
+    else:
+        identifier = getattr(record, "id", None)
+        status = getattr(record, "status", None)
+        issue_type = getattr(record, "issue_type", "") or ""
+        priority = getattr(record, "priority", None)
+        updated_at = getattr(record, "updated_at", "") or ""
+        dependencies_value = None
+    if not isinstance(identifier, str) or not identifier.strip():
+        raise ValueError("state digest record contains no valid ID")
+    if not isinstance(status, str) or not status.strip():
+        raise ValueError("state digest record contains no valid status")
+    if not isinstance(issue_type, str):
+        raise ValueError("state digest record contains an invalid issue type")
+    if not isinstance(updated_at, str):
+        raise ValueError("state digest record contains an invalid update marker")
+    try:
+        normalized_priority = _parse_priority(priority)
         if isinstance(record, Mapping):
-            identifier = _first(record, "id", "issue_id")
-            status = _first(record, "status")
-            updated_at = _first(record, "updated_at", "updatedAt") or ""
+            _, links = _parse_dependencies(dependencies_value, source_id=identifier.strip())
         else:
-            identifier = getattr(record, "id", None)
-            status = getattr(record, "status", None)
-            updated_at = getattr(record, "updated_at", "") or ""
-        if not isinstance(identifier, str) or not identifier.strip():
-            raise ValueError("state digest record contains no valid ID")
-        if not isinstance(status, str) or not status.strip():
-            raise ValueError("state digest record contains no valid status")
-        if not isinstance(updated_at, str):
-            raise ValueError("state digest record contains an invalid update marker")
-        markers.append((identifier.strip(), status.strip().casefold(), updated_at.strip()))
-    encoded = json.dumps(sorted(markers), separators=(",", ":"), ensure_ascii=True).encode()
+            links = getattr(record, "dependency_links", ())
+    except BeadsError as exc:
+        raise ValueError("state digest record contains invalid structural metadata") from exc
+    dependency_markers = sorted(
+        (link.target_id, link.relationship_type.strip().casefold()) for link in links
+    )
+    return {
+        "id": identifier.strip(),
+        "status": status.strip().casefold(),
+        "issue_type": issue_type.strip().casefold(),
+        "priority": normalized_priority,
+        "updated_at": _normalized_update_marker(updated_at),
+        "dependencies": dependency_markers,
+    }
+
+
+def _canonical_state_markers(records: Sequence[Any]) -> list[dict[str, Any]]:
+    return sorted(
+        (_canonical_state_marker(record) for record in records), key=lambda item: item["id"]
+    )
+
+
+def _canonical_state_digest(records: Sequence[Any]) -> str:
+    markers = _canonical_state_markers(records)
+    encoded = json.dumps(markers, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _state_divergence_reasons(
+    live_records: Sequence[Any], export_records: Sequence[Any]
+) -> tuple[str, ...]:
+    live = {marker["id"]: marker for marker in _canonical_state_markers(live_records)}
+    export = {marker["id"]: marker for marker in _canonical_state_markers(export_records)}
+    reasons: set[str] = set()
+    if len(live_records) != len(export_records):
+        reasons.add("record_count")
+    if live.keys() != export.keys():
+        reasons.add("issue_identity")
+    categories = {
+        "status": "status",
+        "issue_type": "issue_type",
+        "priority": "priority",
+        "updated_at": "update_marker",
+        "dependencies": "dependency_structure",
+    }
+    for identifier in live.keys() & export.keys():
+        for field, category in categories.items():
+            if live[identifier][field] != export[identifier][field]:
+                reasons.add(category)
+    return tuple(sorted(reasons))
 
 
 def _export_diagnostics(
     workspace_path: str | None,
     *,
-    live_count: int,
+    live_records: Sequence[Any],
     live_digest: str,
-) -> tuple[int | None, str | None, tuple[str, ...]]:
+) -> tuple[int | None, str | None, tuple[str, ...], tuple[str, ...]]:
     if not workspace_path:
-        return None, None, ()
+        return None, None, (), ()
     export_path = Path(workspace_path) / "issues.jsonl"
     if not export_path.is_file():
-        return None, None, ()
+        return None, None, (), ()
 
     records: list[Mapping[str, Any]] = []
     try:
@@ -179,16 +266,19 @@ def _export_diagnostics(
                     raise ValueError("export record is not an object")
                 records.append(record)
         export_digest = _canonical_state_digest(records)
+        divergence_reasons = _state_divergence_reasons(live_records, records)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
-        return None, None, ("A discoverable Beads JSONL export could not be inspected safely.",)
+        return None, None, (), ("A discoverable Beads JSONL export could not be inspected safely.",)
 
     count = len(records)
+    live_count = len(live_records)
     if count == live_count:
         if export_digest == live_digest:
-            return count, export_digest, ()
+            return count, export_digest, (), ()
         return (
             count,
             export_digest,
+            divergence_reasons,
             (
                 "Live Beads data and the discoverable JSONL export have matching issue counts but "
                 "different canonical state digests; live data was used.",
@@ -197,6 +287,7 @@ def _export_diagnostics(
     return (
         count,
         export_digest,
+        divergence_reasons,
         (
             f"Live Beads data contains {live_count} issues while the discoverable JSONL export "
             f"contains {count}; live data was used.",

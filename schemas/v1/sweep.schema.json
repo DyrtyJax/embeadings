@@ -24,6 +24,8 @@
     },
     "candidates": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
     "batches": { "type": "array", "items": { "$ref": "#/$defs/batch-summary" } },
+    "no_signal": { "$ref": "#/$defs/population-summary" },
+    "excluded": { "$ref": "#/$defs/excluded-summary" },
     "warnings": { "type": "array", "items": { "type": "string" } },
     "duration_ms": { "type": "number", "minimum": 0 },
     "output_directory": { "type": "string" }
@@ -97,6 +99,36 @@
         "candidate_count": { "type": "integer", "minimum": 0 }
       },
       "anyOf": [{ "required": ["issue_ids"] }, { "required": ["issues"] }],
+      "additionalProperties": true
+    },
+    "population-summary": {
+      "type": "object",
+      "required": ["count", "issue_ids"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "issue_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "excluded-summary": {
+      "type": "object",
+      "required": ["count", "by_reason", "issue_ids"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "by_reason": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "issue_ids": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
       "additionalProperties": true
     }
   }

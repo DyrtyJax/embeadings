@@ -189,9 +189,73 @@ def test_load_does_not_expose_malformed_export_content(tmp_path) -> None:
 
     assert snapshot.export_issue_count is None
     assert snapshot.source_warnings == (
-        "A discoverable Beads JSONL export could not be counted safely.",
+        "A discoverable Beads JSONL export could not be inspected safely.",
     )
     assert secret not in str(snapshot)
+
+
+def test_load_warns_when_equal_count_export_has_different_state(tmp_path) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    export_record = {
+        "id": "same-id",
+        "title": "Private export title",
+        "status": "closed",
+        "updated_at": "2026-07-13T00:00:00Z",
+    }
+    (beads_dir / "issues.jsonl").write_text(json.dumps(export_record) + "\n")
+    live_record = {
+        "id": "same-id",
+        "title": "Different private live title",
+        "status": "open",
+        "updated_at": "2026-07-14T00:00:00Z",
+    }
+    runner = FakeRunner(
+        [
+            (0, {"project_id": "project", "beads_dir": str(beads_dir)}, ""),
+            (0, {"version": "1.0.5"}, ""),
+            (0, [live_record], ""),
+        ]
+    )
+
+    snapshot, records = BeadsAdapter(runner=runner).load()
+
+    assert records[0].updated_at == "2026-07-14T00:00:00Z"
+    assert snapshot.live_issue_count == snapshot.export_issue_count == 1
+    assert snapshot.live_source_digest != snapshot.export_source_digest
+    assert snapshot.source_warnings == (
+        "Live Beads data and the discoverable JSONL export have matching issue counts but "
+        "different canonical state digests; live data was used.",
+    )
+    assert "Private" not in str(snapshot)
+
+
+def test_load_accepts_matching_canonical_export_despite_private_text_difference(tmp_path) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    export_record = {
+        "id": "same-id",
+        "title": "Old private title",
+        "status": "open",
+        "updated_at": "2026-07-14T00:00:00Z",
+    }
+    (beads_dir / "issues.jsonl").write_text(json.dumps(export_record) + "\n")
+    live_record = {
+        **export_record,
+        "title": "New private title",
+    }
+    runner = FakeRunner(
+        [
+            (0, {"project_id": "project", "beads_dir": str(beads_dir)}, ""),
+            (0, {"version": "1.0.5"}, ""),
+            (0, [live_record], ""),
+        ]
+    )
+
+    snapshot, _records = BeadsAdapter(runner=runner).load()
+
+    assert snapshot.live_source_digest == snapshot.export_source_digest
+    assert snapshot.source_warnings == ()
 
 
 def test_list_parses_legacy_envelope_and_aliases() -> None:

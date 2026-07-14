@@ -108,13 +108,20 @@ class BeadsAdapter:
         relationship_types = Counter(
             link.relationship_type for issue in issues for link in issue.dependency_links
         )
-        export_count, source_warnings = _export_diagnostics(snapshot.workspace_path, len(issues))
+        live_digest = _canonical_state_digest(issues)
+        export_count, export_digest, source_warnings = _export_diagnostics(
+            snapshot.workspace_path,
+            live_count=len(issues),
+            live_digest=live_digest,
+        )
         snapshot = replace(
             snapshot,
             dependency_count=sum(relationship_types.values()),
             dependency_type_counts=tuple(sorted(relationship_types.items())),
             live_issue_count=len(issues),
             export_issue_count=export_count,
+            live_source_digest=live_digest,
+            export_source_digest=export_digest,
             source_warnings=source_warnings,
         )
         return snapshot, issues
@@ -127,32 +134,73 @@ def _first(payload: Mapping[str, Any], *keys: str) -> Any:
     return None
 
 
+def _canonical_state_digest(records: Sequence[Any]) -> str:
+    markers: list[tuple[str, str, str]] = []
+    for record in records:
+        if isinstance(record, Mapping):
+            identifier = _first(record, "id", "issue_id")
+            status = _first(record, "status")
+            updated_at = _first(record, "updated_at", "updatedAt") or ""
+        else:
+            identifier = getattr(record, "id", None)
+            status = getattr(record, "status", None)
+            updated_at = getattr(record, "updated_at", "") or ""
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise ValueError("state digest record contains no valid ID")
+        if not isinstance(status, str) or not status.strip():
+            raise ValueError("state digest record contains no valid status")
+        if not isinstance(updated_at, str):
+            raise ValueError("state digest record contains an invalid update marker")
+        markers.append((identifier.strip(), status.strip().casefold(), updated_at.strip()))
+    encoded = json.dumps(sorted(markers), separators=(",", ":"), ensure_ascii=True).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _export_diagnostics(
-    workspace_path: str | None, live_count: int
-) -> tuple[int | None, tuple[str, ...]]:
+    workspace_path: str | None,
+    *,
+    live_count: int,
+    live_digest: str,
+) -> tuple[int | None, str | None, tuple[str, ...]]:
     if not workspace_path:
-        return None, ()
+        return None, None, ()
     export_path = Path(workspace_path) / "issues.jsonl"
     if not export_path.is_file():
-        return None, ()
+        return None, None, ()
 
-    count = 0
+    records: list[Mapping[str, Any]] = []
     try:
         with export_path.open(encoding="utf-8") as export:
             for line in export:
                 if not line.strip():
                     continue
-                if not isinstance(json.loads(line), Mapping):
+                record = json.loads(line)
+                if not isinstance(record, Mapping):
                     raise ValueError("export record is not an object")
-                count += 1
+                records.append(record)
+        export_digest = _canonical_state_digest(records)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
-        return None, ("A discoverable Beads JSONL export could not be counted safely.",)
+        return None, None, ("A discoverable Beads JSONL export could not be inspected safely.",)
 
+    count = len(records)
     if count == live_count:
-        return count, ()
-    return count, (
-        f"Live Beads data contains {live_count} issues while the discoverable JSONL export "
-        f"contains {count}; live data was used.",
+        if export_digest == live_digest:
+            return count, export_digest, ()
+        return (
+            count,
+            export_digest,
+            (
+                "Live Beads data and the discoverable JSONL export have matching issue counts but "
+                "different canonical state digests; live data was used.",
+            ),
+        )
+    return (
+        count,
+        export_digest,
+        (
+            f"Live Beads data contains {live_count} issues while the discoverable JSONL export "
+            f"contains {count}; live data was used.",
+        ),
     )
 
 
@@ -295,4 +343,5 @@ def _parse_issue(raw: Any) -> IssueRecord:
         ),
         design=_optional_string(raw, "design", "design_notes"),
         notes=_optional_string(raw, "notes", "current_notes"),
+        updated_at=_optional_string(raw, "updated_at", "updatedAt"),
     )

@@ -49,6 +49,10 @@ the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings cou
 without copying their contents; a count mismatch is reported through `source_warnings` and the
 sweep warning list. Consumers must not substitute a stale export for the live snapshot.
 
+Equal issue counts do not prove that an export is current. The producer also records canonical
+SHA-256 state digests over issue ID, normalized status, and update marker—never titles or body text.
+Different live/export digests produce a non-content warning even when record counts match.
+
 ## Capability handshake
 
 An optional dispatcher or UI should exchange a capability document before consuming artifacts. The

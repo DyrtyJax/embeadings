@@ -38,6 +38,7 @@ class IssueRecord:
     acceptance_criteria: str = ""
     design: str = ""
     notes: str = ""
+    updated_at: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,8 @@ class WorkspaceSnapshot:
     acquisition_source: str = "live-beads-cli"
     live_issue_count: int | None = None
     export_issue_count: int | None = None
+    live_source_digest: str | None = None
+    export_source_digest: str | None = None
     source_warnings: tuple[str, ...] = field(default_factory=tuple)
 
 

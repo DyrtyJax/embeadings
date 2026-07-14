@@ -108,10 +108,14 @@ class BeadsAdapter:
         relationship_types = Counter(
             link.relationship_type for issue in issues for link in issue.dependency_links
         )
+        export_count, source_warnings = _export_diagnostics(snapshot.workspace_path, len(issues))
         snapshot = replace(
             snapshot,
             dependency_count=sum(relationship_types.values()),
             dependency_type_counts=tuple(sorted(relationship_types.items())),
+            live_issue_count=len(issues),
+            export_issue_count=export_count,
+            source_warnings=source_warnings,
         )
         return snapshot, issues
 
@@ -121,6 +125,35 @@ def _first(payload: Mapping[str, Any], *keys: str) -> Any:
         if key in payload and payload[key] is not None:
             return payload[key]
     return None
+
+
+def _export_diagnostics(
+    workspace_path: str | None, live_count: int
+) -> tuple[int | None, tuple[str, ...]]:
+    if not workspace_path:
+        return None, ()
+    export_path = Path(workspace_path) / "issues.jsonl"
+    if not export_path.is_file():
+        return None, ()
+
+    count = 0
+    try:
+        with export_path.open(encoding="utf-8") as export:
+            for line in export:
+                if not line.strip():
+                    continue
+                if not isinstance(json.loads(line), Mapping):
+                    raise ValueError("export record is not an object")
+                count += 1
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return None, ("A discoverable Beads JSONL export could not be counted safely.",)
+
+    if count == live_count:
+        return count, ()
+    return count, (
+        f"Live Beads data contains {live_count} issues while the discoverable JSONL export "
+        f"contains {count}; live data was used.",
+    )
 
 
 def _issue_list(payload: Any) -> list[Any]:

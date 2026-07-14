@@ -142,6 +142,58 @@ def test_load_reports_relationship_counts_in_snapshot() -> None:
     )
 
 
+def test_load_warns_when_discoverable_export_is_stale(tmp_path) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    (beads_dir / "issues.jsonl").write_text(
+        json.dumps({"id": "export-only", "title": "Synthetic", "status": "open"}) + "\n"
+    )
+    live = [
+        {"id": "live-1", "title": "One", "status": "open"},
+        {"id": "live-2", "title": "Two", "status": "closed"},
+    ]
+    runner = FakeRunner(
+        [
+            (0, {"project_id": "project", "beads_dir": str(beads_dir)}, ""),
+            (0, {"version": "1.0.5"}, ""),
+            (0, live, ""),
+        ]
+    )
+
+    snapshot, records = BeadsAdapter(runner=runner).load()
+
+    assert len(records) == 2
+    assert snapshot.acquisition_source == "live-beads-cli"
+    assert snapshot.live_issue_count == 2
+    assert snapshot.export_issue_count == 1
+    assert snapshot.source_warnings == (
+        "Live Beads data contains 2 issues while the discoverable JSONL export contains 1; "
+        "live data was used.",
+    )
+
+
+def test_load_does_not_expose_malformed_export_content(tmp_path) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    secret = "customer-secret-never-report"
+    (beads_dir / "issues.jsonl").write_text(f"not-json-{secret}\n")
+    runner = FakeRunner(
+        [
+            (0, {"project_id": "project", "beads_dir": str(beads_dir)}, ""),
+            (0, {"version": "1.0.5"}, ""),
+            (0, [{"id": "live", "title": "Live", "status": "open"}], ""),
+        ]
+    )
+
+    snapshot, _records = BeadsAdapter(runner=runner).load()
+
+    assert snapshot.export_issue_count is None
+    assert snapshot.source_warnings == (
+        "A discoverable Beads JSONL export could not be counted safely.",
+    )
+    assert secret not in str(snapshot)
+
+
 def test_list_parses_legacy_envelope_and_aliases() -> None:
     runner = FakeRunner(
         [

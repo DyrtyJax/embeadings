@@ -411,7 +411,7 @@ def _sweep(args: argparse.Namespace) -> int:
         }
         for item in manifests
     ]
-    ranking_warnings = []
+    ranking_warnings = list(snapshot.source_warnings)
     if ranking.dropped_by_issue_cap:
         ranking_warnings.append(
             f"Per-issue candidate cap omitted {ranking.dropped_by_issue_cap} qualified pairs."

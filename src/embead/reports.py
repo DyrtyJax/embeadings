@@ -146,16 +146,20 @@ def _anchor_metrics(evidence: Iterable[Any]) -> dict[str, Any]:
 
     items = list(evidence)
     confidence = {"high": 0, "medium": 0, "low": 0}
+    specificity = {"concrete-check": 0, "category-check": 0, "generic": 0}
     generic_fallback_count = 0
     for item in items:
         anchor = _field(item, "verification_anchor", default={}) or {}
         level = str(_field(anchor, "confidence", default="low"))
         confidence[level if level in confidence else "low"] += 1
+        tier = str(_field(anchor, "specificity", default="generic"))
+        specificity[tier if tier in specificity else "generic"] += 1
         generic_fallback_count += bool(_field(anchor, "generic_fallback", default=True))
     total = len(items)
     return {
         "total": total,
         "confidence": confidence,
+        "specificity": specificity,
         "generic_fallback_count": generic_fallback_count,
         "generic_fallback_rate": round(generic_fallback_count / total, 4) if total else 0.0,
     }
@@ -505,6 +509,20 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
         dependency = _dependency_text(item)
         if dependency:
             detail.append(f"- Typed dependency: {_escape(dependency)}")
+        candidate_evidence = _field(item, "candidate_evidence", default={}) or {}
+        anchor = _field(item, "verification_anchor", default={}) or {}
+        detail.extend(
+            [
+                "- Evidence basis: "
+                + _escape(_field(candidate_evidence, "evidence_basis", default="not recorded")),
+                "- Structural corroboration: "
+                + _escape(
+                    _field(candidate_evidence, "structural_corroboration", default="not recorded")
+                ),
+                "- Verification specificity: "
+                + _escape(_field(anchor, "specificity", default="not recorded")),
+            ]
+        )
         detail.extend(
             [
                 "- Counterevidence: " + _escape(_counterevidence_text(item)),
@@ -581,6 +599,11 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         + str(_field(anchor_metrics, "generic_fallback_count", default=0))
         + " / "
         + str(_field(anchor_metrics, "total", default=len(candidates))),
+        "- Verification specificity: "
+        + ", ".join(
+            f"{tier}={count}"
+            for tier, count in (_field(anchor_metrics, "specificity", default={}) or {}).items()
+        ),
         "",
     ]
     if review_budget:
@@ -696,6 +719,20 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         dependency = _dependency_text(item)
         if dependency:
             detail.append(f"- Typed dependency: {_escape(dependency)}")
+        candidate_evidence = _field(item, "candidate_evidence", default={}) or {}
+        anchor = _field(item, "verification_anchor", default={}) or {}
+        detail.extend(
+            [
+                "- Evidence basis: "
+                + _escape(_field(candidate_evidence, "evidence_basis", default="not recorded")),
+                "- Structural corroboration: "
+                + _escape(
+                    _field(candidate_evidence, "structural_corroboration", default="not recorded")
+                ),
+                "- Verification specificity: "
+                + _escape(_field(anchor, "specificity", default="not recorded")),
+            ]
+        )
         detail.extend(
             [
                 "- Counterevidence: " + _escape(_counterevidence_text(item)),

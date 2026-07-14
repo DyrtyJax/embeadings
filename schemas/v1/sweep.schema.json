@@ -115,6 +115,16 @@
           },
           "additionalProperties": false
         },
+        "specificity": {
+          "type": "object",
+          "required": ["concrete-check", "category-check", "generic"],
+          "properties": {
+            "concrete-check": { "type": "integer", "minimum": 0 },
+            "category-check": { "type": "integer", "minimum": 0 },
+            "generic": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
         "generic_fallback_count": { "type": "integer", "minimum": 0 },
         "generic_fallback_rate": { "type": "number", "minimum": 0, "maximum": 1 }
       },
@@ -142,6 +152,9 @@
             "entity": { "type": "string", "minLength": 1 },
             "outcome_or_invariant": { "type": "string", "minLength": 1 },
             "confidence": { "enum": ["high", "medium", "low"] },
+            "extraction_confidence": { "enum": ["high", "medium", "low"] },
+            "confidence_scope": { "const": "anchor-extraction" },
+            "specificity": { "enum": ["concrete-check", "category-check", "generic"] },
             "generic_fallback": { "type": "boolean" }
           },
           "additionalProperties": true
@@ -154,6 +167,17 @@
             "type": { "type": "string", "minLength": 1 }
           },
           "required": ["source_id", "target_id", "type"],
+          "additionalProperties": false
+        },
+        "candidate_evidence": {
+          "type": "object",
+          "required": ["evidence_basis", "structural_corroboration", "admission_path", "uncertainty"],
+          "properties": {
+            "evidence_basis": { "enum": ["semantic-only", "structurally-corroborated"] },
+            "structural_corroboration": { "enum": ["none", "shared-parent", "typed-dependency"] },
+            "admission_path": { "enum": ["semantic-threshold", "shared-parent-threshold-exception", "dependency-threshold-exception", "reciprocal-neighbor-threshold-exception"] },
+            "uncertainty": { "enum": ["no-structural-corroboration", "structural-corroboration-recorded"] }
+          },
           "additionalProperties": false
         },
         "what_to_verify": { "type": "string", "minLength": 1 },

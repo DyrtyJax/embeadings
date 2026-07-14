@@ -108,6 +108,36 @@ _INVARIANT_TERMS = frozenset(
 _IMPLEMENTATION_TERMS = frozenset(
     {"architecture", "backend", "configure", "design", "implement", "implementation", "provider"}
 )
+_CONCRETE_CHECK_TERMS = frozenset(
+    {
+        "acceptance",
+        "assert",
+        "contract",
+        "ensure",
+        "invariant",
+        "must",
+        "never",
+        "prevent",
+        "regression",
+        "requirement",
+        "test",
+        "verify",
+    }
+)
+# These safe pairs often describe a work category without identifying a fact, test, or invariant.
+# Keep them useful as extraction diagnostics, but abstain from dressing them up as specific checks.
+_BROAD_ANCHOR_PAIRS = frozenset(
+    {
+        ("analyze", "issue"),
+        ("analyze", "workflow"),
+        ("create", "artifact"),
+        ("create", "issue"),
+        ("document", "API"),
+        ("document", "interface"),
+        ("document", "issue"),
+        ("document", "workflow"),
+    }
+)
 
 
 def _tokens(value: str) -> frozenset[str]:
@@ -327,6 +357,15 @@ def _verification_anchor(
         if not generic_fallback
         else "low"
     )
+    has_concrete_language = bool(source_tokens & _CONCRETE_CHECK_TERMS)
+    broad_pair = (operation, entity) in _BROAD_ANCHOR_PAIRS
+    specificity = (
+        "generic"
+        if generic_fallback or (broad_pair and not has_concrete_language)
+        else "concrete-check"
+        if source_field == "acceptance criteria" and (pair_corroborated or category_corroborated)
+        else "category-check"
+    )
     return {
         "category": category,
         "outcome_or_invariant": category,
@@ -336,6 +375,9 @@ def _verification_anchor(
         "entity": entity,
         "source_field": source_field,
         "confidence": confidence,
+        "extraction_confidence": confidence,
+        "confidence_scope": "anchor-extraction",
+        "specificity": specificity,
         "generic_fallback": generic_fallback,
     }
 
@@ -361,21 +403,24 @@ def explain_candidate(
         f"lifecycle contrast: {lifecycle}; structure: {structural_context}."
     )
 
-    anchor_text = (
-        f"{anchor['category']} — {anchor['operation']} {anchor['entity_class']} "
-        f"(derived from {anchor['source_field']})"
-    )
+    if anchor["specificity"] == "generic":
+        anchor_text = "a generic local comparison; inspect the recorded acceptance conditions"
+    else:
+        anchor_text = (
+            f"{anchor['category']} — {anchor['operation']} {anchor['entity_class']} "
+            f"(derived from {anchor['source_field']})"
+        )
     if kind == "completed-work-echo":
         verify = (
-            f"Verify this locally derived contract anchor: {anchor_text}. Confirm whether the "
-            f"delivered outcome of closed issue {right.id} already satisfies active issue "
-            f"{left.id}."
+            f"Use this privacy-safe review anchor: {anchor_text}. Inspect whether verified "
+            f"completion evidence for closed issue {right.id} changes the remaining scope of "
+            f"active issue {left.id}; semantic similarity alone does not establish that it does."
         )
     else:
         verify = (
-            f"Verify this locally derived contract anchor: {anchor_text}. Compare the acceptance "
-            f"conditions of {left.id} and {right.id} to determine whether the anchored "
-            "outcomes differ."
+            f"Use this privacy-safe review anchor: {anchor_text}. Compare the recorded acceptance "
+            f"conditions of {left.id} and {right.id}; similarity alone does not establish a "
+            "shared contract or outcome."
         )
     return {
         "pattern": pattern,

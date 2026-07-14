@@ -38,13 +38,24 @@ Candidate evidence includes a `verification_anchor` derived locally through dete
 field-aware extraction into a finite safe output vocabulary. `action`/`operation`,
 `entity`/`entity_class`, `outcome_or_invariant`/`category`, and `source_field` identify the normalized
 contract to inspect without copying arbitrary issue terms. The paired names preserve version 1
-consumer compatibility while making the structured meaning explicit. `confidence` is `high` only
-when the selected field supplies both action and entity and the outcome category is corroborated;
-`generic_fallback` identifies anchors that could not safely resolve both. The report-level
-`anchor_metrics` summarizes confidence counts and fallback rate without examining or repeating
-private content. Transferred ownership requires ownership evidence in both records. Consumers must
+consumer compatibility while making the structured meaning explicit. `confidence` is retained as
+an extraction diagnostic and mirrored as `extraction_confidence`; `confidence_scope` makes that
+limited meaning explicit. It is `high` only when the selected field supplies both action and entity
+and the outcome category is corroborated; `generic_fallback` identifies anchors that could not
+safely resolve both. The independent `specificity` tier is `concrete-check`, `category-check`, or
+`generic`; broad category language can therefore be generic even when extraction succeeds. Generic
+verification wording abstains from a concrete claim. The report-level `anchor_metrics` summarizes
+extraction confidence, specificity, and fallback separately without examining or repeating private
+content. Transferred ownership requires ownership evidence in both records. Consumers must
 still treat every anchor as advisory and inspect the private source records locally before reaching
 a conclusion.
+
+`candidate_evidence` describes relationship uncertainty separately from anchor extraction. Its
+`evidence_basis` distinguishes `semantic-only` from `structurally-corroborated`, while
+`structural_corroboration`, `admission_path`, and `uncertainty` preserve direct-threshold,
+reciprocal-neighbor, shared-parent, and typed-dependency paths. Reciprocal evidence is semantic-only;
+an exception never implies greater certainty than direct semantic evidence. Verification wording
+must not claim a shared contract, outcome, or completed effect from similarity alone.
 
 Sweep `parameters.candidate_policy` also records independent `dependency`, `echo`, and `overlap`
 lane caps and metrics. Consumers should use each lane's `qualified`, `admitted`, and drop counts when

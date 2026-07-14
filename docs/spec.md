@@ -233,6 +233,13 @@ strongest contributing canonical fields, lifecycle contrast, structural relation
 counterevidence. Generic class-level prompts may supplement this evidence but cannot be the only
 explanation.
 
+Anchor extraction confidence, verification specificity, and candidate relationship uncertainty are
+separate signals. Reports retain finite-vocabulary anchors and label specificity as a concrete check,
+category check, or generic. Candidate evidence identifies semantic-only pairs with no structural
+corroboration and preserves direct-threshold, reciprocal, shared-parent, and typed-dependency
+admission paths. Neither semantic similarity nor an exception path may assert a shared contract or
+completed outcome.
+
 ### Similarity performance
 
 Providers return validated normalized vectors. Analysis must avoid renormalizing the same vector for

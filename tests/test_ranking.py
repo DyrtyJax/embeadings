@@ -56,6 +56,12 @@ def test_shared_parent_admits_bounded_threshold_exception() -> None:
     assert len(result.candidates) == 1
     assert result.candidates[0]["admission_reason"] == "shared-parent-threshold-exception"
     assert result.candidates[0]["structural_context"] == "same parent P"
+    assert result.candidates[0]["candidate_evidence"] == {
+        "evidence_basis": "structurally-corroborated",
+        "structural_corroboration": "shared-parent",
+        "admission_path": "shared-parent-threshold-exception",
+        "uncertainty": "structural-corroboration-recorded",
+    }
 
 
 def test_dependency_admits_bounded_threshold_exception() -> None:
@@ -64,6 +70,36 @@ def test_dependency_admits_bounded_threshold_exception() -> None:
     result = rank_candidates(issues, issues, Scores({("A", "B"): 0.71}), policy())
 
     assert result.candidates[0]["admission_reason"] == "dependency-threshold-exception"
+    assert result.candidates[0]["candidate_evidence"]["structural_corroboration"] == (
+        "typed-dependency"
+    )
+
+
+def test_direct_and_reciprocal_semantic_candidates_expose_no_structural_corroboration() -> None:
+    issues = [
+        issue("A", title="Cache report", description="Preserve report checksum evidence"),
+        issue("B", title="Cache report", description="Preserve report checksum evidence"),
+    ]
+    direct = rank_candidates(issues, issues, Scores({("A", "B"): 0.85}), policy())
+    reciprocal = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.75}),
+        policy(reciprocal_rank=1),
+    )
+
+    assert direct.candidates[0]["candidate_evidence"] == {
+        "evidence_basis": "semantic-only",
+        "structural_corroboration": "none",
+        "admission_path": "semantic-threshold",
+        "uncertainty": "no-structural-corroboration",
+    }
+    assert reciprocal.candidates[0]["candidate_evidence"]["admission_path"] == (
+        "reciprocal-neighbor-threshold-exception"
+    )
+    assert reciprocal.candidates[0]["candidate_evidence"]["uncertainty"] == (
+        "no-structural-corroboration"
+    )
 
 
 def test_typed_dependency_preserves_direction_and_type_in_context() -> None:

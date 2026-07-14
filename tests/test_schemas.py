@@ -41,7 +41,16 @@ EVIDENCE = {
         "entity_class": "report",
         "source_field": "acceptance criteria",
         "confidence": "high",
+        "extraction_confidence": "high",
+        "confidence_scope": "anchor-extraction",
+        "specificity": "concrete-check",
         "generic_fallback": False,
+    },
+    "candidate_evidence": {
+        "evidence_basis": "structurally-corroborated",
+        "structural_corroboration": "shared-parent",
+        "admission_path": "semantic-threshold",
+        "uncertainty": "structural-corroboration-recorded",
     },
     "what_to_verify": "Confirm whether completed work changed the active scope.",
     "counterevidence": ["no direct dependency is recorded"],
@@ -107,6 +116,7 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
     assert payloads["sweep"]["anchor_metrics"] == {
         "total": 1,
         "confidence": {"high": 1, "medium": 0, "low": 0},
+        "specificity": {"concrete-check": 1, "category-check": 0, "generic": 0},
         "generic_fallback_count": 0,
         "generic_fallback_rate": 0.0,
     }

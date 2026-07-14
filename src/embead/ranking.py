@@ -520,6 +520,16 @@ def _qualify(
         if kind == "completed-work-echo"
         else "Compare intended outcomes; similar context may still mean different scope."
     )
+    structural_corroboration = (
+        "typed-dependency"
+        if relationship is not None
+        else "shared-parent"
+        if context.startswith("same parent ")
+        else "none"
+    )
+    evidence_basis = (
+        "structurally-corroborated" if structural_corroboration != "none" else "semantic-only"
+    )
     return {
         "kind": kind,
         "lane": lane,
@@ -530,6 +540,16 @@ def _qualify(
         "dependency_evidence": relationship,
         "admission_reason": admission_reason,
         "signal_quality": signal_quality,
+        "candidate_evidence": {
+            "evidence_basis": evidence_basis,
+            "structural_corroboration": structural_corroboration,
+            "admission_path": admission_reason,
+            "uncertainty": (
+                "structural-corroboration-recorded"
+                if evidence_basis == "structurally-corroborated"
+                else "no-structural-corroboration"
+            ),
+        },
         "reciprocal_ranks": {"issue": left_rank, "related_issue": right_rank},
         "counterevidence": counterevidence,
         "what_to_verify": what_to_verify,

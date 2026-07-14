@@ -30,7 +30,7 @@ def test_completed_echo_names_fields_lifecycle_and_contract() -> None:
     assert "title" in result["why_surfaced"]
     assert "open to closed" in result["why_surfaced"]
     assert "demo-active" in result["what_to_verify"]
-    assert "delivered outcome" in result["what_to_verify"]
+    assert "semantic similarity alone" in result["what_to_verify"]
     assert result["verification_anchor"] == {
         "category": "completed outcome",
         "outcome_or_invariant": "completed outcome",
@@ -40,6 +40,9 @@ def test_completed_echo_names_fields_lifecycle_and_contract() -> None:
         "entity": "session",
         "source_field": "title",
         "confidence": "high",
+        "extraction_confidence": "high",
+        "confidence_scope": "anchor-extraction",
+        "specificity": "category-check",
         "generic_fallback": False,
     }
     assert result["counterevidence"] == ["no structural relationship is recorded"]
@@ -221,3 +224,65 @@ def test_evaluation_shaped_fixture_materially_reduces_generic_fallbacks() -> Non
     assert sum(anchor["generic_fallback"] for anchor in anchors) <= 10
     assert not any(anchor["operation"] == "satisfy" for anchor in anchors)
     assert not any(anchor["entity_class"] == "system behavior" for anchor in anchors)
+
+
+def test_specificity_is_separate_from_extraction_fallback() -> None:
+    concrete = explain_candidate(
+        issue(
+            "specific-a",
+            title="Validate dependency",
+            acceptance_criteria="Must validate dependency invariant in a test",
+        ),
+        issue(
+            "specific-b",
+            title="Validate dependency",
+            acceptance_criteria="Must validate dependency invariant in a test",
+        ),
+        kind="possible-overlap",
+        similarity=0.9,
+        structural_context="none recorded",
+    )["verification_anchor"]
+    category = explain_candidate(
+        issue("category-a", title="Configure cache backend", acceptance_criteria=""),
+        issue("category-b", title="Configure cache backend", acceptance_criteria=""),
+        kind="possible-overlap",
+        similarity=0.9,
+        structural_context="none recorded",
+    )["verification_anchor"]
+    broad = explain_candidate(
+        issue("broad-a", title="Review workflow", acceptance_criteria=""),
+        issue("broad-b", title="Review workflow", acceptance_criteria=""),
+        kind="possible-overlap",
+        similarity=0.9,
+        structural_context="none recorded",
+    )["verification_anchor"]
+
+    assert concrete["specificity"] == "concrete-check"
+    assert category["specificity"] == "category-check"
+    assert broad["specificity"] == "generic"
+    assert broad["generic_fallback"] is False
+    assert broad["confidence_scope"] == "anchor-extraction"
+
+
+def test_generic_anchor_abstains_from_concrete_claims() -> None:
+    result = explain_candidate(
+        issue(
+            "generic-a",
+            title="Discuss miscellaneous work",
+            description="",
+            acceptance_criteria="",
+        ),
+        issue(
+            "generic-b",
+            title="Discuss miscellaneous work",
+            description="",
+            acceptance_criteria="",
+        ),
+        kind="completed-work-echo",
+        similarity=0.9,
+        structural_context="none recorded",
+    )
+
+    assert result["verification_anchor"]["specificity"] == "generic"
+    assert "generic local comparison" in result["what_to_verify"]
+    assert "shared contract" not in result["what_to_verify"]

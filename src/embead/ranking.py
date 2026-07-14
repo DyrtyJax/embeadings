@@ -35,6 +35,7 @@ class CandidatePolicy:
     exception_margin: float = 0.08
     reciprocal_rank: int = 5
     max_per_issue: int = 3
+    max_dependencies_per_issue: int = 3
     max_total: int = 250
     max_dependencies: int = 75
     max_echoes: int = 125
@@ -57,6 +58,8 @@ class CandidatePolicy:
             raise ValueError("reciprocal rank cannot be negative")
         if self.max_per_issue < 1:
             raise ValueError("per-issue candidate cap must be positive")
+        if self.max_dependencies_per_issue < 0:
+            raise ValueError("per-issue dependency candidate cap cannot be negative")
         if self.max_total < 1:
             raise ValueError("run candidate cap must be positive")
         if any(value < 0 for value in self.lane_caps.values()):
@@ -78,6 +81,7 @@ class LaneMetrics:
     baseline_protected: int = 0
     dropped_by_lane_cap: int = 0
     dropped_by_issue_cap: int = 0
+    dropped_by_dependency_issue_cap: int = 0
     dropped_by_run_cap: int = 0
 
 
@@ -90,6 +94,8 @@ class CandidateRanking:
     lanes: dict[str, LaneMetrics] | None = None
     baseline_protected: int = 0
     dropped_by_lane_cap: int = 0
+    dropped_by_dependency_issue_cap: int = 0
+    capped_typed_dependencies: tuple[dict[str, str], ...] = ()
 
 
 def rank_candidates(
@@ -234,7 +240,8 @@ def _select_candidates(
     additions = [item for item in requested if _candidate_identity(item) not in baseline_keys]
     stages = ((baseline_stage, True), (additions, False)) if baseline else ((requested, False),)
 
-    counts: dict[str, int] = defaultdict(int)
+    semantic_counts: dict[str, int] = defaultdict(int)
+    dependency_counts: dict[str, int] = defaultdict(int)
     lane_counts: dict[str, int] = defaultdict(int)
     metrics: dict[str, dict[str, int]] = {
         lane: {
@@ -243,11 +250,13 @@ def _select_candidates(
             "baseline_protected": 0,
             "dropped_by_lane_cap": 0,
             "dropped_by_issue_cap": 0,
+            "dropped_by_dependency_issue_cap": 0,
             "dropped_by_run_cap": 0,
         }
         for lane in LANES
     }
     accepted: list[dict[str, Any]] = []
+    capped_typed_dependencies: list[dict[str, str]] = []
     seen_issues_by_kind: set[tuple[str, str]] = set()
     for candidates, protected in stages:
         for candidate in sorted(candidates, key=_ranking_key):
@@ -256,13 +265,29 @@ def _select_candidates(
             values["qualified"] += 1
             if lane_counts[lane] >= policy.lane_caps[lane]:
                 values["dropped_by_lane_cap"] += 1
+                _record_capped_dependency(capped_typed_dependencies, candidate, "lane-cap")
                 continue
             if len(accepted) >= policy.max_total:
                 values["dropped_by_run_cap"] += 1
+                _record_capped_dependency(capped_typed_dependencies, candidate, "run-cap")
                 continue
             left_id = candidate["issue_id"]
             right_id = candidate["related_issue_id"]
-            if counts[left_id] >= policy.max_per_issue or counts[right_id] >= policy.max_per_issue:
+            if lane == "dependency":
+                if (
+                    dependency_counts[left_id] >= policy.max_dependencies_per_issue
+                    or dependency_counts[right_id] >= policy.max_dependencies_per_issue
+                ):
+                    values["dropped_by_issue_cap"] += 1
+                    values["dropped_by_dependency_issue_cap"] += 1
+                    _record_capped_dependency(
+                        capped_typed_dependencies, candidate, "dependency-per-issue-cap"
+                    )
+                    continue
+            elif (
+                semantic_counts[left_id] >= policy.max_per_issue
+                or semantic_counts[right_id] >= policy.max_per_issue
+            ):
                 values["dropped_by_issue_cap"] += 1
                 continue
             # Keep the established one-echo-per-active-record invariant even
@@ -277,8 +302,12 @@ def _select_candidates(
                 continue
             admitted = {**candidate, "baseline_protected": protected}
             accepted.append(admitted)
-            counts[left_id] += 1
-            counts[right_id] += 1
+            if lane == "dependency":
+                dependency_counts[left_id] += 1
+                dependency_counts[right_id] += 1
+            else:
+                semantic_counts[left_id] += 1
+                semantic_counts[right_id] += 1
             lane_counts[lane] += 1
             if candidate["lane"] == "echo":
                 seen_issues_by_kind.add(kind_issue)
@@ -294,6 +323,28 @@ def _select_candidates(
         lanes=lane_metrics,
         baseline_protected=sum(values.baseline_protected for values in lane_metrics.values()),
         dropped_by_lane_cap=sum(values.dropped_by_lane_cap for values in lane_metrics.values()),
+        dropped_by_dependency_issue_cap=sum(
+            values.dropped_by_dependency_issue_cap for values in lane_metrics.values()
+        ),
+        capped_typed_dependencies=tuple(capped_typed_dependencies),
+    )
+
+
+def _record_capped_dependency(
+    summary: list[dict[str, str]], candidate: dict[str, Any], reason: str
+) -> None:
+    """Record bounded structural context without promoting it to a candidate."""
+
+    evidence = candidate.get("dependency_evidence")
+    if not isinstance(evidence, dict):
+        return
+    summary.append(
+        {
+            "source_id": str(evidence["source_id"]),
+            "target_id": str(evidence["target_id"]),
+            "type": str(evidence["type"]),
+            "drop_reason": reason,
+        }
     )
 
 

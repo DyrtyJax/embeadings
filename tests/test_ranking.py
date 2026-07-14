@@ -240,6 +240,7 @@ def test_policy_rejects_unbounded_or_invalid_controls() -> None:
         policy(reciprocal_rank=-1),
         policy(exception_margin=-0.1),
         policy(max_dependencies=-1),
+        policy(max_dependencies_per_issue=-1),
     ):
         try:
             rank_candidates(issues, issues, Scores({}), bad_policy)
@@ -306,6 +307,88 @@ def test_multiple_completed_dependency_edges_are_not_collapsed_into_one_echo() -
     assert {
         (item["issue_id"], item["related_issue_id"], item["lane"]) for item in result.candidates
     } == {("A", "X", "dependency"), ("A", "Y", "dependency")}
+
+
+def test_dependency_per_issue_allowance_is_independent_and_summarizes_capped_edges() -> None:
+    """Reproduce the observed dependency-hub loss at a small 3-of-5 scale."""
+
+    hub = IssueRecord(
+        id="A",
+        title="dependency hub",
+        status="open",
+        dependency_links=tuple(DependencyLink("A", target, "blocks") for target in "BCDEF"),
+    )
+    issues = [hub, *(issue(identifier) for identifier in "BCDEFG")]
+    scores = Scores(
+        {
+            **{("A", target): 0.9 - index / 100 for index, target in enumerate("BCDEF")},
+            ("A", "G"): 0.99,
+        }
+    )
+
+    result = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(
+            max_per_issue=1,
+            max_dependencies_per_issue=2,
+            max_dependencies=10,
+            max_overlaps=10,
+        ),
+    )
+
+    assert [item["lane"] for item in result.candidates].count("dependency") == 2
+    assert any(item["lane"] == "overlap" and item["issue_id"] == "A" for item in result.candidates)
+    assert result.lanes["dependency"].dropped_by_dependency_issue_cap == 3
+    assert result.dropped_by_dependency_issue_cap == 3
+    assert result.capped_typed_dependencies == (
+        {
+            "source_id": "A",
+            "target_id": "D",
+            "type": "blocks",
+            "drop_reason": "dependency-per-issue-cap",
+        },
+        {
+            "source_id": "A",
+            "target_id": "E",
+            "type": "blocks",
+            "drop_reason": "dependency-per-issue-cap",
+        },
+        {
+            "source_id": "A",
+            "target_id": "F",
+            "type": "blocks",
+            "drop_reason": "dependency-per-issue-cap",
+        },
+    )
+
+
+def test_all_typed_dependency_cap_reasons_are_summarized() -> None:
+    issues = [issue("A", dependencies=("B", "C")), issue("B"), issue("C")]
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.9, ("A", "C"): 0.8}),
+        policy(max_dependencies=1, max_dependencies_per_issue=5),
+    )
+
+    assert result.capped_typed_dependencies == (
+        {
+            "source_id": "A",
+            "target_id": "C",
+            "type": "depends-on",
+            "drop_reason": "lane-cap",
+        },
+    )
+
+    run_capped = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.9, ("A", "C"): 0.8}),
+        policy(max_total=1, max_dependencies=5, max_dependencies_per_issue=5),
+    )
+    assert run_capped.capped_typed_dependencies[0]["drop_reason"] == "run-cap"
 
 
 def test_sensitivity_run_preserves_baseline_queue_under_caps() -> None:

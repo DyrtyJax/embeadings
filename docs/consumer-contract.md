@@ -43,6 +43,9 @@ Sweep `parameters.candidate_policy` also records independent `dependency`, `echo
 lane caps and metrics. Consumers should use each lane's `qualified`, `admitted`, and drop counts when
 explaining queue volume. `baseline_protected` identifies default-threshold candidates selected first
 during a lower-threshold sensitivity run; it is evidence about ranking stability, not tracker truth.
+Typed dependencies have a separate per-issue allowance, so semantic candidates cannot consume their
+capacity. Qualified typed edges omitted by a per-issue, lane, or run cap remain available in
+`capped_typed_dependencies` as compact structural context; these entries are not review candidates.
 
 Snapshot metadata identifies `live-beads-cli` as the authoritative acquisition source and records
 the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings counts its records

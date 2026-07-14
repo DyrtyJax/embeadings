@@ -60,6 +60,7 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema_version"] == 1
     assert payload["parameters"]["candidate_policy"]["max_per_issue"] == 3
+    assert payload["parameters"]["candidate_policy"]["max_dependencies_per_issue"] == 3
     assert payload["parameters"]["candidate_policy"]["max_total"] == 250
     assert payload["parameters"]["candidate_policy"]["lane_caps"] == {
         "dependency": 75,
@@ -71,6 +72,7 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
         "echo",
         "overlap",
     }
+    assert payload["capped_typed_dependencies"] == []
     assert payload["batches"] == []
     assert payload["no_signal"] == {"count": 2, "issue_ids": ["demo-1", "demo-3"]}
     assert set(payload["timings_ms"]) == {

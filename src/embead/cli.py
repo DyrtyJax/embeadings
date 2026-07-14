@@ -109,6 +109,12 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
         help="Admit near-threshold pairs that mutually rank within this depth (0 disables)",
     )
     parser.add_argument("--max-candidates-per-issue", type=int, default=3)
+    parser.add_argument(
+        "--max-dependency-candidates-per-issue",
+        type=int,
+        default=3,
+        help="Independent per-issue allowance for typed dependency candidates",
+    )
     parser.add_argument("--max-candidates", type=int, default=250)
     parser.add_argument(
         "--max-dependency-candidates",
@@ -260,6 +266,7 @@ def _candidate_evidence(
     exception_margin: float = 0.08,
     reciprocal_rank: int = 5,
     max_candidates_per_issue: int = 3,
+    max_dependency_candidates_per_issue: int = 3,
     max_candidates: int = 250,
     max_dependency_candidates: int = 75,
     max_echo_candidates: int = 125,
@@ -275,6 +282,7 @@ def _candidate_evidence(
             exception_margin=exception_margin,
             reciprocal_rank=reciprocal_rank,
             max_per_issue=max_candidates_per_issue,
+            max_dependencies_per_issue=max_dependency_candidates_per_issue,
             max_total=max_candidates,
             max_dependencies=max_dependency_candidates,
             max_echoes=max_echo_candidates,
@@ -306,6 +314,8 @@ def _candidate_evidence(
         lanes=ranking.lanes,
         baseline_protected=ranking.baseline_protected,
         dropped_by_lane_cap=ranking.dropped_by_lane_cap,
+        dropped_by_dependency_issue_cap=ranking.dropped_by_dependency_issue_cap,
+        capped_typed_dependencies=ranking.capped_typed_dependencies,
     )
 
 
@@ -318,6 +328,7 @@ def _sweep(args: argparse.Namespace) -> int:
         exception_margin=args.exception_margin,
         reciprocal_rank=args.reciprocal_rank,
         max_per_issue=args.max_candidates_per_issue,
+        max_dependencies_per_issue=args.max_dependency_candidates_per_issue,
         max_total=args.max_candidates,
         max_dependencies=args.max_dependency_candidates,
         max_echoes=args.max_echo_candidates,
@@ -356,6 +367,7 @@ def _sweep(args: argparse.Namespace) -> int:
         exception_margin=args.exception_margin,
         reciprocal_rank=args.reciprocal_rank,
         max_candidates_per_issue=args.max_candidates_per_issue,
+        max_dependency_candidates_per_issue=args.max_dependency_candidates_per_issue,
         max_candidates=args.max_candidates,
         max_dependency_candidates=args.max_dependency_candidates,
         max_echo_candidates=args.max_echo_candidates,
@@ -412,9 +424,18 @@ def _sweep(args: argparse.Namespace) -> int:
         for item in manifests
     ]
     ranking_warnings = list(snapshot.source_warnings)
-    if ranking.dropped_by_issue_cap:
+    semantic_issue_cap_drops = (
+        ranking.dropped_by_issue_cap - ranking.dropped_by_dependency_issue_cap
+    )
+    if semantic_issue_cap_drops:
         ranking_warnings.append(
-            f"Per-issue candidate cap omitted {ranking.dropped_by_issue_cap} qualified pairs."
+            f"Per-issue semantic candidate cap omitted {semantic_issue_cap_drops} qualified pairs."
+        )
+    if ranking.dropped_by_dependency_issue_cap:
+        ranking_warnings.append(
+            "Per-issue dependency allowance omitted "
+            f"{ranking.dropped_by_dependency_issue_cap} qualified typed edges; "
+            "compact structural summaries were retained."
         )
     if ranking.dropped_by_run_cap:
         ranking_warnings.append(
@@ -456,6 +477,7 @@ def _sweep(args: argparse.Namespace) -> int:
             "exception_margin": args.exception_margin,
             "reciprocal_rank": args.reciprocal_rank,
             "max_per_issue": args.max_candidates_per_issue,
+            "max_dependencies_per_issue": args.max_dependency_candidates_per_issue,
             "max_total": args.max_candidates,
             "lane_caps": {
                 "dependency": args.max_dependency_candidates,
@@ -467,8 +489,10 @@ def _sweep(args: argparse.Namespace) -> int:
             "lanes": {lane: asdict(metrics) for lane, metrics in (ranking.lanes or {}).items()},
             "dropped_by_lane_cap": ranking.dropped_by_lane_cap,
             "dropped_by_issue_cap": ranking.dropped_by_issue_cap,
+            "dropped_by_dependency_issue_cap": ranking.dropped_by_dependency_issue_cap,
             "dropped_by_run_cap": ranking.dropped_by_run_cap,
         },
+        capped_typed_dependencies=list(ranking.capped_typed_dependencies),
         warnings=ranking_warnings,
         no_signal={"count": len(no_signal_ids), "issue_ids": no_signal_ids},
         excluded={

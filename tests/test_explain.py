@@ -33,9 +33,14 @@ def test_completed_echo_names_fields_lifecycle_and_contract() -> None:
     assert "delivered outcome" in result["what_to_verify"]
     assert result["verification_anchor"] == {
         "category": "completed outcome",
+        "outcome_or_invariant": "completed outcome",
         "operation": "persist",
+        "action": "persist",
         "entity_class": "session",
+        "entity": "session",
         "source_field": "title",
+        "confidence": "high",
+        "generic_fallback": False,
     }
     assert result["counterevidence"] == ["no structural relationship is recorded"]
 
@@ -110,12 +115,13 @@ def test_contract_anchor_distinguishes_repaired_invariant() -> None:
         structural_context="dependency",
     )
 
-    assert result["verification_anchor"] == {
-        "category": "repaired invariant",
-        "operation": "validate",
-        "entity_class": "dependency",
-        "source_field": "title",
-    }
+    anchor = result["verification_anchor"]
+    assert anchor["category"] == "repaired invariant"
+    assert anchor["operation"] == "validate"
+    assert anchor["entity_class"] == "dependency"
+    assert anchor["source_field"] == "title"
+    assert anchor["confidence"] == "high"
+    assert anchor["generic_fallback"] is False
     assert "repaired invariant" in result["what_to_verify"]
 
 
@@ -158,3 +164,60 @@ def test_contract_anchor_never_copies_adversarial_free_form_tokens() -> None:
     assert result["verification_anchor"]["operation"] == "validate"
     assert result["verification_anchor"]["entity_class"] == "dependency"
     assert all(secret not in rendered for secret in secrets)
+
+
+def test_ownership_requires_evidence_in_both_records() -> None:
+    result = explain_candidate(
+        issue("owner-a", title="Assign workflow owner"),
+        issue("owner-b", title="Update workflow configuration"),
+        kind="possible-overlap",
+        similarity=0.86,
+        structural_context="none recorded",
+    )
+
+    assert result["verification_anchor"]["category"] != "transferred ownership"
+
+
+def test_safe_active_contract_survives_different_related_wording() -> None:
+    result = explain_candidate(
+        issue("active", title="Limit dependency queue"),
+        issue("related", title="Avoid too many linked work items"),
+        kind="possible-overlap",
+        similarity=0.86,
+        structural_context="dependency",
+    )
+
+    assert result["verification_anchor"]["action"] == "limit"
+    assert result["verification_anchor"]["entity"] == "dependency"
+    assert result["verification_anchor"]["confidence"] == "medium"
+    assert result["verification_anchor"]["generic_fallback"] is False
+
+
+def test_evaluation_shaped_fixture_materially_reduces_generic_fallbacks() -> None:
+    # Mirrors the pilot's 200-candidate scale and its mix of tracker/review concerns without using
+    # private text. Every output remains drawn from the finite safe vocabulary.
+    templates = (
+        ("Parse dependency records", "Reject invalid dependency relationships"),
+        ("Rank review candidates", "Prioritize dependency candidates in the queue"),
+        ("Render sweep report", "Display warnings in the report"),
+        ("Cache embedding vectors", "Persist embedding cache between runs"),
+        ("Validate report schema", "Reject invalid schema output"),
+        ("Package singleton batches", "Group issue candidates into an envelope"),
+        ("Filter epic issues", "Exclude epic records from the queue"),
+        ("Export review artifacts", "Write batch artifacts for review"),
+    )
+    anchors = []
+    for index in range(200):
+        title, acceptance = templates[index % len(templates)]
+        result = explain_candidate(
+            issue(f"fixture-a-{index}", title=title, acceptance_criteria=acceptance),
+            issue(f"fixture-b-{index}", title=title, acceptance_criteria=acceptance),
+            kind="completed-work-echo" if index % 4 == 0 else "possible-overlap",
+            similarity=0.85,
+            structural_context="none recorded",
+        )
+        anchors.append(result["verification_anchor"])
+
+    assert sum(anchor["generic_fallback"] for anchor in anchors) <= 10
+    assert not any(anchor["operation"] == "satisfy" for anchor in anchors)
+    assert not any(anchor["entity_class"] == "system behavior" for anchor in anchors)

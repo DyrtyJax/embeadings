@@ -34,10 +34,17 @@ a connected component from a `singleton-envelope`; consumers must treat each env
 as an independent one-issue review, not infer relationships between envelope members. The sweep's
 `batch_diagnostics` records deterministic fragmentation and cross-artifact candidate-edge counts.
 
-Candidate evidence may include a `verification_anchor` derived locally from a fixed safe vocabulary.
-Its category, operation, entity class, and source-field label make review prompts more concrete
-without copying arbitrary issue terms. Consumers must still treat the anchor as advisory and must
-inspect the private source records locally before reaching a conclusion.
+Candidate evidence includes a `verification_anchor` derived locally through deterministic,
+field-aware extraction into a finite safe output vocabulary. `action`/`operation`,
+`entity`/`entity_class`, `outcome_or_invariant`/`category`, and `source_field` identify the normalized
+contract to inspect without copying arbitrary issue terms. The paired names preserve version 1
+consumer compatibility while making the structured meaning explicit. `confidence` is `high` only
+when the selected field supplies both action and entity and the outcome category is corroborated;
+`generic_fallback` identifies anchors that could not safely resolve both. The report-level
+`anchor_metrics` summarizes confidence counts and fallback rate without examining or repeating
+private content. Transferred ownership requires ownership evidence in both records. Consumers must
+still treat every anchor as advisory and inspect the private source records locally before reaching
+a conclusion.
 
 Sweep `parameters.candidate_policy` also records independent `dependency`, `echo`, and `overlap`
 lane caps and metrics. Consumers should use each lane's `qualified`, `admitted`, and drop counts when

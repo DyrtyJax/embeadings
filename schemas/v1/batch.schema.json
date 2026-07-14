@@ -32,6 +32,7 @@
     "cache": { "$ref": "#/$defs/cache" },
     "issues": { "type": "array", "items": { "$ref": "#/$defs/issue" } },
     "neighbor_evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "anchor_metrics": { "$ref": "#/$defs/anchor-metrics" },
     "review_rubric": { "type": "array", "items": { "type": ["string", "object"] } }
   },
   "additionalProperties": true,
@@ -76,6 +77,26 @@
       },
       "additionalProperties": true
     },
+    "anchor-metrics": {
+      "type": "object",
+      "required": ["total", "confidence", "generic_fallback_count", "generic_fallback_rate"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "confidence": {
+          "type": "object",
+          "required": ["high", "medium", "low"],
+          "properties": {
+            "high": { "type": "integer", "minimum": 0 },
+            "medium": { "type": "integer", "minimum": 0 },
+            "low": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "generic_fallback_count": { "type": "integer", "minimum": 0 },
+        "generic_fallback_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
     "issue": {
       "type": "object",
       "required": ["id", "title", "status"],
@@ -106,7 +127,12 @@
             "category": { "type": "string", "minLength": 1 },
             "operation": { "type": "string", "minLength": 1 },
             "entity_class": { "type": "string", "minLength": 1 },
-            "source_field": { "type": "string", "minLength": 1 }
+            "source_field": { "type": "string", "minLength": 1 },
+            "action": { "type": "string", "minLength": 1 },
+            "entity": { "type": "string", "minLength": 1 },
+            "outcome_or_invariant": { "type": "string", "minLength": 1 },
+            "confidence": { "enum": ["high", "medium", "low"] },
+            "generic_fallback": { "type": "boolean" }
           },
           "additionalProperties": true
         },

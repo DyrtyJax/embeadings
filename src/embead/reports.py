@@ -627,6 +627,27 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         )
     else:
         lines.append("Lane metrics were not recorded by this producer.")
+    reciprocal = _field(candidate_policy, "reciprocal_diagnostics", default={}) or {}
+    lines.extend(
+        [
+            "",
+            "## Reciprocal-neighbor guard",
+            "",
+            "- Admitted by substantive local evidence: "
+            + str(_field(reciprocal, "admitted", default=0)),
+            f"- Omitted as generic vocabulary only: {_field(reciprocal, 'omitted', default=0)}",
+        ]
+    )
+    replacements = _field(candidate_policy, "cap_replacements", default=[]) or []
+    if replacements:
+        lines.extend(["", "## Threshold cap replacements", ""])
+        for item in replacements:
+            displaced = ", ".join(_field(item, "displaced_candidate_ids", default=[]))
+            lines.append(
+                f"- `{_escape(_field(item, 'candidate_id'))}` entered because "
+                f"`{_escape(_field(item, 'governing_cap'))}` bound; displaced: "
+                f"{_escape(displaced or 'none recorded')}"
+            )
     if capped_dependencies:
         lines.extend(["", "## Capped typed dependencies", ""])
         for item in capped_dependencies:

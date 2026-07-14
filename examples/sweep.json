@@ -44,6 +44,13 @@
       },
       "lane_caps": { "dependency": 75, "echo": 125, "overlap": 125 },
       "baseline_protected": 0,
+      "reciprocal_diagnostics": {
+        "admitted": 0,
+        "omitted": 0,
+        "admission_reasons": {},
+        "omission_reasons": {}
+      },
+      "cap_replacements": [],
       "dropped_by_lane_cap": 0,
       "lanes": {
         "dependency": { "qualified": 0, "admitted": 0, "baseline_protected": 0, "dropped_by_lane_cap": 0, "dropped_by_issue_cap": 0, "dropped_by_run_cap": 0 },

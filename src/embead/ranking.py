@@ -6,7 +6,7 @@ import heapq
 import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from .analysis import issue_id, issue_status
@@ -96,6 +96,8 @@ class CandidateRanking:
     dropped_by_lane_cap: int = 0
     dropped_by_dependency_issue_cap: int = 0
     capped_typed_dependencies: tuple[dict[str, str], ...] = ()
+    reciprocal_diagnostics: dict[str, Any] | None = None
+    cap_replacements: tuple[dict[str, Any], ...] = ()
 
 
 def rank_candidates(
@@ -121,6 +123,7 @@ def rank_candidates(
     closed = sorted((item for item in all_issues if _is_closed(issue_status(item))), key=issue_id)
     ranks = _Ranks.build(active, closed, score, policy.reciprocal_rank)
 
+    reciprocal_diagnostics = _empty_reciprocal_diagnostics()
     requested = _qualifying_candidates(
         active,
         closed,
@@ -129,6 +132,7 @@ def rank_candidates(
         policy,
         echo_threshold=policy.echo_threshold,
         overlap_threshold=policy.overlap_threshold,
+        reciprocal_diagnostics=reciprocal_diagnostics,
     )
     if eligible_issue_ids is not None:
         requested = [
@@ -160,7 +164,44 @@ def rank_candidates(
                 or item["related_issue_id"] in eligible_issue_ids
             ]
 
-    return _select_candidates(baseline, requested, policy)
+    result = _select_candidates(baseline, requested, policy)
+    reciprocal_admitted = sum(
+        item["admission_reason"] == "reciprocal-neighbor-threshold-exception"
+        for item in result.candidates
+    )
+    reciprocal_diagnostics["admitted"] = reciprocal_admitted
+    reciprocal_diagnostics["admission_reasons"] = (
+        {"substantive-field-token": reciprocal_admitted} if reciprocal_admitted else {}
+    )
+    replacements: tuple[dict[str, Any], ...] = ()
+    is_conservative = (
+        policy.echo_threshold > policy.baseline_echo_threshold
+        or policy.overlap_threshold > policy.baseline_overlap_threshold
+    )
+    if is_conservative:
+        reference = _qualifying_candidates(
+            active,
+            closed,
+            score,
+            ranks,
+            policy,
+            echo_threshold=policy.baseline_echo_threshold,
+            overlap_threshold=policy.baseline_overlap_threshold,
+        )
+        if eligible_issue_ids is not None:
+            reference = [
+                item
+                for item in reference
+                if item["issue_id"] in eligible_issue_ids
+                or item["related_issue_id"] in eligible_issue_ids
+            ]
+        reference_result = _select_candidates((), reference, policy)
+        replacements = _cap_replacements(reference_result.candidates, result.candidates, policy)
+    return replace(
+        result,
+        reciprocal_diagnostics=reciprocal_diagnostics,
+        cap_replacements=replacements,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +234,7 @@ def _qualifying_candidates(
     *,
     echo_threshold: float,
     overlap_threshold: float,
+    reciprocal_diagnostics: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     qualified: list[dict[str, Any]] = []
     for left_index, left in enumerate(active):
@@ -207,6 +249,7 @@ def _qualifying_candidates(
                 reciprocal_rank=policy.reciprocal_rank,
                 left_rank=ranks.overlap.get((issue_id(left), issue_id(right))),
                 right_rank=ranks.overlap.get((issue_id(right), issue_id(left))),
+                reciprocal_diagnostics=reciprocal_diagnostics,
             )
             if candidate is not None:
                 qualified.append(candidate)
@@ -231,6 +274,7 @@ def _qualifying_candidates(
                 right_rank=ranks.closed_to_active.get(
                     (issue_id(completed_issue), issue_id(active_issue))
                 ),
+                reciprocal_diagnostics=reciprocal_diagnostics,
             )
             if candidate is not None:
                 if candidate["lane"] == "dependency":
@@ -420,6 +464,7 @@ def _qualify(
     reciprocal_rank: int,
     left_rank: int | None,
     right_rank: int | None,
+    reciprocal_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     left_id = issue_id(left)
     right_id = issue_id(right)
@@ -443,8 +488,18 @@ def _qualify(
         elif relationship is not None:
             admission_reason = "dependency-threshold-exception"
         elif context != "parent/child" and reciprocal:
-            admission_reason = "reciprocal-neighbor-threshold-exception"
             signal_quality = _reciprocal_signal_quality(left, right)
+            if signal_quality == "generic-vocabulary-only":
+                _increment_reciprocal(
+                    reciprocal_diagnostics, "omission_reasons", "generic-vocabulary-only"
+                )
+                return None
+            admission_reason = "reciprocal-neighbor-threshold-exception"
+            _increment_reciprocal(
+                reciprocal_diagnostics,
+                "admission_reasons",
+                "substantive-field-token",
+            )
         else:
             return None
 
@@ -482,18 +537,126 @@ def _qualify(
 
 
 def _reciprocal_signal_quality(left: Any, right: Any) -> str:
-    def tokens(field: str) -> set[str]:
-        return set(re.findall(r"[a-z0-9]{3,}", field.casefold()))
+    generic = {
+        "add",
+        "architecture",
+        "build",
+        "change",
+        "component",
+        "data",
+        "design",
+        "flow",
+        "implement",
+        "implementation",
+        "infrastructure",
+        "lifecycle",
+        "module",
+        "process",
+        "project",
+        "service",
+        "state",
+        "system",
+        "update",
+        "workflow",
+    }
 
-    title_shared = tokens(str(getattr(left, "title", ""))) & tokens(
-        str(getattr(right, "title", ""))
-    )
+    def tokens(field: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]{3,}", field.casefold())) - generic
+
     substantive = ("description", "acceptance_criteria", "design")
-    substantive_shared = any(
-        tokens(str(getattr(left, field, ""))) & tokens(str(getattr(right, field, "")))
-        for field in substantive
+    substantive_shared = set().union(
+        *(
+            tokens(str(getattr(left, field, ""))) & tokens(str(getattr(right, field, "")))
+            for field in substantive
+        )
     )
-    return "vocabulary-only" if title_shared and not substantive_shared else "semantic"
+    return "substantive" if substantive_shared else "generic-vocabulary-only"
+
+
+def _empty_reciprocal_diagnostics() -> dict[str, Any]:
+    return {"admitted": 0, "omitted": 0, "admission_reasons": {}, "omission_reasons": {}}
+
+
+def _increment_reciprocal(diagnostics: dict[str, Any] | None, category: str, reason: str) -> None:
+    if diagnostics is None:
+        return
+    counts = diagnostics[category]
+    counts[reason] = counts.get(reason, 0) + 1
+    diagnostics["admitted" if category == "admission_reasons" else "omitted"] += 1
+
+
+def _cap_replacements(
+    reference: Sequence[dict[str, Any]],
+    conservative: Sequence[dict[str, Any]],
+    policy: CandidatePolicy,
+) -> tuple[dict[str, Any], ...]:
+    """Explain stricter-threshold additions caused by bounded winner selection."""
+
+    reference_keys = {_candidate_identity(item) for item in reference}
+    conservative_keys = {_candidate_identity(item) for item in conservative}
+    introduced = [item for item in conservative if _candidate_identity(item) not in reference_keys]
+    displaced = [item for item in reference if _candidate_identity(item) not in conservative_keys]
+    diagnostics: list[dict[str, Any]] = []
+    for candidate in introduced:
+        cap = _governing_replacement_cap(candidate, reference, displaced, policy)
+        if cap is None:
+            continue
+        related = [
+            item
+            for item in displaced
+            if item["lane"] == candidate["lane"]
+            and (
+                candidate["issue_id"] in (item["issue_id"], item["related_issue_id"])
+                or candidate["related_issue_id"] in (item["issue_id"], item["related_issue_id"])
+                or cap in {"run-cap", f"lane-cap:{candidate['lane']}"}
+            )
+        ]
+        diagnostics.append(
+            {
+                "candidate_id": _candidate_id(candidate),
+                "governing_cap": cap,
+                "displaced_candidate_ids": sorted(_candidate_id(item) for item in related),
+            }
+        )
+    return tuple(sorted(diagnostics, key=lambda item: item["candidate_id"]))
+
+
+def _governing_replacement_cap(
+    candidate: dict[str, Any],
+    reference: Sequence[dict[str, Any]],
+    displaced: Sequence[dict[str, Any]],
+    policy: CandidatePolicy,
+) -> str | None:
+    if candidate["kind"] == "completed-work-echo" and any(
+        item["kind"] == candidate["kind"] and item["issue_id"] == candidate["issue_id"]
+        for item in displaced
+    ):
+        return "one-echo-per-active-record"
+    endpoints = {candidate["issue_id"], candidate["related_issue_id"]}
+    cap = (
+        policy.max_dependencies_per_issue
+        if candidate["lane"] == "dependency"
+        else policy.max_per_issue
+    )
+    if any(
+        sum(endpoint in (item["issue_id"], item["related_issue_id"]) for item in reference) >= cap
+        for endpoint in endpoints
+    ):
+        return (
+            "max-dependencies-per-issue"
+            if candidate["lane"] == "dependency"
+            else "max-candidates-per-issue"
+        )
+    lane = candidate["lane"]
+    if sum(item["lane"] == lane for item in reference) >= policy.lane_caps[lane]:
+        return f"lane-cap:{lane}"
+    if len(reference) >= policy.max_total:
+        return "run-cap"
+    return None
+
+
+def _candidate_id(candidate: dict[str, Any]) -> str:
+    return "|".join(str(value) for value in _candidate_identity(candidate))
 
 
 def _top_ranks(

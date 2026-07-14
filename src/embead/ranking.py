@@ -319,6 +319,20 @@ def structural_context(left: Any, right: Any) -> str:
     return "none recorded"
 
 
+def dependency_evidence(left: Any, right: Any) -> dict[str, str] | None:
+    """Return typed, directed dependency evidence, excluding parent/child links."""
+
+    left_id = issue_id(left)
+    right_id = issue_id(right)
+    relationship = _direct_relationship(left, right_id)
+    if relationship and relationship != "parent-child":
+        return {"source_id": left_id, "target_id": right_id, "type": relationship}
+    relationship = _direct_relationship(right, left_id)
+    if relationship and relationship != "parent-child":
+        return {"source_id": right_id, "target_id": left_id, "type": relationship}
+    return None
+
+
 def _direct_relationship(issue: Any, target_id: str) -> str | None:
     for link in tuple(getattr(issue, "dependency_links", ()) or ()):
         if getattr(link, "target_id", None) == target_id:
@@ -344,6 +358,7 @@ def _qualify(
     right_id = issue_id(right)
     similarity = score(left_id, right_id)
     context = structural_context(left, right)
+    relationship = dependency_evidence(left, right)
     reciprocal = (
         reciprocal_rank > 0
         and left_rank is not None
@@ -358,7 +373,7 @@ def _qualify(
             return None
         if context.startswith("same parent "):
             admission_reason = "shared-parent-threshold-exception"
-        elif " depends on " in context:
+        elif relationship is not None:
             admission_reason = "dependency-threshold-exception"
         elif context != "parent/child" and reciprocal:
             admission_reason = "reciprocal-neighbor-threshold-exception"
@@ -368,7 +383,7 @@ def _qualify(
 
     lane = (
         "dependency"
-        if " depends on " in context
+        if relationship is not None
         else "echo"
         if kind == "completed-work-echo"
         else "overlap"
@@ -390,6 +405,7 @@ def _qualify(
         "related_issue_id": right_id,
         "similarity": round(similarity, 6),
         "structural_context": context,
+        "dependency_evidence": relationship,
         "admission_reason": admission_reason,
         "signal_quality": signal_quality,
         "reciprocal_ranks": {"issue": left_rank, "related_issue": right_rank},

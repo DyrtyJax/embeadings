@@ -93,6 +93,16 @@
           },
           "additionalProperties": true
         },
+        "dependency_evidence": {
+          "type": ["object", "null"],
+          "properties": {
+            "source_id": { "type": "string", "minLength": 1 },
+            "target_id": { "type": "string", "minLength": 1 },
+            "type": { "type": "string", "minLength": 1 }
+          },
+          "required": ["source_id", "target_id", "type"],
+          "additionalProperties": false
+        },
         "what_to_verify": { "type": "string", "minLength": 1 },
         "counterevidence": {
           "oneOf": [

@@ -1,3 +1,7 @@
+import json
+import subprocess
+
+from embead.beads import BeadsAdapter
 from embead.models import DependencyLink, IssueRecord
 from embead.ranking import CandidatePolicy, rank_candidates
 
@@ -80,7 +84,39 @@ def test_typed_dependency_preserves_direction_and_type_in_context() -> None:
         CandidatePolicy(overlap_threshold=0.82, exception_margin=0.08),
     )
     assert result.candidates[0]["structural_context"] == "A depends on B (blocks)"
+    assert result.candidates[0]["dependency_evidence"] == {
+        "source_id": "A",
+        "target_id": "B",
+        "type": "blocks",
+    }
     assert result.candidates[0]["admission_reason"] == "dependency-threshold-exception"
+
+
+def test_current_beads_payload_routes_typed_dependency_to_protected_lane() -> None:
+    payload = [
+        {
+            "id": "source",
+            "title": "Source",
+            "status": "open",
+            "dependencies": [{"issue_id": "source", "depends_on_id": "target", "type": "blocks"}],
+        },
+        {"id": "target", "title": "Target", "status": "open", "dependencies": []},
+    ]
+
+    def runner(argv):
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
+
+    issues = BeadsAdapter(runner=runner).list_issues()
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("source", "target"): 0.75}),
+        policy(),
+    )
+
+    assert result.candidates[0]["lane"] == "dependency"
+    assert result.candidates[0]["dependency_evidence"]["target_id"] == "target"
+    assert result.lanes["dependency"].admitted == 1
 
 
 def test_typed_parent_child_link_does_not_enable_dependency_exception() -> None:

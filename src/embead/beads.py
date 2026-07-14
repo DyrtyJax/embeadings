@@ -1,0 +1,220 @@
+"""Strictly read-only access to Beads through its supported CLI."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
+from typing import Any, TypeAlias
+
+from .models import IssueRecord, WorkspaceSnapshot
+
+
+class BeadsError(RuntimeError):
+    """Raised when Beads cannot provide a safe, valid snapshot."""
+
+
+Runner: TypeAlias = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+_ALLOWED_COMMANDS = frozenset({"version", "context", "list"})
+
+
+def _default_runner(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(argv),
+        check=False,
+        capture_output=True,
+        text=True,
+        shell=False,
+    )
+
+
+class BeadsAdapter:
+    """Small allowlisted adapter that cannot invoke tracker mutation commands."""
+
+    def __init__(self, *, binary: str = "bd", runner: Runner = _default_runner) -> None:
+        self._binary = binary
+        self._runner = runner
+
+    def _run(self, command: str, *arguments: str) -> str:
+        if command not in _ALLOWED_COMMANDS:
+            raise BeadsError(f"Beads command is not allowlisted: {command}")
+        argv = [self._binary, "--readonly", command, *arguments]
+        result = self._runner(argv)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            if len(detail) > 500:
+                detail = detail[:500] + "…"
+            raise BeadsError(f"bd {command} failed: {detail or 'unknown error'}")
+        return result.stdout
+
+    def _run_json(self, command: str, *arguments: str) -> Any:
+        output = self._run(command, *arguments, "--json")
+        try:
+            return json.loads(output)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise BeadsError(f"bd {command} returned malformed JSON") from exc
+
+    def version(self) -> str:
+        payload = self._run_json("version")
+        if isinstance(payload, str) and payload.strip():
+            return payload.strip()
+        if isinstance(payload, Mapping):
+            for key in ("version", "beads_version"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        raise BeadsError("bd version JSON has an unsupported shape")
+
+    def workspace_snapshot(self) -> WorkspaceSnapshot:
+        payload = self._run_json("context")
+        if not isinstance(payload, Mapping):
+            raise BeadsError("bd context JSON must be an object")
+
+        path_value = _first(payload, "workspace_path", "beads_dir", "repo_root", "path")
+        identity_value = _first(payload, "project_id", "workspace_id", "repository_id", "repo_id")
+        if path_value is not None and not isinstance(path_value, str):
+            raise BeadsError("bd context workspace path must be a string")
+        if identity_value is not None and not isinstance(identity_value, str):
+            raise BeadsError("bd context workspace identity must be a string")
+        if not identity_value and not path_value:
+            raise BeadsError("bd context JSON contains no workspace identity")
+
+        canonical_path = str(Path(path_value).expanduser().resolve()) if path_value else None
+        workspace_id = identity_value or hashlib.sha256(canonical_path.encode("utf-8")).hexdigest()
+        return WorkspaceSnapshot(
+            workspace_id=workspace_id,
+            workspace_path=canonical_path,
+            beads_version=self.version(),
+        )
+
+    def list_issues(self) -> tuple[IssueRecord, ...]:
+        payload = self._run_json("list", "--all", "--limit", "0")
+        raw_issues = _issue_list(payload)
+        records = tuple(_parse_issue(item) for item in raw_issues)
+        ids = [record.id for record in records]
+        if len(ids) != len(set(ids)):
+            raise BeadsError("bd list returned duplicate issue IDs")
+        return records
+
+    def load(self) -> tuple[WorkspaceSnapshot, tuple[IssueRecord, ...]]:
+        """Return snapshot metadata and all issues from the live workspace."""
+
+        return self.workspace_snapshot(), self.list_issues()
+
+
+def _first(payload: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            return payload[key]
+    return None
+
+
+def _issue_list(payload: Any) -> list[Any]:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, Mapping):
+        present = [key for key in ("issues", "items", "data") if key in payload]
+        if len(present) != 1 or not isinstance(payload[present[0]], list):
+            raise BeadsError("bd list JSON has an unsupported shape")
+        return payload[present[0]]
+    raise BeadsError("bd list JSON must be an array or issue envelope")
+
+
+def _required_string(item: Mapping[str, Any], key: str) -> str:
+    value = item.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise BeadsError(f"issue {key} must be a non-empty string")
+    return value.strip()
+
+
+def _optional_string(item: Mapping[str, Any], *keys: str) -> str:
+    value = _first(item, *keys)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise BeadsError(f"issue field {keys[0]} must be a string")
+    return value
+
+
+def _parse_priority(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise BeadsError("issue priority must be an integer from 0 to 4")
+    if isinstance(value, str) and value.upper().startswith("P"):
+        value = value[1:]
+    try:
+        priority = int(value)
+    except (TypeError, ValueError) as exc:
+        raise BeadsError("issue priority must be an integer from 0 to 4") from exc
+    if priority not in range(5):
+        raise BeadsError("issue priority must be an integer from 0 to 4")
+    return priority
+
+
+def _parse_labels(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise BeadsError("issue labels must be an array")
+    labels: list[str] = []
+    for label in value:
+        if isinstance(label, str):
+            name = label
+        elif isinstance(label, Mapping) and isinstance(label.get("name"), str):
+            name = label["name"]
+        else:
+            raise BeadsError("issue label has an unsupported shape")
+        if not name.strip():
+            raise BeadsError("issue labels must be non-empty")
+        labels.append(name.strip())
+    return tuple(sorted(set(labels)))
+
+
+def _parse_dependencies(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise BeadsError("issue dependencies must be an array")
+    dependencies: list[str] = []
+    for dependency in value:
+        if isinstance(dependency, str):
+            dependency_id = dependency
+        elif isinstance(dependency, Mapping):
+            dependency_id = _first(dependency, "id", "issue_id", "dependency_id", "depends_on_id")
+        else:
+            raise BeadsError("issue dependency has an unsupported shape")
+        if not isinstance(dependency_id, str) or not dependency_id.strip():
+            raise BeadsError("issue dependency contains no valid ID")
+        dependencies.append(dependency_id.strip())
+    return tuple(sorted(set(dependencies)))
+
+
+def _parse_issue(raw: Any) -> IssueRecord:
+    if not isinstance(raw, Mapping):
+        raise BeadsError("each issue must be a JSON object")
+    parent = _first(raw, "parent_id", "parent")
+    if isinstance(parent, Mapping):
+        parent = _first(parent, "id", "issue_id")
+    if parent is not None and (not isinstance(parent, str) or not parent.strip()):
+        raise BeadsError("issue parent must be an issue ID")
+
+    return IssueRecord(
+        id=_required_string(raw, "id"),
+        title=_required_string(raw, "title"),
+        description=_optional_string(raw, "description", "body"),
+        status=_required_string(raw, "status"),
+        priority=_parse_priority(raw.get("priority")),
+        labels=_parse_labels(raw.get("labels")),
+        parent_id=parent.strip() if isinstance(parent, str) else None,
+        dependencies=_parse_dependencies(
+            _first(raw, "dependencies", "depends_on", "dependency_ids")
+        ),
+        acceptance_criteria=_optional_string(
+            raw, "acceptance_criteria", "acceptanceCriteria", "acceptance"
+        ),
+        design=_optional_string(raw, "design", "design_notes"),
+        notes=_optional_string(raw, "notes", "current_notes"),
+    )

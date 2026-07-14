@@ -190,9 +190,40 @@ cross-reference. Explicit later-phase or trigger language is surfaced to reviewe
 High similarity may indicate duplication, shared context, or a broad parent/child relationship. The
 tool reports candidates and structural differences; it does not merge them.
 
-## 12. Balanced disposable batching
+### Candidate ranking and volume
 
-Given `n` candidates and target size `t`:
+Default thresholds provide a conservative high-signal baseline. Lower-scoring pairs may enter the
+review queue only when corroborated by structural evidence such as shared parentage, an explicit
+dependency/relation, or reciprocal-neighbor rank. Reports record why the exception applied.
+
+Candidate volume must be bounded through a deterministic per-issue cap or equivalent global budget.
+Lowering a global threshold without a volume control is not an acceptable substitute for ranking.
+
+### Evidence-specific explanations
+
+Every candidate explains the evidence that caused it to surface. Explanations should identify the
+strongest contributing canonical fields, lifecycle contrast, structural relationships, and relevant
+counterevidence. Generic class-level prompts may supplement this evidence but cannot be the only
+explanation.
+
+### Similarity performance
+
+Providers return validated normalized vectors. Analysis must avoid renormalizing the same vector for
+each comparison and must reuse pairwise scores within a run. A vectorized similarity matrix or an
+equivalent bounded score cache is preferred for populations that fit comfortably in memory.
+
+## 12. Candidate-focused disposable batching
+
+Batching operates on issues participating in review signals after structural filtering, ranking,
+thresholds, and candidate caps have been applied. It does not force every active issue into a semantic
+neighborhood merely because every vector has a nearest neighbor. Records without a qualifying signal
+are reported separately as `no signal`.
+
+Broad container records such as epics are excluded from the default review population unless selected
+explicitly. Parent/child similarity is structural context and potential counterevidence, not sufficient
+evidence of overlap by itself.
+
+Given `n` review-signal issues and target size `t`:
 
 1. Choose a batch count close to `n / t`.
 2. Distribute capacity so batch sizes differ by at most one.
@@ -200,9 +231,10 @@ Given `n` candidates and target size `t`:
 4. Fill the batch with its closest remaining neighbors.
 5. Repeat until every candidate appears exactly once.
 
-The first implementation should remain simple and deterministic. Evaluation fixtures should compare
-it with alternatives such as agglomerative clustering or graph community detection before adopting a
-more complex algorithm.
+Batch sizes should be balanced where semantic cohesion supports it. A sparse long tail may produce
+smaller batches rather than mixing unrelated work to fill capacity. The implementation remains
+deterministic, and evaluation fixtures compare candidate-focused batching with forced partitioning and
+more complex alternatives before adopting a new algorithm.
 
 ## 13. Batch manifest
 
@@ -313,11 +345,17 @@ Use synthetic Beads workspaces to test:
 - cold, warm, and one-record incremental runs;
 - concurrent and interrupted async sweeps;
 - deterministic batch membership and size bounds;
+- candidate caps and structurally corroborated threshold exceptions;
+- candidate-focused batching with explicit no-signal records and sparse tails;
+- evidence-specific explanations and parent/child counterevidence;
 - Windows-compatible cache locking;
 - tracker hashes before and after commands.
 
 Performance targets should be established on public synthetic corpora. Private project measurements
-must not be published as fixtures, snapshots, logs, or examples.
+must not be published as fixtures, snapshots, logs, or examples; anonymized aggregate findings may be
+retained with the repository owner's approval. The warm path for a public synthetic corpus of 1,000
+records should complete within five seconds on a documented reference CPU, with similarity scoring and
+batching measured separately from Beads acquisition.
 
 ## 20. Milestones
 

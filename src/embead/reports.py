@@ -217,6 +217,8 @@ def build_sweep_payload(
     filters: Any | None = None,
     thresholds: Any | None = None,
     candidate_policy: Any | None = None,
+    no_signal: Any | None = None,
+    excluded: Any | None = None,
     target_batch_size: int | None = None,
     warnings: Iterable[str] = (),
     duration_ms: int | float | None = None,
@@ -247,6 +249,8 @@ def build_sweep_payload(
         },
         "candidates": [_record(candidate) for candidate in ordered_candidates],
         "batches": normalized_batches,
+        "no_signal": _jsonable(no_signal or {"count": 0, "issue_ids": []}),
+        "excluded": _jsonable(excluded or {"count": 0, "by_reason": {}, "issue_ids": []}),
         "warnings": sorted(str(warning) for warning in warnings),
     }
     if duration_ms is not None:
@@ -444,6 +448,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     candidates = payload.get("candidates") or []
     batches = payload.get("batches") or []
     warnings = payload.get("warnings") or []
+    no_signal = payload.get("no_signal") or {}
+    excluded = payload.get("excluded") or {}
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
     lines = [
@@ -458,6 +464,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- Completed-work echoes: {echo_count}",
         f"- Possible overlaps: {overlap_count}",
         f"- Other review candidates: {len(candidates) - echo_count - overlap_count}",
+        f"- No-signal records: {_field(no_signal, 'count', default=0)}",
+        f"- Excluded records: {_field(excluded, 'count', default=0)}",
         "",
         "## Snapshot",
         "",

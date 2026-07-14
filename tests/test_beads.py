@@ -31,6 +31,7 @@ def test_list_invocation_is_read_only_and_parses_current_shape() -> None:
                         "title": "Vector cache",
                         "description": "Cache vectors",
                         "status": "open",
+                        "issue_type": "feature",
                         "priority": 1,
                         "labels": ["storage", "semantic"],
                         "parent_id": "bd-1",
@@ -47,6 +48,7 @@ def test_list_invocation_is_read_only_and_parses_current_shape() -> None:
     records = BeadsAdapter(runner=runner).list_issues()
     assert runner.calls == [["bd", "--readonly", "list", "--all", "--limit", "0", "--json"]]
     assert records[0].id == "bd-2"
+    assert records[0].issue_type == "feature"
     assert records[0].labels == ("semantic", "storage")
     assert records[0].dependencies == ("bd-0",)
     assert records[0].acceptance_criteria == "Atomic writes"
@@ -64,6 +66,7 @@ def test_list_parses_legacy_envelope_and_aliases() -> None:
                             "title": "Legacy",
                             "body": "Old description",
                             "status": "closed",
+                            "type": "epic",
                             "priority": "P3",
                             "labels": [{"name": "old"}],
                             "parent": {"id": "old-root"},
@@ -80,6 +83,7 @@ def test_list_parses_legacy_envelope_and_aliases() -> None:
     )
     issue = BeadsAdapter(runner=runner).list_issues()[0]
     assert issue.description == "Old description"
+    assert issue.issue_type == "epic"
     assert issue.priority == 3
     assert issue.labels == ("old",)
     assert issue.parent_id == "old-root"

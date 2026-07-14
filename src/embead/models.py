@@ -20,6 +20,7 @@ class IssueRecord:
     title: str
     description: str = ""
     status: str = ""
+    issue_type: str = ""
     priority: int | None = None
     labels: tuple[str, ...] = field(default_factory=tuple)
     parent_id: str | None = None

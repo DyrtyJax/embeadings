@@ -206,6 +206,7 @@ def _parse_issue(raw: Any) -> IssueRecord:
         title=_required_string(raw, "title"),
         description=_optional_string(raw, "description", "body"),
         status=_required_string(raw, "status"),
+        issue_type=_optional_string(raw, "issue_type", "type").strip(),
         priority=_parse_priority(raw.get("priority")),
         labels=_parse_labels(raw.get("labels")),
         parent_id=parent.strip() if isinstance(parent, str) else None,

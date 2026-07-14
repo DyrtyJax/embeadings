@@ -3,6 +3,7 @@ import json
 from embead import cli
 from embead.models import IssueRecord, WorkspaceSnapshot
 from embead.provider import HashingProvider
+from embead.ranking import CandidateRanking
 
 ISSUES = (
     IssueRecord(
@@ -60,7 +61,8 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert payload["schema_version"] == 1
     assert payload["parameters"]["candidate_policy"]["max_per_issue"] == 3
     assert payload["parameters"]["candidate_policy"]["max_total"] == 250
-    assert len(payload["batches"]) == 2
+    assert payload["batches"] == []
+    assert payload["no_signal"] == {"count": 2, "issue_ids": ["demo-1", "demo-3"]}
     assert set(payload["timings_ms"]) == {
         "acquisition",
         "embedding_and_cache",
@@ -71,10 +73,7 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert all(value >= 0 for value in payload["timings_ms"].values())
     assert (output / "report.json").is_file()
     assert (output / "report.md").is_file()
-    assert sorted(path.name for path in output.glob("batch-*.json")) == [
-        "batch-1.json",
-        "batch-2.json",
-    ]
+    assert list(output.glob("batch-*.json")) == []
 
 
 def test_sweep_rejects_invalid_candidate_volume_controls(monkeypatch, tmp_path, capsys) -> None:
@@ -124,3 +123,66 @@ def test_ranked_candidates_keep_structural_admission_and_specific_explanation() 
     assert candidate["admission_reason"] == "shared-parent-threshold-exception"
     assert candidate["field_evidence"]
     assert "strongest field alignment" in candidate["why_surfaced"]
+
+
+def test_sweep_batches_only_signal_issues_and_reports_no_signal_and_epics(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    issues = (
+        IssueRecord("active-a", "A", status="open", issue_type="feature"),
+        IssueRecord("active-b", "B", status="open", issue_type="task"),
+        IssueRecord("no-signal", "No signal", status="open", issue_type="feature"),
+        IssueRecord("container", "Broad epic", status="open", issue_type="epic"),
+        IssueRecord("closed", "Completed", status="closed", issue_type="task"),
+    )
+
+    class CandidateAdapter:
+        def load(self):
+            return WorkspaceSnapshot("workspace-test", "1.0.5", "/tmp/demo/.beads"), issues
+
+    def fake_candidates(population, _issues, _vectors, **_kwargs):
+        assert [issue.id for issue in population] == ["active-a", "active-b", "no-signal"]
+        return CandidateRanking(
+            candidates=(
+                {
+                    "kind": "possible-overlap",
+                    "issue_id": "active-a",
+                    "related_issue_id": "active-b",
+                    "similarity": 0.9,
+                },
+                {
+                    "kind": "completed-work-echo",
+                    "issue_id": "active-a",
+                    "related_issue_id": "closed",
+                    "similarity": 0.9,
+                },
+            ),
+            qualified=2,
+            dropped_by_issue_cap=0,
+            dropped_by_run_cap=0,
+        )
+
+    monkeypatch.setattr(cli, "BeadsAdapter", CandidateAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
+    monkeypatch.setattr(cli, "_candidate_evidence", fake_candidates)
+    monkeypatch.setattr(
+        cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
+    )
+
+    output = tmp_path / "candidate-artifacts"
+    assert cli.main(["sweep", "--size", "5", "--output", str(output), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["batches"] == [{"batch": 1, "issue_ids": ["active-a", "active-b"]}]
+    assert payload["no_signal"] == {"count": 1, "issue_ids": ["no-signal"]}
+    assert payload["excluded"] == {
+        "by_reason": {"epic": 1},
+        "count": 1,
+        "issue_ids": ["container"],
+    }
+    manifest = json.loads((output / "batch-1.json").read_text())
+    assert {issue["id"] for issue in manifest["issues"]} == {"active-a", "active-b"}
+    assert {item["related_issue_id"] for item in manifest["neighbor_evidence"]} == {
+        "active-b",
+        "closed",
+    }

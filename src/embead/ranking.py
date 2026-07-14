@@ -153,15 +153,28 @@ def structural_context(left: Any, right: Any) -> str:
     right_parent = getattr(right, "parent_id", None)
     if left_parent and left_parent == right_parent:
         return f"same parent {left_parent}"
-    left_dependencies = tuple(getattr(left, "dependencies", ()) or ())
-    right_dependencies = tuple(getattr(right, "dependencies", ()) or ())
-    if right_id in left_dependencies:
-        return f"{left_id} depends on {right_id}"
-    if left_id in right_dependencies:
-        return f"{right_id} depends on {left_id}"
     if left_parent == right_id or right_parent == left_id:
         return "parent/child"
+    relationship = _direct_relationship(left, right_id)
+    if relationship == "parent-child":
+        return "parent/child"
+    if relationship:
+        return f"{left_id} depends on {right_id} ({relationship})"
+    relationship = _direct_relationship(right, left_id)
+    if relationship == "parent-child":
+        return "parent/child"
+    if relationship:
+        return f"{right_id} depends on {left_id} ({relationship})"
     return "none recorded"
+
+
+def _direct_relationship(issue: Any, target_id: str) -> str | None:
+    for link in tuple(getattr(issue, "dependency_links", ()) or ()):
+        if getattr(link, "target_id", None) == target_id:
+            return str(getattr(link, "relationship_type", "depends-on"))
+    if target_id in tuple(getattr(issue, "dependencies", ()) or ()):
+        return "depends-on"
+    return None
 
 
 def _qualify(

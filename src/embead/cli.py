@@ -21,7 +21,7 @@ from .cache import VectorCache
 from .explain import explain_candidate
 from .models import IssueRecord, canonical_text
 from .provider import HashingProvider, Model2VecProvider
-from .ranking import CandidatePolicy, CandidateRanking, rank_candidates
+from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
 from .reports import (
     build_batch_manifest,
     build_neighbors_payload,
@@ -159,15 +159,7 @@ def _load_vectors(
 
 
 def _structural_context(left: IssueRecord, right: IssueRecord) -> str:
-    if left.parent_id and left.parent_id == right.parent_id:
-        return f"same parent {left.parent_id}"
-    if right.id in left.dependencies:
-        return f"{left.id} depends on {right.id}"
-    if left.id in right.dependencies:
-        return f"{right.id} depends on {left.id}"
-    if left.parent_id == right.id or right.parent_id == left.id:
-        return "parent/child"
-    return "none recorded"
+    return structural_context(left, right)
 
 
 def _issue_summary(issue: IssueRecord) -> dict[str, Any]:
@@ -180,6 +172,7 @@ def _issue_summary(issue: IssueRecord) -> dict[str, Any]:
         "labels": list(issue.labels),
         "parent_id": issue.parent_id,
         "dependencies": list(issue.dependencies),
+        "dependency_links": [asdict(link) for link in issue.dependency_links],
     }
 
 

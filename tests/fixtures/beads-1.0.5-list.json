@@ -1,0 +1,45 @@
+[
+  {
+    "id": "sample-child",
+    "title": "Sanitized child issue",
+    "description": "",
+    "status": "open",
+    "issue_type": "task",
+    "parent_id": "sample-parent",
+    "dependencies": [
+      {
+        "issue_id": "sample-child",
+        "depends_on_id": "sample-parent",
+        "type": "parent-child",
+        "created_at": "2026-07-14T00:00:00Z",
+        "created_by": "fixture",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "sample-child",
+        "depends_on_id": "sample-prerequisite",
+        "type": "blocks",
+        "created_at": "2026-07-14T00:00:00Z",
+        "created_by": "fixture",
+        "metadata": "{}"
+      }
+    ]
+  },
+  {
+    "id": "sample-followup",
+    "title": "Sanitized follow-up issue",
+    "description": "",
+    "status": "open",
+    "issue_type": "task",
+    "dependencies": [
+      {
+        "issue_id": "sample-followup",
+        "depends_on_id": "sample-child",
+        "type": "discovered-from",
+        "created_at": "2026-07-14T00:00:00Z",
+        "created_by": "fixture",
+        "metadata": "{}"
+      }
+    ]
+  }
+]

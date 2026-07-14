@@ -20,8 +20,17 @@ Issues often contain private product plans, customer context, incidents, and sou
   bug reports and benchmarks unless they already belong to a clearly public test repository.
 - Reproduce defects in a synthetic scratch workspace before opening an issue or pull request.
 
-## Proposed development workflow
+## Development workflow
 
-The implementation milestone will define formatting, linting, typing, and test commands in
-`pyproject.toml`. Until then, specification changes should be internally consistent, use public
-sources, and include a clear rationale.
+Create a virtual environment, install the development extras, and run the same checks as CI:
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/ruff check src tests
+.venv/bin/ruff format --check src tests
+.venv/bin/pytest
+```
+
+Integration examples and fixtures must use synthetic Beads workspaces. Keep model artifacts,
+vectors, and generated reports out of the repository.

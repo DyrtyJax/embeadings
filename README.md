@@ -10,7 +10,27 @@ Beads dependencies answer “what blocks this?” Semantic neighborhoods answer 
 find that neighborhood without adding durable labels, changing issue state, or replacing Beads'
 dependency graph.
 
-> Status: design and public specification. The CLI is not implemented in this repository yet.
+> Status: MVP implementation. `neighbors`, synchronous `sweep`, and `batch` are available; async
+> runs and agent dispatch remain future work.
+
+## Install and try it
+
+Python 3.11 or later and an installed `bd` CLI are required.
+
+```bash
+python -m pip install -e .
+embead neighbors ISSUE_ID --include-closed
+embead sweep --size 9
+```
+
+The first semantic command downloads the pinned
+[`minishlab/potion-base-8M`](https://huggingface.co/minishlab/potion-base-8M) model (MIT license).
+Issue text is embedded locally and is not uploaded. Vectors are cached in the platform user cache;
+run reports are written to the platform user state directory. Neither is written into the analyzed
+repository by default.
+
+For a lightweight deterministic smoke test without a model download, set
+`EMBEAD_PROVIDER=hashing`. That provider is intended for tests, not semantic-quality evaluation.
 
 ## Intended workflow
 
@@ -40,12 +60,18 @@ whether any tracker update is appropriate.
 ```bash
 embead neighbors <issue-id>
 embead batch [--size 9]
-embead sweep [--async]
-embead status <run-id>
+embead sweep [--size 9]
 ```
+
+Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.
 
 See [the product and technical specification](docs/spec.md) for the proposed contracts, safety
 invariants, batch format, architecture, and milestones.
+
+Research notes:
+
+- [Open-source semantic search and Beads ecosystem sweep](docs/ecosystem-sweep.md)
+- [Anonymized aggregate findings from the first private pilot](docs/research/private-pilot-01.md)
 
 ## Principles
 

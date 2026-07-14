@@ -307,11 +307,20 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     revision = _field(model, "revision", "model_revision", default="unknown")
     hits = _field(cache, "hits", "cache_hits", default=0)
     misses = _field(cache, "misses", "cache_misses", default=0)
-    return [
+    source = _field(snapshot, "acquisition_source", default="unknown")
+    live_count = _field(snapshot, "live_issue_count", default="unknown")
+    export_count = _field(snapshot, "export_issue_count", default=None)
+    warnings = _field(snapshot, "source_warnings", default=[]) or []
+    lines = [
         f"- Workspace snapshot: `{_escape(workspace)}` (Beads `{_escape(beads_version)}`)",
+        f"- Acquisition source: `{_escape(source)}` ({_escape(live_count)} live issues)",
         f"- Embedding model: `{_escape(model_id)}` revision `{_escape(revision)}`",
         f"- Cache: {_escape(hits)} hits, {_escape(misses)} misses",
     ]
+    if export_count is not None:
+        lines.append(f"- Discoverable JSONL export: {_escape(export_count)} issues")
+    lines.extend(f"- Source warning: {_escape(warning)}" for warning in warnings)
+    return lines
 
 
 def render_neighbors_markdown(payload: Mapping[str, Any]) -> str:

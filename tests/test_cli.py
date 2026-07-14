@@ -86,6 +86,39 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert list(output.glob("batch-*.json")) == []
 
 
+def test_sweep_propagates_non_sensitive_source_warning(monkeypatch, tmp_path, capsys) -> None:
+    warning = (
+        "Live Beads data contains 3 issues while the discoverable JSONL export contains 2; "
+        "live data was used."
+    )
+
+    class StaleExportAdapter:
+        def load(self):
+            return (
+                WorkspaceSnapshot(
+                    "workspace-test",
+                    "1.0.5",
+                    "/tmp/demo/.beads",
+                    acquisition_source="live-beads-cli",
+                    live_issue_count=3,
+                    export_issue_count=2,
+                    source_warnings=(warning,),
+                ),
+                ISSUES,
+            )
+
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "BeadsAdapter", StaleExportAdapter)
+
+    assert cli.main(["sweep", "--output", str(tmp_path / "out"), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["warnings"] == [warning]
+    assert payload["snapshot"]["acquisition_source"] == "live-beads-cli"
+    assert payload["snapshot"]["live_issue_count"] == 3
+    assert payload["snapshot"]["export_issue_count"] == 2
+
+
 def test_sweep_rejects_invalid_candidate_volume_controls(monkeypatch, tmp_path, capsys) -> None:
     _configure(monkeypatch, tmp_path)
 

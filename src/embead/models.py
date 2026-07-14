@@ -49,6 +49,10 @@ class WorkspaceSnapshot:
     workspace_path: str | None = None
     dependency_count: int | None = None
     dependency_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    acquisition_source: str = "live-beads-cli"
+    live_issue_count: int | None = None
+    export_issue_count: int | None = None
+    source_warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _normalize_text(value: str, *, limit: int) -> str:

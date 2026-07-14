@@ -44,6 +44,11 @@ lane caps and metrics. Consumers should use each lane's `qualified`, `admitted`,
 explaining queue volume. `baseline_protected` identifies default-threshold candidates selected first
 during a lower-threshold sensitivity run; it is evidence about ranking stability, not tracker truth.
 
+Snapshot metadata identifies `live-beads-cli` as the authoritative acquisition source and records
+the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings counts its records
+without copying their contents; a count mismatch is reported through `source_warnings` and the
+sweep warning list. Consumers must not substitute a stale export for the live snapshot.
+
 ## Capability handshake
 
 An optional dispatcher or UI should exchange a capability document before consuming artifacts. The

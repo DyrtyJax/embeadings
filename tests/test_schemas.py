@@ -82,6 +82,14 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
             cache=CACHE,
             filters={"status": ["open"]},
             thresholds={"completed_work_echo": 0.72},
+            capped_typed_dependencies=[
+                {
+                    "source_id": "demo-3",
+                    "target_id": "demo-4",
+                    "type": "blocks",
+                    "drop_reason": "dependency-per-issue-cap",
+                }
+            ],
             no_signal={"count": 1, "issue_ids": ["demo-3"]},
             excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["demo-epic"]},
             target_batch_size=5,

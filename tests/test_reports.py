@@ -158,6 +158,7 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
         thresholds={"echo": 0.9},
         candidate_policy={
             "max_total": 250,
+            "max_dependencies_per_issue": 3,
             "baseline_protected": 1,
             "lanes": {
                 "dependency": {"qualified": 2, "admitted": 1, "dropped_by_lane_cap": 1},
@@ -165,6 +166,14 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
                 "overlap": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
             },
         },
+        capped_typed_dependencies=[
+            {
+                "source_id": "bd-8",
+                "target_id": "bd-9",
+                "type": "blocks",
+                "drop_reason": "dependency-per-issue-cap",
+            }
+        ],
         no_signal={"count": 4, "issue_ids": ["bd-7", "bd-8", "bd-9", "bd-10"]},
         excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["bd-1"]},
         target_batch_size=9,
@@ -186,6 +195,7 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "No-signal records: 4" in markdown
     assert "Excluded records: 1" in markdown
     assert "Dependency: 1 admitted / 2 qualified" in markdown
+    assert "Typed dependencies dropped by their independent per-issue allowance" in markdown
     assert "Baseline candidates protected in sensitivity mode: 1" in markdown
     assert "Batch 1: 1 issues" in markdown
     assert "local-model" in markdown
@@ -193,6 +203,8 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "verify" in markdown.lower()
     assert "dependency-threshold-exception" in markdown
     assert "Typed dependency: bd-5 → bd-6 (blocks)" in markdown
+    assert "Qualified typed dependencies omitted by caps: 1" in markdown
+    assert "`bd-8` → `bd-9` (blocks); not promoted: dependency-per-issue-cap" in markdown
 
 
 def test_empty_sweep_is_a_successful_report() -> None:

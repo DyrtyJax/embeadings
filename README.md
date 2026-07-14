@@ -67,8 +67,9 @@ Use `--json` for machine-readable stdout. `batch` is currently an alias for the 
 Sweeps keep their conservative similarity thresholds while allowing a narrow, corroborated exception
 band. Typed dependencies, completed-work echoes, and possible overlaps have separate deterministic
 budgets; dependency evidence is admitted first. Use `--exception-margin`, `--reciprocal-rank`,
-`--max-candidates-per-issue`, `--max-candidates`, and the three `--max-*-candidates` lane controls to
-tune that policy. Lower-threshold sensitivity runs protect the candidates selected by the default
+`--max-candidates-per-issue`, `--max-dependency-candidates-per-issue`, `--max-candidates`, and the
+three `--max-*-candidates` lane controls to tune that policy. Lower-threshold sensitivity runs
+protect the candidates selected by the default
 thresholds before admitting additions, so a permissive run cannot silently replace the baseline queue.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized

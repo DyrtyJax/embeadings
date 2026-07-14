@@ -25,6 +25,10 @@
       "additionalProperties": true
     },
     "candidates": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "capped_typed_dependencies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/capped-typed-dependency" }
+    },
     "batches": { "type": "array", "items": { "$ref": "#/$defs/batch-summary" } },
     "batch_diagnostics": { "$ref": "#/$defs/batch-diagnostics" },
     "no_signal": { "$ref": "#/$defs/population-summary" },
@@ -119,6 +123,7 @@
       "type": "object",
       "properties": {
         "max_per_issue": { "type": "integer", "minimum": 1 },
+        "max_dependencies_per_issue": { "type": "integer", "minimum": 0 },
         "max_total": { "type": "integer", "minimum": 1 },
         "baseline_protected": { "type": "integer", "minimum": 0 },
         "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
@@ -152,7 +157,21 @@
         "baseline_protected": { "type": "integer", "minimum": 0 },
         "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
         "dropped_by_issue_cap": { "type": "integer", "minimum": 0 },
+        "dropped_by_dependency_issue_cap": { "type": "integer", "minimum": 0 },
         "dropped_by_run_cap": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "capped-typed-dependency": {
+      "type": "object",
+      "required": ["source_id", "target_id", "type", "drop_reason"],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "target_id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "drop_reason": {
+          "enum": ["dependency-per-issue-cap", "lane-cap", "run-cap"]
+        }
       },
       "additionalProperties": false
     },

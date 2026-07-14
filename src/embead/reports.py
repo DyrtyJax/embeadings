@@ -232,6 +232,7 @@ def build_sweep_payload(
     filters: Any | None = None,
     thresholds: Any | None = None,
     candidate_policy: Any | None = None,
+    capped_typed_dependencies: Iterable[Any] = (),
     no_signal: Any | None = None,
     excluded: Any | None = None,
     target_batch_size: int | None = None,
@@ -265,6 +266,18 @@ def build_sweep_payload(
             "max_batch_size": target_batch_size,
         },
         "candidates": [_record(candidate) for candidate in ordered_candidates],
+        "capped_typed_dependencies": [
+            _record(item)
+            for item in sorted(
+                capped_typed_dependencies,
+                key=lambda item: (
+                    str(_field(item, "source_id", default="")),
+                    str(_field(item, "target_id", default="")),
+                    str(_field(item, "type", default="")),
+                    str(_field(item, "drop_reason", default="")),
+                ),
+            )
+        ],
         "batches": normalized_batches,
         "no_signal": _jsonable(no_signal or {"count": 0, "issue_ids": []}),
         "excluded": _jsonable(excluded or {"count": 0, "by_reason": {}, "issue_ids": []}),
@@ -504,6 +517,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     excluded = payload.get("excluded") or {}
     candidate_policy = _field(payload.get("parameters") or {}, "candidate_policy", default={}) or {}
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
+    capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
@@ -521,6 +535,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- Other review candidates: {len(candidates) - echo_count - overlap_count}",
         f"- No-signal records: {_field(no_signal, 'count', default=0)}",
         f"- Excluded records: {_field(excluded, 'count', default=0)}",
+        f"- Qualified typed dependencies omitted by caps: {len(capped_dependencies)}",
         f"- Singleton components: {_field(diagnostics, 'singleton_component_count', default=0)}",
         f"- Singleton agent envelopes: {_field(diagnostics, 'agent_envelope_count', default=0)}",
         "- Cross-batch candidate edges: "
@@ -534,14 +549,29 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
             lines.append(
                 f"- {lane.capitalize()}: {_field(metrics, 'admitted', default=0)} admitted / "
                 f"{_field(metrics, 'qualified', default=0)} qualified; "
-                f"{_field(metrics, 'dropped_by_lane_cap', default=0)} dropped by lane budget"
+                f"{_field(metrics, 'dropped_by_lane_cap', default=0)} dropped by lane budget; "
+                f"{_field(metrics, 'dropped_by_issue_cap', default=0)} dropped by per-issue budget"
             )
+        dependency_metrics = _field(lane_metrics, "dependency", default={}) or {}
+        lines.append(
+            "- Typed dependencies dropped by their independent per-issue allowance: "
+            f"{_field(dependency_metrics, 'dropped_by_dependency_issue_cap', default=0)}"
+        )
         lines.append(
             "- Baseline candidates protected in sensitivity mode: "
             f"{_field(candidate_policy, 'baseline_protected', default=0)}"
         )
     else:
         lines.append("Lane metrics were not recorded by this producer.")
+    if capped_dependencies:
+        lines.extend(["", "## Capped typed dependencies", ""])
+        for item in capped_dependencies:
+            lines.append(
+                f"- `{_escape(_field(item, 'source_id'))}` → "
+                f"`{_escape(_field(item, 'target_id'))}` "
+                f"({_escape(_field(item, 'type'))}); "
+                f"not promoted: {_escape(_field(item, 'drop_reason'))}"
+            )
     lines.extend(
         [
             "",

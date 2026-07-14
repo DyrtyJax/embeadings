@@ -36,6 +36,11 @@ Its category, operation, entity class, and source-field label make review prompt
 without copying arbitrary issue terms. Consumers must still treat the anchor as advisory and must
 inspect the private source records locally before reaching a conclusion.
 
+Sweep `parameters.candidate_policy` also records independent `dependency`, `echo`, and `overlap`
+lane caps and metrics. Consumers should use each lane's `qualified`, `admitted`, and drop counts when
+explaining queue volume. `baseline_protected` identifies default-threshold candidates selected first
+during a lower-threshold sensitivity run; it is evidence about ranking stability, not tracker truth.
+
 ## Capability handshake
 
 An optional dispatcher or UI should exchange a capability document before consuming artifacts. The

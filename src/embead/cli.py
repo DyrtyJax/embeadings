@@ -106,6 +106,14 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--max-candidates-per-issue", type=int, default=3)
     parser.add_argument("--max-candidates", type=int, default=250)
+    parser.add_argument(
+        "--max-dependency-candidates",
+        type=int,
+        default=75,
+        help="Independent budget for candidates backed by a typed dependency",
+    )
+    parser.add_argument("--max-echo-candidates", type=int, default=125)
+    parser.add_argument("--max-overlap-candidates", type=int, default=125)
 
 
 def _provider(name: str) -> Model2VecProvider | HashingProvider:
@@ -249,6 +257,9 @@ def _candidate_evidence(
     reciprocal_rank: int = 5,
     max_candidates_per_issue: int = 3,
     max_candidates: int = 250,
+    max_dependency_candidates: int = 75,
+    max_echo_candidates: int = 125,
+    max_overlap_candidates: int = 125,
 ) -> CandidateRanking:
     ranking = rank_candidates(
         population,
@@ -261,6 +272,9 @@ def _candidate_evidence(
             reciprocal_rank=reciprocal_rank,
             max_per_issue=max_candidates_per_issue,
             max_total=max_candidates,
+            max_dependencies=max_dependency_candidates,
+            max_echoes=max_echo_candidates,
+            max_overlaps=max_overlap_candidates,
         ),
     )
     by_id = {issue.id: issue for issue in all_issues}
@@ -285,6 +299,9 @@ def _candidate_evidence(
         qualified=ranking.qualified,
         dropped_by_issue_cap=ranking.dropped_by_issue_cap,
         dropped_by_run_cap=ranking.dropped_by_run_cap,
+        lanes=ranking.lanes,
+        baseline_protected=ranking.baseline_protected,
+        dropped_by_lane_cap=ranking.dropped_by_lane_cap,
     )
 
 
@@ -298,6 +315,9 @@ def _sweep(args: argparse.Namespace) -> int:
         reciprocal_rank=args.reciprocal_rank,
         max_per_issue=args.max_candidates_per_issue,
         max_total=args.max_candidates,
+        max_dependencies=args.max_dependency_candidates,
+        max_echoes=args.max_echo_candidates,
+        max_overlaps=args.max_overlap_candidates,
     )
     policy.validate()
     started = time.monotonic()
@@ -333,6 +353,9 @@ def _sweep(args: argparse.Namespace) -> int:
         reciprocal_rank=args.reciprocal_rank,
         max_candidates_per_issue=args.max_candidates_per_issue,
         max_candidates=args.max_candidates,
+        max_dependency_candidates=args.max_dependency_candidates,
+        max_echo_candidates=args.max_echo_candidates,
+        max_overlap_candidates=args.max_overlap_candidates,
     )
     candidates = list(ranking.candidates)
     candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
@@ -380,6 +403,10 @@ def _sweep(args: argparse.Namespace) -> int:
         ranking_warnings.append(
             f"Run candidate cap omitted {ranking.dropped_by_run_cap} qualified pairs."
         )
+    if ranking.dropped_by_lane_cap:
+        ranking_warnings.append(
+            f"Lane candidate budgets omitted {ranking.dropped_by_lane_cap} qualified pairs."
+        )
     population_ids = {issue.id for issue in population}
     candidate_issue_ids = {
         identifier
@@ -408,7 +435,15 @@ def _sweep(args: argparse.Namespace) -> int:
             "reciprocal_rank": args.reciprocal_rank,
             "max_per_issue": args.max_candidates_per_issue,
             "max_total": args.max_candidates,
+            "lane_caps": {
+                "dependency": args.max_dependency_candidates,
+                "echo": args.max_echo_candidates,
+                "overlap": args.max_overlap_candidates,
+            },
             "qualified": ranking.qualified,
+            "baseline_protected": ranking.baseline_protected,
+            "lanes": {lane: asdict(metrics) for lane, metrics in (ranking.lanes or {}).items()},
+            "dropped_by_lane_cap": ranking.dropped_by_lane_cap,
             "dropped_by_issue_cap": ranking.dropped_by_issue_cap,
             "dropped_by_run_cap": ranking.dropped_by_run_cap,
         },

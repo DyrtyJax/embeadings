@@ -65,9 +65,11 @@ embead sweep [--size 9]
 
 Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.
 Sweeps keep their conservative similarity thresholds while allowing a narrow, corroborated exception
-band. Use `--exception-margin`, `--reciprocal-rank`, `--max-candidates-per-issue`, and
-`--max-candidates` to tune that policy; deterministic caps remain enabled even with permissive
-thresholds.
+band. Typed dependencies, completed-work echoes, and possible overlaps have separate deterministic
+budgets; dependency evidence is admitted first. Use `--exception-margin`, `--reciprocal-rank`,
+`--max-candidates-per-issue`, `--max-candidates`, and the three `--max-*-candidates` lane controls to
+tune that policy. Lower-threshold sensitivity runs protect the candidates selected by the default
+thresholds before admitting additions, so a permissive run cannot silently replace the baseline queue.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
 as no-signal, disconnected signal groups remain separate, and epics are excluded by default; pass

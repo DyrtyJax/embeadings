@@ -12,10 +12,19 @@ class Scores:
         return self.values.get(frozenset((left_id, right_id)), 0.0)
 
 
-def issue(identifier, *, status="open", parent=None, dependencies=()):
+def issue(
+    identifier,
+    *,
+    status="open",
+    parent=None,
+    dependencies=(),
+    title=None,
+    description="",
+):
     return IssueRecord(
         id=identifier,
-        title=identifier,
+        title=title or identifier,
+        description=description,
         status=status,
         parent_id=parent,
         dependencies=dependencies,
@@ -176,6 +185,7 @@ def test_policy_rejects_unbounded_or_invalid_controls() -> None:
         policy(max_per_issue=0),
         policy(reciprocal_rank=-1),
         policy(exception_margin=-0.1),
+        policy(max_dependencies=-1),
     ):
         try:
             rank_candidates(issues, issues, Scores({}), bad_policy)
@@ -183,3 +193,89 @@ def test_policy_rejects_unbounded_or_invalid_controls() -> None:
             pass
         else:
             raise AssertionError("invalid candidate policy was accepted")
+
+
+def test_dependency_lane_is_admitted_before_semantic_candidates() -> None:
+    issues = [issue("A", dependencies=("B",)), issue("B"), issue("C"), issue("D")]
+    scores = Scores({("A", "B"): 0.81, ("C", "D"): 0.99})
+
+    result = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(max_total=1, max_per_issue=3),
+    )
+
+    assert [(item["issue_id"], item["related_issue_id"]) for item in result.candidates] == [
+        ("A", "B")
+    ]
+    assert result.candidates[0]["lane"] == "dependency"
+    assert result.lanes["dependency"].admitted == 1
+    assert result.lanes["overlap"].dropped_by_run_cap == 1
+
+
+def test_lane_budgets_are_independent_and_report_drops() -> None:
+    active = [
+        issue("A", dependencies=("B",)),
+        issue("B"),
+        issue("C"),
+        issue("D"),
+    ]
+    closed = issue("Z", status="closed")
+    scores = Scores({("A", "B"): 0.9, ("C", "D"): 0.9, ("C", "Z"): 0.95})
+
+    result = rank_candidates(
+        active,
+        [*active, closed],
+        scores,
+        policy(max_dependencies=1, max_echoes=1, max_overlaps=0, max_total=10),
+    )
+
+    assert [item["lane"] for item in result.candidates] == ["dependency", "echo"]
+    assert result.lanes["overlap"].qualified == 1
+    assert result.lanes["overlap"].dropped_by_lane_cap == 1
+    assert result.dropped_by_lane_cap == 1
+
+
+def test_sensitivity_run_preserves_baseline_queue_under_caps() -> None:
+    issues = [issue(identifier) for identifier in "ABCD"]
+    scores = Scores({("A", "B"): 0.9, ("C", "D"): 0.7})
+    baseline_policy = policy(max_total=1, max_per_issue=3)
+    sensitivity_policy = policy(overlap_threshold=0.65, max_total=1, max_per_issue=3)
+
+    baseline = rank_candidates(issues, issues, scores, baseline_policy)
+    sensitivity = rank_candidates(issues, issues, scores, sensitivity_policy)
+
+    baseline_ids = {
+        (item["kind"], item["issue_id"], item["related_issue_id"]) for item in baseline.candidates
+    }
+    sensitivity_ids = {
+        (item["kind"], item["issue_id"], item["related_issue_id"])
+        for item in sensitivity.candidates
+    }
+    assert baseline_ids <= sensitivity_ids
+    assert sensitivity.baseline_protected == 1
+    assert sensitivity.candidates[0]["baseline_protected"] is True
+
+
+def test_vocabulary_only_reciprocal_candidate_is_demoted() -> None:
+    issues = [
+        issue("A", title="generic cache"),
+        issue("B", title="generic cache"),
+        issue("C", title="red"),
+        issue("D", title="blue"),
+    ]
+    scores = Scores({("A", "B"): 0.76, ("C", "D"): 0.75})
+
+    result = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(reciprocal_rank=1, max_total=1, max_per_issue=3),
+    )
+
+    assert (result.candidates[0]["issue_id"], result.candidates[0]["related_issue_id"]) == (
+        "C",
+        "D",
+    )
+    assert result.candidates[0]["signal_quality"] == "semantic"

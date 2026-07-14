@@ -151,7 +151,15 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
         cache=CACHE,
         filters={"status": ["open"]},
         thresholds={"echo": 0.9},
-        candidate_policy={"max_total": 250},
+        candidate_policy={
+            "max_total": 250,
+            "baseline_protected": 1,
+            "lanes": {
+                "dependency": {"qualified": 2, "admitted": 1, "dropped_by_lane_cap": 1},
+                "echo": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
+                "overlap": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
+            },
+        },
         no_signal={"count": 4, "issue_ids": ["bd-7", "bd-8", "bd-9", "bd-10"]},
         excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["bd-1"]},
         target_batch_size=9,
@@ -172,6 +180,8 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "Possible overlaps: 1" in markdown
     assert "No-signal records: 4" in markdown
     assert "Excluded records: 1" in markdown
+    assert "Dependency: 1 admitted / 2 qualified" in markdown
+    assert "Baseline candidates protected in sensitivity mode: 1" in markdown
     assert "Batch 1: 1 issues" in markdown
     assert "local-model" in markdown
     assert "8 hits, 2 misses" in markdown

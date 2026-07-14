@@ -450,6 +450,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     warnings = payload.get("warnings") or []
     no_signal = payload.get("no_signal") or {}
     excluded = payload.get("excluded") or {}
+    candidate_policy = _field(payload.get("parameters") or {}, "candidate_policy", default={}) or {}
+    lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
     lines = [
@@ -467,13 +469,33 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- No-signal records: {_field(no_signal, 'count', default=0)}",
         f"- Excluded records: {_field(excluded, 'count', default=0)}",
         "",
-        "## Snapshot",
-        "",
-        *_metadata_lines(payload),
-        "",
-        "## Candidates",
-        "",
     ]
+    lines.extend(["## Candidate lanes", ""])
+    if lane_metrics:
+        for lane in ("dependency", "echo", "overlap"):
+            metrics = _field(lane_metrics, lane, default={}) or {}
+            lines.append(
+                f"- {lane.capitalize()}: {_field(metrics, 'admitted', default=0)} admitted / "
+                f"{_field(metrics, 'qualified', default=0)} qualified; "
+                f"{_field(metrics, 'dropped_by_lane_cap', default=0)} dropped by lane budget"
+            )
+        lines.append(
+            "- Baseline candidates protected in sensitivity mode: "
+            f"{_field(candidate_policy, 'baseline_protected', default=0)}"
+        )
+    else:
+        lines.append("Lane metrics were not recorded by this producer.")
+    lines.extend(
+        [
+            "",
+            "## Snapshot",
+            "",
+            *_metadata_lines(payload),
+            "",
+            "## Candidates",
+            "",
+        ]
+    )
     if not candidates:
         lines.extend(["No review candidates were found in the selected population.", ""])
     for item in candidates:

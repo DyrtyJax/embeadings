@@ -18,6 +18,7 @@
       "properties": {
         "filters": { "type": "object" },
         "thresholds": { "type": "object" },
+        "candidate_policy": { "$ref": "#/$defs/candidate-policy" },
         "target_batch_size": { "type": ["integer", "null"], "minimum": 1 }
       },
       "additionalProperties": true
@@ -76,6 +77,7 @@
       "required": ["kind", "issue_id", "related_issue_id", "similarity", "what_to_verify"],
       "properties": {
         "kind": { "type": "string", "minLength": 1 },
+        "lane": { "enum": ["dependency", "echo", "overlap"] },
         "issue_id": { "type": "string", "minLength": 1 },
         "related_issue_id": { "type": "string", "minLength": 1 },
         "similarity": { "type": "number", "minimum": -1, "maximum": 1 },
@@ -100,6 +102,47 @@
         }
       },
       "additionalProperties": true
+    },
+    "candidate-policy": {
+      "type": "object",
+      "properties": {
+        "max_per_issue": { "type": "integer", "minimum": 1 },
+        "max_total": { "type": "integer", "minimum": 1 },
+        "baseline_protected": { "type": "integer", "minimum": 0 },
+        "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
+        "lane_caps": {
+          "type": "object",
+          "properties": {
+            "dependency": { "type": "integer", "minimum": 0 },
+            "echo": { "type": "integer", "minimum": 0 },
+            "overlap": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "lanes": {
+          "type": "object",
+          "properties": {
+            "dependency": { "$ref": "#/$defs/lane-metrics" },
+            "echo": { "$ref": "#/$defs/lane-metrics" },
+            "overlap": { "$ref": "#/$defs/lane-metrics" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "lane-metrics": {
+      "type": "object",
+      "required": ["qualified", "admitted", "baseline_protected", "dropped_by_lane_cap", "dropped_by_issue_cap", "dropped_by_run_cap"],
+      "properties": {
+        "qualified": { "type": "integer", "minimum": 0 },
+        "admitted": { "type": "integer", "minimum": 0 },
+        "baseline_protected": { "type": "integer", "minimum": 0 },
+        "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
+        "dropped_by_issue_cap": { "type": "integer", "minimum": 0 },
+        "dropped_by_run_cap": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
     },
     "batch-summary": {
       "type": "object",

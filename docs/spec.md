@@ -205,6 +205,13 @@ within the overlap lane, vocabulary-only reciprocal exceptions rank behind stron
 Direct parent/child structure is reported as counterevidence and does not enable a below-threshold
 exception on its own.
 
+For recurring maintenance, `--weekly-review-budget N` is an opinionated hard total budget layered on
+the existing lane and per-issue allowances. It selects typed dependencies first, high-confidence
+completed-work echoes second, and possible overlaps third. The budget is applied after incremental
+eligibility filtering, so unchanged records remain context without consuming the queue. Sweep reports
+record the effective limit, admitted total, deterministic priority policy, and compact per-lane counts
+for candidates omitted by the total budget.
+
 When either threshold is lowered below its default, selection first reproduces the default-threshold
 queue under the same lane, endpoint, and run caps. Only remaining capacity is offered to permissive
 additions. Reports expose qualified, admitted, baseline-protected, and cap-drop counts for every lane,

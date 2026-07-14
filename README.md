@@ -28,6 +28,9 @@ embead sweep --changed-since 2026-07-01T00:00:00Z
 # Carry a portable review checkpoint between runs (keep it outside the repository)
 embead sweep --since-checkpoint /tmp/embead-checkpoint.json \
   --write-checkpoint /tmp/embead-next-checkpoint.json
+
+# Keep a weekly review queue to at most twelve candidates
+embead sweep --weekly-review-budget 12
 ```
 
 The first semantic command downloads the pinned
@@ -83,6 +86,11 @@ budgets; dependency evidence is admitted first. Use `--exception-margin`, `--rec
 three `--max-*-candidates` lane controls to tune that policy. Lower-threshold sensitivity runs
 protect the candidates selected by the default
 thresholds before admitting additions, so a permissive run cannot silently replace the baseline queue.
+For a smaller recurring queue, `--weekly-review-budget N` (also available as `--review-budget N`)
+applies a hard total candidate budget while retaining the independent dependency allowance. Selection
+is deterministic: typed dependencies are considered first, followed by high-confidence completed-work
+echoes and then possible overlaps. Reports record the applied budget, admitted total, and compact
+per-lane omission counts. The preset composes with both incremental scope flags.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
 as no-signal, and epics are excluded by default; pass `--include-epics` when broad container records

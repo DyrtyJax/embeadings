@@ -541,6 +541,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     filters = _field(payload.get("parameters") or {}, "filters", default={}) or {}
     incremental_scope = _field(filters, "incremental_scope", default={}) or {}
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
+    review_budget = _field(candidate_policy, "review_budget", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
     anchor_metrics = payload.get("anchor_metrics") or {}
@@ -576,6 +577,29 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         + str(_field(anchor_metrics, "total", default=len(candidates))),
         "",
     ]
+    if review_budget:
+        priority = " → ".join(_field(review_budget, "priority_order", default=[]) or [])
+        omitted_by_lane = _field(review_budget, "omitted_by_lane", default={}) or {}
+        lines.extend(
+            [
+                "## Review budget",
+                "",
+                f"- Mode: {_field(review_budget, 'mode', default='standard')}",
+                "- Candidate limit: "
+                + str(_field(review_budget, "candidate_limit", default="not recorded")),
+                "- Admitted candidates: "
+                + str(_field(review_budget, "admitted_candidates", default=len(candidates))),
+                "- Omitted by total budget: "
+                + str(_field(review_budget, "omitted_candidates", default=0)),
+                f"- Priority: {_escape(priority or 'not recorded')}",
+                "- Omitted by lane: "
+                + ", ".join(
+                    f"{lane}={_field(omitted_by_lane, lane, default=0)}"
+                    for lane in ("dependency", "echo", "overlap")
+                ),
+                "",
+            ]
+        )
     lines.extend(["## Candidate lanes", ""])
     if lane_metrics:
         for lane in ("dependency", "echo", "overlap"):

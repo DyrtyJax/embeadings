@@ -34,6 +34,14 @@
     "candidate_policy": {
       "max_per_issue": 3,
       "max_total": 250,
+      "review_budget": {
+        "mode": "standard",
+        "candidate_limit": 250,
+        "admitted_candidates": 1,
+        "omitted_candidates": 0,
+        "priority_order": ["typed-dependency", "high-confidence-completed-work-echo", "possible-overlap"],
+        "omitted_by_lane": { "dependency": 0, "echo": 0, "overlap": 0 }
+      },
       "lane_caps": { "dependency": 75, "echo": 125, "overlap": 125 },
       "baseline_protected": 0,
       "dropped_by_lane_cap": 0,

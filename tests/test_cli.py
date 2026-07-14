@@ -3,7 +3,7 @@ import json
 from embead import cli
 from embead.models import IssueRecord, WorkspaceSnapshot
 from embead.provider import HashingProvider
-from embead.ranking import CandidateRanking
+from embead.ranking import CandidateRanking, LaneMetrics
 
 ISSUES = (
     IssueRecord(
@@ -127,6 +127,100 @@ def test_sweep_rejects_invalid_candidate_volume_controls(monkeypatch, tmp_path, 
     assert cli.main(["sweep", "--max-candidates", "0", "--json"]) == 2
 
     assert "run candidate cap must be positive" in capsys.readouterr().err
+
+    assert cli.main(["sweep", "--weekly-review-budget", "0", "--json"]) == 2
+
+    assert "run candidate cap must be positive" in capsys.readouterr().err
+
+
+def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    issues = (
+        IssueRecord("changed", "Changed", status="open", updated_at="2026-07-14T01:00:00Z"),
+        IssueRecord("context", "Context", status="open", updated_at="2026-07-01T01:00:00Z"),
+        IssueRecord("closed", "Closed", status="closed", updated_at="2026-07-01T01:00:00Z"),
+    )
+
+    class WeeklyAdapter:
+        def load(self):
+            return WorkspaceSnapshot("workspace-test", "1.0.5", None), issues
+
+    def fake_candidates(_population, _issues, _vectors, **kwargs):
+        assert kwargs["eligible_issue_ids"] == {"changed"}
+        assert kwargs["max_candidates"] == 2
+        assert kwargs["max_dependency_candidates_per_issue"] == 7
+        return CandidateRanking(
+            candidates=(
+                {
+                    "kind": "possible-overlap",
+                    "lane": "dependency",
+                    "issue_id": "changed",
+                    "related_issue_id": "context",
+                    "similarity": 0.9,
+                },
+                {
+                    "kind": "completed-work-echo",
+                    "lane": "echo",
+                    "issue_id": "changed",
+                    "related_issue_id": "closed",
+                    "similarity": 0.88,
+                },
+            ),
+            qualified=3,
+            dropped_by_issue_cap=0,
+            dropped_by_run_cap=1,
+            lanes={
+                "dependency": LaneMetrics(qualified=1, admitted=1),
+                "echo": LaneMetrics(qualified=1, admitted=1),
+                "overlap": LaneMetrics(qualified=1, dropped_by_run_cap=1),
+            },
+        )
+
+    monkeypatch.setattr(cli, "BeadsAdapter", WeeklyAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
+    monkeypatch.setattr(cli, "_candidate_evidence", fake_candidates)
+    monkeypatch.setattr(
+        cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
+    )
+
+    assert (
+        cli.main(
+            [
+                "sweep",
+                "--weekly-review-budget",
+                "2",
+                "--max-dependency-candidates-per-issue",
+                "7",
+                "--changed-since",
+                "2026-07-10T00:00:00Z",
+                "--output",
+                str(tmp_path / "weekly"),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["candidates"]) == 2
+    assert payload["parameters"]["filters"]["incremental_scope"]["mode"] == "changed-since"
+    assert payload["parameters"]["candidate_policy"]["max_dependencies_per_issue"] == 7
+    assert payload["parameters"]["candidate_policy"]["review_budget"] == {
+        "admitted_candidates": 2,
+        "candidate_limit": 2,
+        "mode": "weekly",
+        "omitted_by_lane": {"dependency": 0, "echo": 0, "overlap": 1},
+        "omitted_candidates": 1,
+        "priority_order": [
+            "typed-dependency",
+            "high-confidence-completed-work-echo",
+            "possible-overlap",
+        ],
+    }
+    markdown = (tmp_path / "weekly" / "report.md").read_text()
+    assert "Mode: weekly" in markdown
+    assert "Omitted by lane: dependency=0, echo=0, overlap=1" in markdown
 
 
 def test_ranked_candidates_keep_structural_admission_and_specific_explanation() -> None:

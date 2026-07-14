@@ -157,6 +157,7 @@
         "max_per_issue": { "type": "integer", "minimum": 1 },
         "max_dependencies_per_issue": { "type": "integer", "minimum": 0 },
         "max_total": { "type": "integer", "minimum": 1 },
+        "review_budget": { "$ref": "#/$defs/review-budget" },
         "baseline_protected": { "type": "integer", "minimum": 0 },
         "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
         "lane_caps": {
@@ -179,6 +180,30 @@
         }
       },
       "additionalProperties": true
+    },
+    "review-budget": {
+      "type": "object",
+      "required": ["mode", "candidate_limit", "admitted_candidates", "omitted_candidates", "priority_order", "omitted_by_lane"],
+      "properties": {
+        "mode": { "enum": ["standard", "weekly"] },
+        "candidate_limit": { "type": "integer", "minimum": 1 },
+        "admitted_candidates": { "type": "integer", "minimum": 0 },
+        "omitted_candidates": { "type": "integer", "minimum": 0 },
+        "priority_order": {
+          "const": ["typed-dependency", "high-confidence-completed-work-echo", "possible-overlap"]
+        },
+        "omitted_by_lane": {
+          "type": "object",
+          "required": ["dependency", "echo", "overlap"],
+          "properties": {
+            "dependency": { "type": "integer", "minimum": 0 },
+            "echo": { "type": "integer", "minimum": 0 },
+            "overlap": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "lane-metrics": {
       "type": "object",

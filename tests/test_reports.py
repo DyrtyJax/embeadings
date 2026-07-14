@@ -132,7 +132,12 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
             "related_issue_id": "bd-6",
             "kind": "possible_overlap",
             "similarity": 0.82,
-            "admission_reason": "shared-parent-threshold-exception",
+            "admission_reason": "dependency-threshold-exception",
+            "dependency_evidence": {
+                "source_id": "bd-5",
+                "target_id": "bd-6",
+                "type": "blocks",
+            },
         },
         {
             "issue_id": "bd-2",
@@ -151,7 +156,15 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
         cache=CACHE,
         filters={"status": ["open"]},
         thresholds={"echo": 0.9},
-        candidate_policy={"max_total": 250},
+        candidate_policy={
+            "max_total": 250,
+            "baseline_protected": 1,
+            "lanes": {
+                "dependency": {"qualified": 2, "admitted": 1, "dropped_by_lane_cap": 1},
+                "echo": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
+                "overlap": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
+            },
+        },
         no_signal={"count": 4, "issue_ids": ["bd-7", "bd-8", "bd-9", "bd-10"]},
         excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["bd-1"]},
         target_batch_size=9,
@@ -172,11 +185,14 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "Possible overlaps: 1" in markdown
     assert "No-signal records: 4" in markdown
     assert "Excluded records: 1" in markdown
+    assert "Dependency: 1 admitted / 2 qualified" in markdown
+    assert "Baseline candidates protected in sensitivity mode: 1" in markdown
     assert "Batch 1: 1 issues" in markdown
     assert "local-model" in markdown
     assert "8 hits, 2 misses" in markdown
     assert "verify" in markdown.lower()
-    assert "shared-parent-threshold-exception" in markdown
+    assert "dependency-threshold-exception" in markdown
+    assert "Typed dependency: bd-5 → bd-6 (blocks)" in markdown
 
 
 def test_empty_sweep_is_a_successful_report() -> None:

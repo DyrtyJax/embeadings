@@ -61,6 +61,16 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert payload["schema_version"] == 1
     assert payload["parameters"]["candidate_policy"]["max_per_issue"] == 3
     assert payload["parameters"]["candidate_policy"]["max_total"] == 250
+    assert payload["parameters"]["candidate_policy"]["lane_caps"] == {
+        "dependency": 75,
+        "echo": 125,
+        "overlap": 125,
+    }
+    assert set(payload["parameters"]["candidate_policy"]["lanes"]) == {
+        "dependency",
+        "echo",
+        "overlap",
+    }
     assert payload["batches"] == []
     assert payload["no_signal"] == {"count": 2, "issue_ids": ["demo-1", "demo-3"]}
     assert set(payload["timings_ms"]) == {

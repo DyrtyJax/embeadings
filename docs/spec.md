@@ -199,8 +199,16 @@ dependency/relation, or reciprocal-neighbor rank. Reports record why the excepti
 Candidate volume must be bounded through a deterministic per-issue cap or equivalent global budget.
 Lowering a global threshold without a volume control is not an acceptable substitute for ranking.
 The synchronous CLI defaults to a `0.08` exception margin, reciprocal rank `5`, three candidates per
-issue, and 250 candidates per run. Direct parent/child structure is reported as counterevidence and
-does not enable a below-threshold exception on its own.
+issue, and 250 candidates per run. Candidates are assigned to typed-dependency, completed-work echo,
+and overlap lanes with independent budgets. Typed dependencies are admitted before semantic lanes;
+within the overlap lane, vocabulary-only reciprocal exceptions rank behind stronger semantic signals.
+Direct parent/child structure is reported as counterevidence and does not enable a below-threshold
+exception on its own.
+
+When either threshold is lowered below its default, selection first reproduces the default-threshold
+queue under the same lane, endpoint, and run caps. Only remaining capacity is offered to permissive
+additions. Reports expose qualified, admitted, baseline-protected, and cap-drop counts for every lane,
+making sensitivity runs monotonic with respect to the bounded default queue.
 
 ### Evidence-specific explanations
 

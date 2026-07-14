@@ -21,11 +21,24 @@
   "parameters": {
     "filters": { "status": ["open"] },
     "thresholds": { "completed_work_echo": 0.72, "possible_overlap": 0.82 },
+    "candidate_policy": {
+      "max_per_issue": 3,
+      "max_total": 250,
+      "lane_caps": { "dependency": 75, "echo": 125, "overlap": 125 },
+      "baseline_protected": 0,
+      "dropped_by_lane_cap": 0,
+      "lanes": {
+        "dependency": { "qualified": 0, "admitted": 0, "baseline_protected": 0, "dropped_by_lane_cap": 0, "dropped_by_issue_cap": 0, "dropped_by_run_cap": 0 },
+        "echo": { "qualified": 1, "admitted": 1, "baseline_protected": 0, "dropped_by_lane_cap": 0, "dropped_by_issue_cap": 0, "dropped_by_run_cap": 0 },
+        "overlap": { "qualified": 0, "admitted": 0, "baseline_protected": 0, "dropped_by_lane_cap": 0, "dropped_by_issue_cap": 0, "dropped_by_run_cap": 0 }
+      }
+    },
     "target_batch_size": 5
   },
   "candidates": [
     {
       "kind": "completed-work-echo",
+      "lane": "echo",
       "issue_id": "demo-1",
       "related_issue_id": "demo-2",
       "similarity": 0.91,

@@ -21,6 +21,13 @@ Python 3.11 or later and an installed `bd` CLI are required.
 python -m pip install -e .
 embead neighbors ISSUE_ID --include-closed
 embead sweep --size 9
+
+# Review only candidates touching active work changed after a timestamp
+embead sweep --changed-since 2026-07-01T00:00:00Z
+
+# Carry a portable review checkpoint between runs (keep it outside the repository)
+embead sweep --since-checkpoint /tmp/embead-checkpoint.json \
+  --write-checkpoint /tmp/embead-next-checkpoint.json
 ```
 
 The first semantic command downloads the pinned
@@ -64,6 +71,11 @@ embead sweep [--size 9]
 ```
 
 Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.
+Both commands accept mutually exclusive `--changed-since RFC3339` and `--since-checkpoint PATH`
+scopes. `--write-checkpoint PATH` atomically writes a metadata-only snapshot: issue IDs, normalized
+update timestamps, and one-way record fingerprints. Checkpoints must remain outside the Beads
+repository; malformed, future-dated, or cross-workspace checkpoints fail closed. Records without an
+update timestamp are conservatively treated as changed.
 Sweeps keep their conservative similarity thresholds while allowing a narrow, corroborated exception
 band. Typed dependencies, completed-work echoes, and possible overlaps have separate deterministic
 budgets; dependency evidence is admitted first. Use `--exception-margin`, `--reciprocal-rank`,

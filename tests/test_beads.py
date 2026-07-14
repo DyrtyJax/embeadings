@@ -41,6 +41,7 @@ def test_list_invocation_is_read_only_and_parses_current_shape() -> None:
                         "acceptance_criteria": "Atomic writes",
                         "design": "Content addressing",
                         "notes": "Cross-platform lock",
+                        "updated_at": "2026-07-14T05:30:00-07:00",
                     }
                 ],
                 "",
@@ -54,6 +55,7 @@ def test_list_invocation_is_read_only_and_parses_current_shape() -> None:
     assert records[0].labels == ("semantic", "storage")
     assert records[0].dependencies == ("bd-0",)
     assert records[0].acceptance_criteria == "Atomic writes"
+    assert records[0].updated_at == "2026-07-14T05:30:00-07:00"
 
 
 def test_beads_1_0_5_relationship_fixture_preserves_targets_direction_and_type() -> None:

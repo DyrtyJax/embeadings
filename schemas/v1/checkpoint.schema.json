@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/checkpoint.schema.json",
+  "title": "emBEADings incremental checkpoint, version 1",
+  "type": "object",
+  "required": ["checkpoint_version", "workspace_id", "created_at", "issues"],
+  "properties": {
+    "checkpoint_version": { "const": 1 },
+    "workspace_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "issues": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["updated_at", "fingerprint"],
+        "properties": {
+          "updated_at": { "type": ["string", "null"], "format": "date-time" },
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

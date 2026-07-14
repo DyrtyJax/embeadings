@@ -118,8 +118,22 @@ score as a Beads dependency, status transition, duplicate decision, or authoriza
 | `neighbors` | [`neighbors.schema.json`](../schemas/v1/neighbors.schema.json) | [`neighbors.json`](../examples/neighbors.json) |
 | `batch` | [`batch.schema.json`](../schemas/v1/batch.schema.json) | [`batch.json`](../examples/batch.json) |
 | `sweep` | [`sweep.schema.json`](../schemas/v1/sweep.schema.json) | [`sweep.json`](../examples/sweep.json) |
+| Incremental checkpoint | [`checkpoint.schema.json`](../schemas/v1/checkpoint.schema.json) | [`checkpoint.json`](../examples/checkpoint.json) |
 
 Schemas use JSON Schema Draft 2020-12. Published `$id` values point to the corresponding files on the
 default branch; consumers should vendor a supported schema version when deterministic offline
 validation is required. Python wheel installations also include them under `embead/schemas/v1` for
 offline access through `importlib.resources`.
+
+## Incremental sweep scope
+
+Sweep filters include an `incremental_scope` summary. `mode` is `full`, `changed-since`, or
+`checkpoint`; its counts distinguish changed active records from unchanged exclusions, missing
+timestamps, and records deleted since a checkpoint. An incremental candidate always touches at
+least one changed active record. Its other endpoint can be unchanged context or completed work.
+
+Checkpoints are separate portable JSON artifacts, not tracker mutations or part of the report
+schema. Version 1 contains only workspace identity, creation time, issue IDs, normalized update
+timestamps, and SHA-256 record fingerprints. Consumers must reject unsupported versions,
+future-created checkpoints, invalid timestamps, and workspace mismatches. Issue text is never stored
+in the checkpoint.

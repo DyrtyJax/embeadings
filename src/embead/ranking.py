@@ -103,6 +103,8 @@ def rank_candidates(
     all_issues: Sequence[Any],
     scorer: Scorer,
     policy: CandidatePolicy,
+    *,
+    eligible_issue_ids: frozenset[str] | None = None,
 ) -> CandidateRanking:
     """Rank candidates into independently budgeted deterministic review lanes.
 
@@ -128,6 +130,13 @@ def rank_candidates(
         echo_threshold=policy.echo_threshold,
         overlap_threshold=policy.overlap_threshold,
     )
+    if eligible_issue_ids is not None:
+        requested = [
+            item
+            for item in requested
+            if item["issue_id"] in eligible_issue_ids
+            or item["related_issue_id"] in eligible_issue_ids
+        ]
     is_sensitivity = (
         policy.echo_threshold < policy.baseline_echo_threshold
         or policy.overlap_threshold < policy.baseline_overlap_threshold
@@ -143,6 +152,13 @@ def rank_candidates(
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
         )
+        if eligible_issue_ids is not None:
+            baseline = [
+                item
+                for item in baseline
+                if item["issue_id"] in eligible_issue_ids
+                or item["related_issue_id"] in eligible_issue_ids
+            ]
 
     return _select_candidates(baseline, requested, policy)
 

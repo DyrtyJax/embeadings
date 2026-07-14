@@ -16,7 +16,13 @@
       "type": "object",
       "required": ["filters", "thresholds", "target_batch_size"],
       "properties": {
-        "filters": { "type": "object" },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "incremental_scope": { "$ref": "#/$defs/incremental-scope" }
+          },
+          "additionalProperties": true
+        },
         "thresholds": { "type": "object" },
         "candidate_policy": { "$ref": "#/$defs/candidate-policy" },
         "target_batch_size": { "type": ["integer", "null"], "minimum": 1 },
@@ -233,6 +239,19 @@
         }
       },
       "additionalProperties": true
+    },
+    "incremental-scope": {
+      "type": "object",
+      "required": ["mode", "changed_active_count", "unchanged_active_count", "unknown_timestamp_count", "deleted_since_checkpoint_count"],
+      "properties": {
+        "mode": { "enum": ["full", "changed-since", "checkpoint"] },
+        "changed_active_count": { "type": "integer", "minimum": 0 },
+        "unchanged_active_count": { "type": "integer", "minimum": 0 },
+        "unknown_timestamp_count": { "type": "integer", "minimum": 0 },
+        "deleted_since_checkpoint_count": { "type": "integer", "minimum": 0 },
+        "checkpoint_created_at": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": false
     },
     "excluded-summary": {
       "type": "object",

@@ -38,7 +38,13 @@
       "related_issue_id": "demo-2",
       "similarity": 0.91,
       "structural_context": "same parent demo-epic",
-      "what_to_verify": "Confirm whether the completed implementation changed the documentation scope."
+      "verification_anchor": {
+        "category": "completed outcome",
+        "operation": "render",
+        "entity_class": "report",
+        "source_field": "acceptance criteria"
+      },
+      "what_to_verify": "Verify the redacted completed-outcome anchor for rendering a report."
     }
   ],
   "review_rubric": [

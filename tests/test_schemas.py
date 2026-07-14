@@ -35,7 +35,14 @@ EVIDENCE = {
     "related_issue_id": "demo-2",
     "similarity": 0.91,
     "structural_context": "same parent demo-epic",
+    "verification_anchor": {
+        "category": "completed outcome",
+        "operation": "render",
+        "entity_class": "report",
+        "source_field": "acceptance criteria",
+    },
     "what_to_verify": "Confirm whether completed work changed the active scope.",
+    "counterevidence": ["no direct dependency is recorded"],
 }
 
 

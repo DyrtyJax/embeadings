@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "jsonschema>=4.23,<5",
   "pytest>=8.3,<10",
   "ruff>=0.12,<1",
 ]
@@ -28,6 +29,9 @@ embead = "embead.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/embead"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schemas/v1" = "embead/schemas/v1"
 
 [tool.pytest.ini_options]
 addopts = "-q"

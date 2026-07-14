@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/neighbors.schema.json",
+  "title": "emBEADings neighbors report, schema version 1",
+  "type": "object",
+  "required": ["schema_version", "report_type", "policy", "snapshot", "model", "cache", "issue", "neighbors"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report_type": { "const": "neighbors" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "model": { "$ref": "#/$defs/model" },
+    "cache": { "$ref": "#/$defs/cache" },
+    "issue": { "$ref": "#/$defs/issue" },
+    "neighbors": { "type": "array", "items": { "$ref": "#/$defs/neighbor" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "required": ["read_only", "tracker_mutation_allowed", "advisory", "notice"],
+      "properties": {
+        "read_only": { "const": true },
+        "tracker_mutation_allowed": { "const": false },
+        "advisory": { "const": true },
+        "notice": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["workspace_id", "beads_version"],
+      "properties": {
+        "workspace_id": { "type": "string", "minLength": 1 },
+        "beads_version": { "type": "string", "minLength": 1 },
+        "workspace_path": { "type": ["string", "null"] },
+        "source_revision": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "model": {
+      "type": "object",
+      "required": ["model_id", "model_revision"],
+      "properties": {
+        "model_id": { "type": "string", "minLength": 1 },
+        "model_revision": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "hits": { "type": "integer", "minimum": 0 },
+        "misses": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "issue": {
+      "type": "object",
+      "required": ["id", "title", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "status": { "type": "string" },
+        "priority": { "type": ["integer", "null"] },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "parent_id": { "type": ["string", "null"] },
+        "dependencies": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "neighbor": {
+      "allOf": [
+        { "$ref": "#/$defs/issue" },
+        {
+          "type": "object",
+          "required": ["similarity"],
+          "properties": {
+            "similarity": { "type": "number", "minimum": -1, "maximum": 1 },
+            "structural_context": { "type": "string" }
+          }
+        }
+      ]
+    }
+  }
+}

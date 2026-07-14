@@ -1,0 +1,9 @@
+{
+  "document_type": "embeadings-capabilities",
+  "protocol_version": 1,
+  "role": "consumer",
+  "schema_versions": [1],
+  "report_types": ["neighbors", "batch", "sweep"],
+  "capabilities": ["additive-fields", "advisory-evidence", "read-only-review"],
+  "required_capabilities": ["read-only-review"]
+}

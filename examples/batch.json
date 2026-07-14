@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "report_type": "batch",
+  "run_id": "synthetic-run-1",
+  "batch": 1,
+  "snapshot": {
+    "workspace_id": "synthetic-workspace",
+    "beads_version": "1.0.5",
+    "workspace_path": null
+  },
+  "model": {
+    "model_id": "synthetic-local-model",
+    "model_revision": "example-revision"
+  },
+  "cache": { "hits": 2, "misses": 0 },
+  "policy": {
+    "read_only": true,
+    "implementation_allowed": false,
+    "tracker_mutation_allowed": false,
+    "advisory": true,
+    "notice": "Synthetic read-only example. Verify advisory evidence against current project state."
+  },
+  "issues": [
+    {
+      "id": "demo-1",
+      "title": "Document token refresh",
+      "status": "open",
+      "priority": 2,
+      "labels": ["documentation"],
+      "parent_id": "demo-epic",
+      "dependencies": []
+    }
+  ],
+  "neighbor_evidence": [
+    {
+      "kind": "completed-work-echo",
+      "issue_id": "demo-1",
+      "related_issue_id": "demo-2",
+      "similarity": 0.91,
+      "structural_context": "same parent demo-epic",
+      "what_to_verify": "Confirm whether the completed implementation changed the documentation scope."
+    }
+  ],
+  "review_rubric": [
+    "Verify each candidate against current source and shipped behavior.",
+    "Do not mutate the tracker during review."
+  ]
+}

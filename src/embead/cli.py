@@ -368,7 +368,9 @@ def _sweep(args: argparse.Namespace) -> int:
     max_candidates = (
         args.weekly_review_budget
         if args.weekly_review_budget is not None
-        else args.max_candidates if args.max_candidates is not None else 250
+        else args.max_candidates
+        if args.max_candidates is not None
+        else 250
     )
     policy = CandidatePolicy(
         echo_threshold=args.echo_threshold,
@@ -558,8 +560,7 @@ def _sweep(args: argparse.Namespace) -> int:
             "possible-overlap",
         ],
         "omitted_by_lane": {
-            lane: metrics.dropped_by_run_cap
-            for lane, metrics in (ranking.lanes or {}).items()
+            lane: metrics.dropped_by_run_cap for lane, metrics in (ranking.lanes or {}).items()
         },
     }
     payload = build_sweep_payload(

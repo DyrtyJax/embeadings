@@ -15,7 +15,7 @@ from typing import Any
 
 from platformdirs import user_cache_path, user_state_path
 
-from .analysis import balanced_batches, cosine_similarity, nearest_neighbors
+from .analysis import SimilarityIndex, balanced_batches, nearest_neighbors
 from .beads import BeadsAdapter, BeadsError
 from .cache import VectorCache
 from .models import IssueRecord, canonical_text
@@ -184,12 +184,14 @@ def _neighbors(args: argparse.Namespace) -> int:
     provider = _provider(args.provider)
     cache_path, _ = _workspace_paths(snapshot.workspace_id)
     vectors, cache_stats = _load_vectors(issues, provider, VectorCache(cache_path))
+    similarity_index = SimilarityIndex(vectors)
     ranked = nearest_neighbors(
         by_id[args.issue_id],
         issues,
         vectors,
         limit=args.limit,
         include_closed=args.include_closed,
+        similarity_index=similarity_index,
     )
     evidence = []
     for neighbor in ranked:
@@ -222,17 +224,17 @@ def _candidate_evidence(
     *,
     echo_threshold: float,
     overlap_threshold: float,
+    similarity_index: SimilarityIndex | None = None,
 ) -> list[dict[str, Any]]:
+    score_index = similarity_index or SimilarityIndex(vectors)
     closed = [issue for issue in all_issues if issue.status.casefold() in CLOSED_STATUSES]
+    closed_by_id = {issue.id: issue for issue in closed}
     evidence: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     for issue in population:
         if closed:
-            related = max(
-                sorted(closed, key=lambda item: item.id),
-                key=lambda item: cosine_similarity(vectors[issue.id], vectors[item.id]),
-            )
-            score = cosine_similarity(vectors[issue.id], vectors[related.id])
+            related_id, score = score_index.ranked(issue.id, [item.id for item in closed])[0]
+            related = closed_by_id[related_id]
             if score >= echo_threshold:
                 evidence.append(
                     {
@@ -247,9 +249,9 @@ def _candidate_evidence(
                     }
                 )
                 seen.add(("completed-work-echo", issue.id, related.id))
-    for index, issue in enumerate(population):
-        for related in population[index + 1 :]:
-            score = cosine_similarity(vectors[issue.id], vectors[related.id])
+    for position, issue in enumerate(population):
+        for related in population[position + 1 :]:
+            score = score_index.score(issue.id, related.id)
             key = ("possible-overlap", issue.id, related.id)
             if score >= overlap_threshold and key not in seen:
                 evidence.append(
@@ -274,20 +276,37 @@ def _sweep(args: argparse.Namespace) -> int:
     if not -1 <= args.echo_threshold <= 1 or not -1 <= args.overlap_threshold <= 1:
         raise ValueError("similarity thresholds must be between -1 and 1")
     started = time.monotonic()
+    phase_started = started
     snapshot, issues = BeadsAdapter().load()
+    acquisition_ms = round((time.monotonic() - phase_started) * 1000)
     statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
     population = [issue for issue in issues if issue.status.casefold() in statuses]
     provider = _provider(args.provider)
     cache_path, state_path = _workspace_paths(snapshot.workspace_id)
+    phase_started = time.monotonic()
     vectors, cache_stats = _load_vectors(issues, provider, VectorCache(cache_path))
-    batches = balanced_batches(population, vectors, target_size=args.size)
+    embedding_ms = round((time.monotonic() - phase_started) * 1000)
+    phase_started = time.monotonic()
+    similarity_index = SimilarityIndex(vectors)
+    similarity_scoring_ms = round((time.monotonic() - phase_started) * 1000)
+    phase_started = time.monotonic()
     candidates = _candidate_evidence(
         population,
         issues,
         vectors,
         echo_threshold=args.echo_threshold,
         overlap_threshold=args.overlap_threshold,
+        similarity_index=similarity_index,
     )
+    candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
+    phase_started = time.monotonic()
+    batches = balanced_batches(
+        population,
+        vectors,
+        target_size=args.size,
+        similarity_index=similarity_index,
+    )
+    batching_ms = round((time.monotonic() - phase_started) * 1000)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
     run_dir = args.output or state_path / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -333,6 +352,13 @@ def _sweep(args: argparse.Namespace) -> int:
         target_batch_size=args.size,
         duration_ms=round((time.monotonic() - started) * 1000),
     )
+    payload["timings_ms"] = {
+        "acquisition": acquisition_ms,
+        "embedding_and_cache": embedding_ms,
+        "similarity_scoring": similarity_scoring_ms,
+        "candidate_analysis": candidate_analysis_ms,
+        "batching": batching_ms,
+    }
     payload["output_directory"] = str(run_dir)
     _atomic_text(run_dir / "report.json", _json_text(payload))
     _atomic_text(run_dir / "report.md", render_sweep_markdown(payload))

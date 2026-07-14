@@ -395,7 +395,13 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
                 f"### {_kind_label(item)}: `{_escape(source)}` ↔ `{_escape(related)}`",
                 "",
                 f"- Similarity: {score_text} (advisory)",
+                f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
+                "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
                 f"- Structural context: {_escape(context)}",
+                "- Counterevidence: "
+                + _escape(
+                    "; ".join(_field(item, "counterevidence", default=[]) or []) or "none recorded"
+                ),
                 "- What to verify: "
                 + _escape(
                     _field(
@@ -462,6 +468,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 f"### {_kind_label(item)}: `{_escape(issue_id)}` ↔ `{_escape(related)}`",
                 "",
                 f"- Similarity: {score_text} (advisory)",
+                f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
+                "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
                 "- Structural context: "
                 + _escape(
                     _field(
@@ -472,7 +480,9 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                     )
                 ),
                 "- Counterevidence: "
-                + _escape(_field(item, "counterevidence", default="none recorded")),
+                + _escape(
+                    "; ".join(_field(item, "counterevidence", default=[]) or []) or "none recorded"
+                ),
                 "- What to verify: "
                 + _escape(
                     _field(

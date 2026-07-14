@@ -18,6 +18,7 @@ from platformdirs import user_cache_path, user_state_path
 from .analysis import SimilarityIndex, balanced_batches, nearest_neighbors
 from .beads import BeadsAdapter, BeadsError
 from .cache import VectorCache
+from .explain import explain_candidate
 from .models import IssueRecord, canonical_text
 from .provider import HashingProvider, Model2VecProvider
 from .reports import (
@@ -236,15 +237,20 @@ def _candidate_evidence(
             related_id, score = score_index.ranked(issue.id, [item.id for item in closed])[0]
             related = closed_by_id[related_id]
             if score >= echo_threshold:
+                context = _structural_context(issue, related)
                 evidence.append(
                     {
                         "kind": "completed-work-echo",
                         "issue_id": issue.id,
                         "related_issue_id": related.id,
                         "similarity": round(score, 6),
-                        "structural_context": _structural_context(issue, related),
-                        "what_to_verify": (
-                            "Check whether the completed outcome changed this active work."
+                        "structural_context": context,
+                        **explain_candidate(
+                            issue,
+                            related,
+                            kind="completed-work-echo",
+                            similarity=score,
+                            structural_context=context,
                         ),
                     }
                 )
@@ -254,16 +260,20 @@ def _candidate_evidence(
             score = score_index.score(issue.id, related.id)
             key = ("possible-overlap", issue.id, related.id)
             if score >= overlap_threshold and key not in seen:
+                context = _structural_context(issue, related)
                 evidence.append(
                     {
                         "kind": "possible-overlap",
                         "issue_id": issue.id,
                         "related_issue_id": related.id,
                         "similarity": round(score, 6),
-                        "structural_context": _structural_context(issue, related),
-                        "what_to_verify": (
-                            "Compare intended outcomes; similar context may still mean "
-                            "different scope."
+                        "structural_context": context,
+                        **explain_candidate(
+                            issue,
+                            related,
+                            kind="possible-overlap",
+                            similarity=score,
+                            structural_context=context,
                         ),
                     }
                 )

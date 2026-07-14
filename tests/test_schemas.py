@@ -50,7 +50,7 @@ def _load(directory: Path, name: str) -> dict[str, Any]:
     return json.loads((directory / name).read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize("name", ["neighbors", "batch", "sweep", "capabilities"])
+@pytest.mark.parametrize("name", ["neighbors", "batch", "sweep", "capabilities", "checkpoint"])
 def test_schema_is_valid_draft_2020_12_and_accepts_example(name: str) -> None:
     schema = _load(SCHEMAS, f"{name}.schema.json")
     Draft202012Validator.check_schema(schema)

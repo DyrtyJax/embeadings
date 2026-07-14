@@ -433,3 +433,21 @@ def test_vocabulary_only_reciprocal_candidate_is_demoted() -> None:
         "D",
     )
     assert result.candidates[0]["signal_quality"] == "semantic"
+
+
+def test_incremental_eligibility_filters_before_caps_but_keeps_unchanged_context() -> None:
+    issues = [issue(identifier) for identifier in "ABC"]
+    scores = Scores({("A", "B"): 0.95, ("B", "C"): 0.94, ("A", "C"): 0.93})
+
+    result = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(max_total=10, max_per_issue=3),
+        eligible_issue_ids=frozenset({"C"}),
+    )
+
+    assert {(item["issue_id"], item["related_issue_id"]) for item in result.candidates} == {
+        ("A", "C"),
+        ("B", "C"),
+    }

@@ -19,6 +19,13 @@ from .analysis import SimilarityIndex, nearest_neighbors, package_candidate_batc
 from .beads import BeadsAdapter, BeadsError
 from .cache import VectorCache
 from .explain import explain_candidate
+from .incremental import (
+    IncrementalScope,
+    build_checkpoint,
+    ensure_external_path,
+    load_checkpoint,
+    scope_since_timestamp,
+)
 from .models import IssueRecord, canonical_text
 from .provider import HashingProvider, Model2VecProvider
 from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
@@ -78,6 +85,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Include epic/container records in candidate analysis (excluded by default)",
     )
     _candidate_policy_arguments(sweep)
+    _incremental_arguments(sweep)
     sweep.add_argument("--output", type=Path)
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
@@ -90,6 +98,7 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--overlap-threshold", type=float, default=0.82)
     batch.add_argument("--include-epics", action="store_true")
     _candidate_policy_arguments(batch)
+    _incremental_arguments(batch)
     batch.add_argument("--output", type=Path)
     batch.add_argument("--json", action="store_true", dest="as_json")
     return parser
@@ -124,6 +133,27 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--max-echo-candidates", type=int, default=125)
     parser.add_argument("--max-overlap-candidates", type=int, default=125)
+
+
+def _incremental_arguments(parser: argparse.ArgumentParser) -> None:
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--changed-since",
+        metavar="RFC3339",
+        help="Review candidates touching active records updated after this timestamp",
+    )
+    scope.add_argument(
+        "--since-checkpoint",
+        type=Path,
+        metavar="PATH",
+        help="Review candidates touching active records changed since a prior checkpoint",
+    )
+    parser.add_argument(
+        "--write-checkpoint",
+        type=Path,
+        metavar="PATH",
+        help="Atomically write a portable metadata-only checkpoint outside the repository",
+    )
 
 
 def _provider(name: str) -> Model2VecProvider | HashingProvider:
@@ -271,6 +301,7 @@ def _candidate_evidence(
     max_dependency_candidates: int = 75,
     max_echo_candidates: int = 125,
     max_overlap_candidates: int = 125,
+    eligible_issue_ids: frozenset[str] | None = None,
 ) -> CandidateRanking:
     ranking = rank_candidates(
         population,
@@ -288,6 +319,7 @@ def _candidate_evidence(
             max_echoes=max_echo_candidates,
             max_overlaps=max_overlap_candidates,
         ),
+        eligible_issue_ids=eligible_issue_ids,
     )
     by_id = {issue.id: issue for issue in all_issues}
     explained = []
@@ -339,6 +371,10 @@ def _sweep(args: argparse.Namespace) -> int:
     phase_started = started
     snapshot, issues = BeadsAdapter().load()
     acquisition_ms = round((time.monotonic() - phase_started) * 1000)
+    if args.write_checkpoint:
+        ensure_external_path(args.write_checkpoint, snapshot.workspace_path)
+    if args.since_checkpoint:
+        ensure_external_path(args.since_checkpoint, snapshot.workspace_path)
     statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
     selected_population = [issue for issue in issues if issue.status.casefold() in statuses]
     excluded_epics = [
@@ -348,6 +384,20 @@ def _sweep(args: argparse.Namespace) -> int:
     ]
     excluded_ids = {issue.id for issue in excluded_epics}
     population = [issue for issue in selected_population if issue.id not in excluded_ids]
+    scope: IncrementalScope | None = None
+    if args.changed_since:
+        scope = scope_since_timestamp(issues, args.changed_since)
+    elif args.since_checkpoint:
+        scope = load_checkpoint(
+            args.since_checkpoint,
+            issues,
+            workspace_id=snapshot.workspace_id,
+        )
+    active_scope_ids = (
+        frozenset(issue.id for issue in population if issue.id in scope.changed_ids)
+        if scope is not None
+        else None
+    )
     provider = _provider(args.provider)
     cache_path, state_path = _workspace_paths(snapshot.workspace_id)
     phase_started = time.monotonic()
@@ -372,6 +422,7 @@ def _sweep(args: argparse.Namespace) -> int:
         max_dependency_candidates=args.max_dependency_candidates,
         max_echo_candidates=args.max_echo_candidates,
         max_overlap_candidates=args.max_overlap_candidates,
+        eligible_issue_ids=active_scope_ids,
     )
     candidates = list(ranking.candidates)
     candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
@@ -450,14 +501,36 @@ def _sweep(args: argparse.Namespace) -> int:
             f"Hard batch limit split {packaging.diagnostics.cross_batch_candidate_edges} "
             "candidate edges across review artifacts."
         )
-    population_ids = {issue.id for issue in population}
+    queue_population = (
+        [issue for issue in population if issue.id in active_scope_ids]
+        if active_scope_ids is not None
+        else population
+    )
+    population_ids = {issue.id for issue in queue_population}
     candidate_issue_ids = {
         identifier
         for item in candidates
         for identifier in (item["issue_id"], item["related_issue_id"])
         if identifier in population_ids
     }
-    no_signal_ids = sorted(issue.id for issue in population if issue.id not in candidate_issue_ids)
+    no_signal_ids = sorted(
+        issue.id for issue in queue_population if issue.id not in candidate_issue_ids
+    )
+    unchanged_ids = (
+        sorted(issue.id for issue in population if issue.id not in active_scope_ids)
+        if active_scope_ids is not None
+        else []
+    )
+    scope_payload = {
+        "mode": scope.mode if scope else "full",
+        "changed_active_count": (
+            len(active_scope_ids) if active_scope_ids is not None else len(population_ids)
+        ),
+        "unchanged_active_count": len(unchanged_ids),
+        "unknown_timestamp_count": len(scope.unknown_timestamp_ids) if scope else 0,
+        "deleted_since_checkpoint_count": len(scope.deleted_ids) if scope else 0,
+        "checkpoint_created_at": scope.checkpoint_created_at if scope else None,
+    }
     payload = build_sweep_payload(
         run_id,
         candidates,
@@ -468,6 +541,7 @@ def _sweep(args: argparse.Namespace) -> int:
         filters={
             "status": sorted(statuses),
             "include_epics": args.include_epics,
+            "incremental_scope": scope_payload,
         },
         thresholds={
             "completed_work_echo": args.echo_threshold,
@@ -496,9 +570,12 @@ def _sweep(args: argparse.Namespace) -> int:
         warnings=ranking_warnings,
         no_signal={"count": len(no_signal_ids), "issue_ids": no_signal_ids},
         excluded={
-            "count": len(excluded_epics),
-            "by_reason": {"epic": len(excluded_epics)} if excluded_epics else {},
-            "issue_ids": sorted(issue.id for issue in excluded_epics),
+            "count": len(excluded_epics) + len(unchanged_ids),
+            "by_reason": {
+                **({"epic": len(excluded_epics)} if excluded_epics else {}),
+                **({"unchanged": len(unchanged_ids)} if unchanged_ids else {}),
+            },
+            "issue_ids": sorted([issue.id for issue in excluded_epics] + unchanged_ids),
         },
         target_batch_size=args.size,
         batch_diagnostics=asdict(packaging.diagnostics),
@@ -514,6 +591,11 @@ def _sweep(args: argparse.Namespace) -> int:
     payload["output_directory"] = str(run_dir)
     _atomic_text(run_dir / "report.json", _json_text(payload))
     _atomic_text(run_dir / "report.md", render_sweep_markdown(payload))
+    if args.write_checkpoint:
+        _atomic_text(
+            args.write_checkpoint,
+            _json_text(build_checkpoint(issues, workspace_id=snapshot.workspace_id)),
+        )
     sys.stdout.write(_json_text(payload) if args.as_json else render_sweep_markdown(payload))
     if not args.as_json:
         sys.stdout.write(f"\nArtifacts: {run_dir}\n")

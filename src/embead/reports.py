@@ -516,6 +516,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     no_signal = payload.get("no_signal") or {}
     excluded = payload.get("excluded") or {}
     candidate_policy = _field(payload.get("parameters") or {}, "candidate_policy", default={}) or {}
+    filters = _field(payload.get("parameters") or {}, "filters", default={}) or {}
+    incremental_scope = _field(filters, "incremental_scope", default={}) or {}
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
@@ -536,6 +538,11 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- No-signal records: {_field(no_signal, 'count', default=0)}",
         f"- Excluded records: {_field(excluded, 'count', default=0)}",
         f"- Qualified typed dependencies omitted by caps: {len(capped_dependencies)}",
+        f"- Review scope: {_field(incremental_scope, 'mode', default='full')}",
+        "- Changed active records in scope: "
+        + str(_field(incremental_scope, "changed_active_count", default="not recorded")),
+        "- Unchanged active records excluded: "
+        + str(_field(incremental_scope, "unchanged_active_count", default=0)),
         f"- Singleton components: {_field(diagnostics, 'singleton_component_count', default=0)}",
         f"- Singleton agent envelopes: {_field(diagnostics, 'agent_envelope_count', default=0)}",
         "- Cross-batch candidate edges: "

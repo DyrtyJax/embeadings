@@ -19,7 +19,17 @@
   },
   "cache": { "hits": 2, "misses": 0 },
   "parameters": {
-    "filters": { "status": ["open"] },
+    "filters": {
+      "status": ["open"],
+      "incremental_scope": {
+        "mode": "full",
+        "changed_active_count": 1,
+        "unchanged_active_count": 0,
+        "unknown_timestamp_count": 0,
+        "deleted_since_checkpoint_count": 0,
+        "checkpoint_created_at": null
+      }
+    },
     "thresholds": { "completed_work_echo": 0.72, "possible_overlap": 0.82 },
     "candidate_policy": {
       "max_per_issue": 3,

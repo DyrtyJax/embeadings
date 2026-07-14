@@ -240,3 +240,75 @@ def test_sweep_batches_only_signal_issues_and_reports_no_signal_and_epics(
         "active-b",
         "closed",
     }
+
+
+def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    issues = (
+        IssueRecord("changed", "Changed", status="open", updated_at="2026-07-14T01:00:00Z"),
+        IssueRecord("unchanged", "Unchanged", status="open", updated_at="2026-07-01T01:00:00Z"),
+    )
+
+    class IncrementalAdapter:
+        def load(self):
+            return WorkspaceSnapshot("workspace-test", "1.0.5", None), issues
+
+    def fake_candidates(_population, _issues, _vectors, **kwargs):
+        assert kwargs["eligible_issue_ids"] == {"changed"}
+        return CandidateRanking(
+            candidates=(
+                {
+                    "kind": "possible-overlap",
+                    "issue_id": "changed",
+                    "related_issue_id": "unchanged",
+                    "similarity": 0.9,
+                },
+            ),
+            qualified=1,
+            dropped_by_issue_cap=0,
+            dropped_by_run_cap=0,
+        )
+
+    monkeypatch.setattr(cli, "BeadsAdapter", IncrementalAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
+    monkeypatch.setattr(cli, "_candidate_evidence", fake_candidates)
+    monkeypatch.setattr(
+        cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
+    )
+    checkpoint = tmp_path / "checkpoint.json"
+    assert (
+        cli.main(
+            [
+                "sweep",
+                "--changed-since",
+                "2026-07-10T00:00:00Z",
+                "--write-checkpoint",
+                str(checkpoint),
+                "--output",
+                str(tmp_path / "out"),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["parameters"]["filters"]["incremental_scope"] == {
+        "checkpoint_created_at": None,
+        "changed_active_count": 1,
+        "deleted_since_checkpoint_count": 0,
+        "mode": "changed-since",
+        "unchanged_active_count": 1,
+        "unknown_timestamp_count": 0,
+    }
+    assert payload["excluded"] == {
+        "by_reason": {"unchanged": 1},
+        "count": 1,
+        "issue_ids": ["unchanged"],
+    }
+    checkpoint_payload = json.loads(checkpoint.read_text())
+    assert set(checkpoint_payload["issues"]) == {"changed", "unchanged"}
+    assert "Changed" not in checkpoint.read_text()
+    markdown = (tmp_path / "out" / "report.md").read_text()
+    assert "Review scope: changed-since" in markdown
+    assert "Unchanged active records excluded: 1" in markdown

@@ -40,6 +40,8 @@ EVIDENCE = {
         "operation": "render",
         "entity_class": "report",
         "source_field": "acceptance criteria",
+        "confidence": "high",
+        "generic_fallback": False,
     },
     "what_to_verify": "Confirm whether completed work changed the active scope.",
     "counterevidence": ["no direct dependency is recorded"],
@@ -102,6 +104,13 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
 
     assert payloads["sweep"]["no_signal"]["count"] == 1
     assert payloads["sweep"]["excluded"]["by_reason"] == {"epic": 1}
+    assert payloads["sweep"]["anchor_metrics"] == {
+        "total": 1,
+        "confidence": {"high": 1, "medium": 0, "low": 0},
+        "generic_fallback_count": 0,
+        "generic_fallback_rate": 0.0,
+    }
+    assert payloads["batch"]["anchor_metrics"] == payloads["sweep"]["anchor_metrics"]
 
 
 def test_version_one_allows_additive_fields() -> None:

@@ -141,6 +141,26 @@ def _candidate_key(value: Any) -> tuple[int, float, str, str, str]:
     )
 
 
+def _anchor_metrics(evidence: Iterable[Any]) -> dict[str, Any]:
+    """Summarize safe-anchor specificity without inspecting or repeating issue text."""
+
+    items = list(evidence)
+    confidence = {"high": 0, "medium": 0, "low": 0}
+    generic_fallback_count = 0
+    for item in items:
+        anchor = _field(item, "verification_anchor", default={}) or {}
+        level = str(_field(anchor, "confidence", default="low"))
+        confidence[level if level in confidence else "low"] += 1
+        generic_fallback_count += bool(_field(anchor, "generic_fallback", default=True))
+    total = len(items)
+    return {
+        "total": total,
+        "confidence": confidence,
+        "generic_fallback_count": generic_fallback_count,
+        "generic_fallback_rate": round(generic_fallback_count / total, 4) if total else 0.0,
+    }
+
+
 def build_neighbors_payload(
     issue: Any,
     neighbors: Iterable[Any],
@@ -217,6 +237,7 @@ def build_batch_manifest(
         },
         "issues": [_record(issue) for issue in ordered_issues],
         "neighbor_evidence": [_record(item) for item in ordered_evidence],
+        "anchor_metrics": _anchor_metrics(ordered_evidence),
         "review_rubric": rubric,
     }
 
@@ -278,6 +299,7 @@ def build_sweep_payload(
                 ),
             )
         ],
+        "anchor_metrics": _anchor_metrics(ordered_candidates),
         "batches": normalized_batches,
         "no_signal": _jsonable(no_signal or {"count": 0, "issue_ids": []}),
         "excluded": _jsonable(excluded or {"count": 0, "by_reason": {}, "issue_ids": []}),
@@ -521,6 +543,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
+    anchor_metrics = payload.get("anchor_metrics") or {}
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
     lines = [
@@ -547,6 +570,10 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- Singleton agent envelopes: {_field(diagnostics, 'agent_envelope_count', default=0)}",
         "- Cross-batch candidate edges: "
         + str(_field(diagnostics, "cross_batch_candidate_edges", default=0)),
+        "- Generic verification-anchor fallbacks: "
+        + str(_field(anchor_metrics, "generic_fallback_count", default=0))
+        + " / "
+        + str(_field(anchor_metrics, "total", default=len(candidates))),
         "",
     ]
     lines.extend(["## Candidate lanes", ""])

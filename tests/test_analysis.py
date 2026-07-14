@@ -2,7 +2,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from embead.analysis import SimilarityIndex, balanced_batches, cosine_similarity, nearest_neighbors
+from embead.analysis import (
+    SimilarityIndex,
+    balanced_batches,
+    candidate_batches,
+    cosine_similarity,
+    nearest_neighbors,
+)
 
 
 @dataclass
@@ -81,3 +87,42 @@ def test_balanced_batches_are_deterministic_complete_and_bounded() -> None:
 def test_balanced_batches_reject_duplicate_ids() -> None:
     with pytest.raises(ValueError, match="duplicate"):
         balanced_batches([Issue("A"), Issue("A")], {"A": [1, 0]})
+
+
+def test_candidate_batches_keep_disconnected_signal_components_separate() -> None:
+    issues = [Issue("D"), Issue("C"), Issue("B"), Issue("A")]
+    vectors = {
+        "A": [1, 0],
+        "B": [0.99, 0.01],
+        "C": [0, 1],
+        "D": [0.01, 0.99],
+        "closed": [1, 0],
+    }
+    candidates = [
+        {"issue_id": "A", "related_issue_id": "B"},
+        {"issue_id": "C", "related_issue_id": "D"},
+        {"issue_id": "A", "related_issue_id": "closed"},
+    ]
+
+    first = candidate_batches(issues, candidates, vectors, target_size=4)
+    second = candidate_batches(
+        list(reversed(issues)), list(reversed(candidates)), vectors, target_size=4
+    )
+
+    assert [[item.id for item in batch] for batch in first] == [
+        [item.id for item in batch] for batch in second
+    ]
+    assert [{item.id for item in batch} for batch in first] == [{"A", "B"}, {"C", "D"}]
+
+
+def test_candidate_batches_include_active_echo_source_but_not_closed_target_or_no_signal() -> None:
+    issues = [Issue("active"), Issue("no-signal")]
+    vectors = {"active": [1, 0], "no-signal": [0, 1], "closed": [1, 0]}
+
+    batches = candidate_batches(
+        issues,
+        [{"issue_id": "active", "related_issue_id": "closed"}],
+        vectors,
+    )
+
+    assert [[item.id for item in batch] for batch in batches] == [["active"]]

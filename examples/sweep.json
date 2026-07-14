@@ -34,6 +34,8 @@
     }
   ],
   "batches": [{ "batch": 1, "issue_ids": ["demo-1"] }],
+  "no_signal": { "count": 1, "issue_ids": ["demo-3"] },
+  "excluded": { "count": 1, "by_reason": { "epic": 1 }, "issue_ids": ["demo-epic"] },
   "warnings": [],
   "duration_ms": 12,
   "output_directory": "/tmp/synthetic-embead-run"

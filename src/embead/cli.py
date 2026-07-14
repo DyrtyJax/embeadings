@@ -15,7 +15,7 @@ from typing import Any
 
 from platformdirs import user_cache_path, user_state_path
 
-from .analysis import SimilarityIndex, balanced_batches, nearest_neighbors
+from .analysis import SimilarityIndex, candidate_batches, nearest_neighbors
 from .beads import BeadsAdapter, BeadsError
 from .cache import VectorCache
 from .explain import explain_candidate
@@ -70,6 +70,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     sweep.add_argument("--echo-threshold", type=float, default=0.72)
     sweep.add_argument("--overlap-threshold", type=float, default=0.82)
+    sweep.add_argument(
+        "--include-epics",
+        action="store_true",
+        help="Include epic/container records in candidate analysis (excluded by default)",
+    )
     _candidate_policy_arguments(sweep)
     sweep.add_argument("--output", type=Path)
     sweep.add_argument("--json", action="store_true", dest="as_json")
@@ -79,6 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--status", action="append")
     batch.add_argument("--echo-threshold", type=float, default=0.72)
     batch.add_argument("--overlap-threshold", type=float, default=0.82)
+    batch.add_argument("--include-epics", action="store_true")
     _candidate_policy_arguments(batch)
     batch.add_argument("--output", type=Path)
     batch.add_argument("--json", action="store_true", dest="as_json")
@@ -169,6 +175,7 @@ def _issue_summary(issue: IssueRecord) -> dict[str, Any]:
         "id": issue.id,
         "title": issue.title,
         "status": issue.status,
+        "issue_type": issue.issue_type,
         "priority": issue.priority,
         "labels": list(issue.labels),
         "parent_id": issue.parent_id,
@@ -305,7 +312,14 @@ def _sweep(args: argparse.Namespace) -> int:
     snapshot, issues = BeadsAdapter().load()
     acquisition_ms = round((time.monotonic() - phase_started) * 1000)
     statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
-    population = [issue for issue in issues if issue.status.casefold() in statuses]
+    selected_population = [issue for issue in issues if issue.status.casefold() in statuses]
+    excluded_epics = [
+        issue
+        for issue in selected_population
+        if not args.include_epics and issue.issue_type.casefold() == "epic"
+    ]
+    excluded_ids = {issue.id for issue in excluded_epics}
+    population = [issue for issue in selected_population if issue.id not in excluded_ids]
     provider = _provider(args.provider)
     cache_path, state_path = _workspace_paths(snapshot.workspace_id)
     phase_started = time.monotonic()
@@ -330,8 +344,9 @@ def _sweep(args: argparse.Namespace) -> int:
     candidates = list(ranking.candidates)
     candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
-    batches = balanced_batches(
+    batches = candidate_batches(
         population,
+        candidates,
         vectors,
         target_size=args.size,
         similarity_index=similarity_index,
@@ -345,11 +360,7 @@ def _sweep(args: argparse.Namespace) -> int:
     snapshot_payload = asdict(snapshot)
     for index, batch_issues in enumerate(batches, start=1):
         member_ids = {issue.id for issue in batch_issues}
-        batch_evidence = [
-            item
-            for item in candidates
-            if item["issue_id"] in member_ids or item["related_issue_id"] in member_ids
-        ]
+        batch_evidence = [item for item in candidates if item["issue_id"] in member_ids]
         manifest = build_batch_manifest(
             run_id,
             index,
@@ -376,6 +387,14 @@ def _sweep(args: argparse.Namespace) -> int:
         ranking_warnings.append(
             f"Run candidate cap omitted {ranking.dropped_by_run_cap} qualified pairs."
         )
+    population_ids = {issue.id for issue in population}
+    candidate_issue_ids = {
+        identifier
+        for item in candidates
+        for identifier in (item["issue_id"], item["related_issue_id"])
+        if identifier in population_ids
+    }
+    no_signal_ids = sorted(issue.id for issue in population if issue.id not in candidate_issue_ids)
     payload = build_sweep_payload(
         run_id,
         candidates,
@@ -383,7 +402,10 @@ def _sweep(args: argparse.Namespace) -> int:
         snapshot=snapshot_payload,
         model=model,
         cache=cache_stats,
-        filters={"status": sorted(statuses)},
+        filters={
+            "status": sorted(statuses),
+            "include_epics": args.include_epics,
+        },
         thresholds={
             "completed_work_echo": args.echo_threshold,
             "possible_overlap": args.overlap_threshold,
@@ -398,6 +420,12 @@ def _sweep(args: argparse.Namespace) -> int:
             "dropped_by_run_cap": ranking.dropped_by_run_cap,
         },
         warnings=ranking_warnings,
+        no_signal={"count": len(no_signal_ids), "issue_ids": no_signal_ids},
+        excluded={
+            "count": len(excluded_epics),
+            "by_reason": {"epic": len(excluded_epics)} if excluded_epics else {},
+            "issue_ids": sorted(issue.id for issue in excluded_epics),
+        },
         target_batch_size=args.size,
         duration_ms=round((time.monotonic() - started) * 1000),
     )

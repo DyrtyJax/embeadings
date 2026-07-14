@@ -229,6 +229,77 @@ def balanced_batches(
     return batches
 
 
+def candidate_batches(
+    issues: Sequence[Any],
+    candidates: Sequence[Mapping[str, Any]],
+    vectors: Mapping[str, Vector],
+    *,
+    target_size: int = 9,
+    similarity_index: SimilarityIndex | None = None,
+) -> list[list[Any]]:
+    """Batch only issues participating in accepted review signals.
+
+    Candidate pairs form an undirected graph over the supplied issue population.
+    Each connected component is batched independently, so unrelated signal
+    clusters and echo-only singleton records are never forced together merely to
+    reach the requested size. Closed echo targets are naturally omitted because
+    they are not members of ``issues``.
+    """
+
+    if target_size < 1:
+        raise ValueError("target_size must be positive")
+
+    by_id: dict[str, Any] = {}
+    for issue in issues:
+        identifier = issue_id(issue)
+        if identifier in by_id:
+            raise ValueError(f"duplicate issue ID: {identifier}")
+        if identifier not in vectors:
+            raise KeyError(f"missing vector for issue {identifier!r}")
+        by_id[identifier] = issue
+
+    adjacency: dict[str, set[str]] = {}
+    for candidate in candidates:
+        left_id = str(candidate.get("issue_id", ""))
+        right_id = str(candidate.get("related_issue_id", ""))
+        active_endpoints = [identifier for identifier in (left_id, right_id) if identifier in by_id]
+        for identifier in active_endpoints:
+            adjacency.setdefault(identifier, set())
+        if len(active_endpoints) == 2 and active_endpoints[0] != active_endpoints[1]:
+            left_active, right_active = active_endpoints
+            adjacency[left_active].add(right_active)
+            adjacency[right_active].add(left_active)
+
+    components: list[list[str]] = []
+    unseen = set(adjacency)
+    while unseen:
+        start = min(unseen)
+        component: list[str] = []
+        pending = [start]
+        unseen.remove(start)
+        while pending:
+            identifier = pending.pop()
+            component.append(identifier)
+            neighbors = sorted(adjacency[identifier] & unseen, reverse=True)
+            unseen.difference_update(neighbors)
+            pending.extend(neighbors)
+        components.append(sorted(component))
+
+    index = similarity_index or SimilarityIndex(vectors)
+    batches: list[list[Any]] = []
+    for component in components:
+        component_issues = [by_id[identifier] for identifier in component]
+        batches.extend(
+            balanced_batches(
+                component_issues,
+                vectors,
+                target_size=target_size,
+                similarity_index=index,
+            )
+        )
+    return batches
+
+
 def issue_id(issue: Any) -> str:
     value = _field(issue, "id", _field(issue, "issue_id", None))
     if value is None or str(value) == "":

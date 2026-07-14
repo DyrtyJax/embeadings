@@ -75,6 +75,8 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
             cache=CACHE,
             filters={"status": ["open"]},
             thresholds={"completed_work_echo": 0.72},
+            no_signal={"count": 1, "issue_ids": ["demo-3"]},
+            excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["demo-epic"]},
             target_batch_size=5,
             duration_ms=12,
         ),
@@ -82,6 +84,9 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
 
     for report_type, payload in payloads.items():
         Draft202012Validator(_load(SCHEMAS, f"{report_type}.schema.json")).validate(payload)
+
+    assert payloads["sweep"]["no_signal"]["count"] == 1
+    assert payloads["sweep"]["excluded"]["by_reason"] == {"epic": 1}
 
 
 def test_version_one_allows_additive_fields() -> None:

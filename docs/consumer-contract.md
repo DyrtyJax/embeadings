@@ -27,6 +27,10 @@ The schemas deliberately allow additive fields. Evidence-specific explanations, 
 batch diagnostics, and performance telemetry can therefore evolve without breaking version 1
 consumers.
 
+Current sweep producers include additive `no_signal` and `excluded` summaries. Candidate-focused
+batch manifests contain only active issues participating in accepted review signals; a completed
+echo target can remain in candidate evidence without becoming a batch member.
+
 ## Capability handshake
 
 An optional dispatcher or UI should exchange a capability document before consuming artifacts. The

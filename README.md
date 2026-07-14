@@ -69,6 +69,10 @@ band. Use `--exception-margin`, `--reciprocal-rank`, `--max-candidates-per-issue
 `--max-candidates` to tune that policy; deterministic caps remain enabled even with permissive
 thresholds.
 
+Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
+as no-signal, disconnected signal groups remain separate, and epics are excluded by default; pass
+`--include-epics` when broad container records are intentionally part of the review population.
+
 See [the product and technical specification](docs/spec.md) for the proposed contracts, safety
 invariants, batch format, architecture, and milestones.
 

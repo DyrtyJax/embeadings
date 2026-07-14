@@ -152,6 +152,8 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
         filters={"status": ["open"]},
         thresholds={"echo": 0.9},
         candidate_policy={"max_total": 250},
+        no_signal={"count": 4, "issue_ids": ["bd-7", "bd-8", "bd-9", "bd-10"]},
+        excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["bd-1"]},
         target_batch_size=9,
         warnings=["z warning", "a warning"],
         duration_ms=42,
@@ -162,10 +164,14 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert payload["warnings"] == ["a warning", "z warning"]
     assert payload["parameters"]["target_batch_size"] == 9
     assert payload["parameters"]["candidate_policy"]["max_total"] == 250
+    assert payload["no_signal"]["count"] == 4
+    assert payload["excluded"]["by_reason"] == {"epic": 1}
 
     markdown = render_sweep_markdown(payload)
     assert "Completed-work echoes: 1" in markdown
     assert "Possible overlaps: 1" in markdown
+    assert "No-signal records: 4" in markdown
+    assert "Excluded records: 1" in markdown
     assert "Batch 1: 1 issues" in markdown
     assert "local-model" in markdown
     assert "8 hits, 2 misses" in markdown

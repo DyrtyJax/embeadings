@@ -27,10 +27,12 @@ Create a virtual environment, install the development extras, and run the same c
 ```bash
 python -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
-.venv/bin/ruff check src tests
-.venv/bin/ruff format --check src tests
-.venv/bin/pytest
+.venv/bin/python scripts/validate.py
 ```
+
+The validation script is the canonical contributor and agent entry point. It checks formatting,
+then lint, then the full test suite, and exits at the first failure. On Windows, use
+`.venv\\Scripts\\python scripts\\validate.py`.
 
 Integration examples and fixtures must use synthetic Beads workspaces. Keep model artifacts,
 vectors, and generated reports out of the repository.

@@ -130,10 +130,12 @@ def _evidence_key(value: Any) -> tuple[float, str, str]:
     )
 
 
-def _candidate_key(value: Any) -> tuple[str, float, str, str]:
+def _candidate_key(value: Any) -> tuple[int, float, str, str, str]:
+    admission = str(_field(value, "admission_reason", default="semantic-threshold"))
     return (
-        str(_field(value, "kind", "type", default="")),
+        int(admission != "semantic-threshold"),
         -_score(value),
+        str(_field(value, "kind", "type", default="")),
         str(_field(value, "issue_id", "id", default="")),
         str(_field(value, "related_issue_id", "neighbor_id", default="")),
     )
@@ -214,6 +216,7 @@ def build_sweep_payload(
     cache: Any | None = None,
     filters: Any | None = None,
     thresholds: Any | None = None,
+    candidate_policy: Any | None = None,
     target_batch_size: int | None = None,
     warnings: Iterable[str] = (),
     duration_ms: int | float | None = None,
@@ -239,6 +242,7 @@ def build_sweep_payload(
         "parameters": {
             "filters": _jsonable(filters or {}),
             "thresholds": _jsonable(thresholds or {}),
+            "candidate_policy": _jsonable(candidate_policy or {}),
             "target_batch_size": target_batch_size,
         },
         "candidates": [_record(candidate) for candidate in ordered_candidates],
@@ -252,6 +256,13 @@ def build_sweep_payload(
 
 def _escape(value: Any) -> str:
     return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
+
+
+def _counterevidence_text(value: Any) -> str:
+    counterevidence = _field(value, "counterevidence", default=[])
+    if isinstance(counterevidence, str):
+        return counterevidence or "none recorded"
+    return "; ".join(str(item) for item in counterevidence or []) or "none recorded"
 
 
 def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
@@ -395,13 +406,12 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
                 f"### {_kind_label(item)}: `{_escape(source)}` ↔ `{_escape(related)}`",
                 "",
                 f"- Similarity: {score_text} (advisory)",
+                "- Admission reason: "
+                + _escape(_field(item, "admission_reason", default="semantic-threshold")),
                 f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
                 "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
                 f"- Structural context: {_escape(context)}",
-                "- Counterevidence: "
-                + _escape(
-                    "; ".join(_field(item, "counterevidence", default=[]) or []) or "none recorded"
-                ),
+                "- Counterevidence: " + _escape(_counterevidence_text(item)),
                 "- What to verify: "
                 + _escape(
                     _field(
@@ -468,6 +478,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 f"### {_kind_label(item)}: `{_escape(issue_id)}` ↔ `{_escape(related)}`",
                 "",
                 f"- Similarity: {score_text} (advisory)",
+                "- Admission reason: "
+                + _escape(_field(item, "admission_reason", default="semantic-threshold")),
                 f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
                 "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
                 "- Structural context: "
@@ -479,10 +491,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                         default="none recorded",
                     )
                 ),
-                "- Counterevidence: "
-                + _escape(
-                    "; ".join(_field(item, "counterevidence", default=[]) or []) or "none recorded"
-                ),
+                "- Counterevidence: " + _escape(_counterevidence_text(item)),
                 "- What to verify: "
                 + _escape(
                     _field(

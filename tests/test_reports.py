@@ -179,6 +179,19 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
             "max_total": 250,
             "max_dependencies_per_issue": 3,
             "baseline_protected": 1,
+            "reciprocal_diagnostics": {
+                "admitted": 1,
+                "omitted": 2,
+                "admission_reasons": {"substantive-field-token": 1},
+                "omission_reasons": {"generic-vocabulary-only": 2},
+            },
+            "cap_replacements": [
+                {
+                    "candidate_id": "possible-overlap|bd-5|bd-6",
+                    "governing_cap": "run-cap",
+                    "displaced_candidate_ids": ["possible-overlap|bd-7|bd-8"],
+                }
+            ],
             "lanes": {
                 "dependency": {"qualified": 2, "admitted": 1, "dropped_by_lane_cap": 1},
                 "echo": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
@@ -216,6 +229,10 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "Dependency: 1 admitted / 2 qualified" in markdown
     assert "Typed dependencies dropped by their independent per-issue allowance" in markdown
     assert "Baseline candidates protected in sensitivity mode: 1" in markdown
+    assert "Admitted by substantive local evidence: 1" in markdown
+    assert "Omitted as generic vocabulary only: 2" in markdown
+    assert "possible-overlap\\|bd-5\\|bd-6" in markdown
+    assert "run-cap" in markdown
     assert "Batch 1: 1 issues" in markdown
     assert "local-model" in markdown
     assert "8 hits, 2 misses" in markdown

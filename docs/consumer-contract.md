@@ -53,6 +53,10 @@ during a lower-threshold sensitivity run; it is evidence about ranking stability
 Typed dependencies have a separate per-issue allowance, so semantic candidates cannot consume their
 capacity. Qualified typed edges omitted by a per-issue, lane, or run cap remain available in
 `capped_typed_dependencies` as compact structural context; these entries are not review candidates.
+`reciprocal_diagnostics` counts substantive reciprocal admissions and generic-vocabulary omissions
+without exposing issue text. `cap_replacements` explains the exceptional case where a threshold
+change alters a bounded winner; consumers should name the governing cap instead of presenting that
+candidate as newly semantically qualified.
 
 Snapshot metadata identifies `live-beads-cli` as the authoritative acquisition source and records
 the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings counts its records

@@ -205,6 +205,11 @@ within the overlap lane, vocabulary-only reciprocal exceptions rank behind stron
 Direct parent/child structure is reported as counterevidence and does not enable a below-threshold
 exception on its own.
 
+Reciprocal rank is corroboration, not sufficient evidence by itself. A below-threshold reciprocal
+pair must also share a non-generic token in description, acceptance criteria, or design. Generic
+architecture, lifecycle, workflow, and implementation vocabulary is rejected. Reports aggregate
+the deterministic admission and omission reasons without copying source text.
+
 For recurring maintenance, `--weekly-review-budget N` is an opinionated hard total budget layered on
 the existing lane and per-issue allowances. It selects typed dependencies first, high-confidence
 completed-work echoes second, and possible overlaps third. The budget is applied after incremental
@@ -216,6 +221,10 @@ When either threshold is lowered below its default, selection first reproduces t
 queue under the same lane, endpoint, and run caps. Only remaining capacity is offered to permissive
 additions. Reports expose qualified, admitted, baseline-protected, and cap-drop counts for every lane,
 making sensitivity runs monotonic with respect to the bounded default queue.
+If a stricter threshold changes which candidate survives a one-per-record, per-issue, lane, or run
+cap, the report emits a deterministic `cap_replacements` entry. It contains only candidate IDs, the
+governing cap, and displaced candidate IDs so reviewers can distinguish threshold qualification
+from bounded-queue replacement.
 
 ### Evidence-specific explanations
 

@@ -167,7 +167,11 @@ def test_parent_child_is_counterevidence_not_an_exception() -> None:
 
 
 def test_reciprocal_neighbor_rank_admits_exception() -> None:
-    issues = [issue("A"), issue("B"), issue("C")]
+    issues = [
+        issue("A", description="Preserve the checksum contract"),
+        issue("B", description="Verify the checksum output"),
+        issue("C"),
+    ]
     scores = Scores({("A", "B"): 0.75, ("A", "C"): 0.2, ("B", "C"): 0.1})
 
     result = rank_candidates(issues, issues, scores, policy(reciprocal_rank=1))
@@ -175,6 +179,12 @@ def test_reciprocal_neighbor_rank_admits_exception() -> None:
     assert len(result.candidates) == 1
     assert result.candidates[0]["admission_reason"] == ("reciprocal-neighbor-threshold-exception")
     assert result.candidates[0]["reciprocal_ranks"] == {"issue": 1, "related_issue": 1}
+    assert result.reciprocal_diagnostics == {
+        "admitted": 1,
+        "omitted": 0,
+        "admission_reasons": {"substantive-field-token": 1},
+        "omission_reasons": {},
+    }
 
 
 def test_caps_are_deterministic_and_apply_to_both_endpoints() -> None:
@@ -431,14 +441,14 @@ def test_sensitivity_run_preserves_baseline_queue_under_caps() -> None:
     assert sensitivity.candidates[0]["baseline_protected"] is True
 
 
-def test_vocabulary_only_reciprocal_candidate_is_demoted() -> None:
+def test_generic_vocabulary_only_reciprocal_candidate_is_rejected() -> None:
     issues = [
-        issue("A", title="generic cache"),
-        issue("B", title="generic cache"),
+        issue("A", title="architecture workflow", description="update system lifecycle"),
+        issue("B", title="architecture workflow", description="change system lifecycle"),
         issue("C", title="red"),
         issue("D", title="blue"),
     ]
-    scores = Scores({("A", "B"): 0.76, ("C", "D"): 0.75})
+    scores = Scores({("A", "B"): 0.76, ("C", "D"): 0.81})
 
     result = rank_candidates(
         issues,
@@ -452,6 +462,40 @@ def test_vocabulary_only_reciprocal_candidate_is_demoted() -> None:
         "D",
     )
     assert result.candidates[0]["signal_quality"] == "semantic"
+    assert result.reciprocal_diagnostics["omission_reasons"] == {"generic-vocabulary-only": 1}
+
+
+def test_conservative_threshold_reports_cap_driven_replacement() -> None:
+    issues = [
+        issue("A", description="architecture lifecycle"),
+        issue("B", description="architecture lifecycle"),
+        issue("C", description="preserve checksum contract"),
+        issue("D", description="validate checksum output"),
+    ]
+    scores = Scores({("A", "B"): 0.81, ("C", "D"): 0.805})
+
+    result = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(
+            overlap_threshold=0.82,
+            baseline_overlap_threshold=0.8,
+            reciprocal_rank=1,
+            max_total=1,
+        ),
+    )
+
+    assert [(item["issue_id"], item["related_issue_id"]) for item in result.candidates] == [
+        ("C", "D")
+    ]
+    assert result.cap_replacements == (
+        {
+            "candidate_id": "possible-overlap|C|D",
+            "governing_cap": "run-cap",
+            "displaced_candidate_ids": ["possible-overlap|A|B"],
+        },
+    )
 
 
 def test_incremental_eligibility_filters_before_caps_but_keeps_unchanged_context() -> None:

@@ -359,6 +359,8 @@ def _candidate_evidence(
         dropped_by_lane_cap=ranking.dropped_by_lane_cap,
         dropped_by_dependency_issue_cap=ranking.dropped_by_dependency_issue_cap,
         capped_typed_dependencies=ranking.capped_typed_dependencies,
+        reciprocal_diagnostics=ranking.reciprocal_diagnostics,
+        cap_replacements=ranking.cap_replacements,
     )
 
 
@@ -514,6 +516,16 @@ def _sweep(args: argparse.Namespace) -> int:
         ranking_warnings.append(
             f"Lane candidate budgets omitted {ranking.dropped_by_lane_cap} qualified pairs."
         )
+    reciprocal_omissions = (ranking.reciprocal_diagnostics or {}).get("omitted", 0)
+    if reciprocal_omissions:
+        ranking_warnings.append(
+            f"Reciprocal evidence guard omitted {reciprocal_omissions} generic-vocabulary pairs."
+        )
+    if ranking.cap_replacements:
+        ranking_warnings.append(
+            f"Threshold comparison exposed {len(ranking.cap_replacements)} "
+            "deterministic cap-driven replacements."
+        )
     if packaging.diagnostics.cross_batch_candidate_edges:
         ranking_warnings.append(
             f"Hard batch limit split {packaging.diagnostics.cross_batch_candidate_edges} "
@@ -593,6 +605,8 @@ def _sweep(args: argparse.Namespace) -> int:
             },
             "qualified": ranking.qualified,
             "baseline_protected": ranking.baseline_protected,
+            "reciprocal_diagnostics": ranking.reciprocal_diagnostics,
+            "cap_replacements": list(ranking.cap_replacements),
             "lanes": {lane: asdict(metrics) for lane, metrics in (ranking.lanes or {}).items()},
             "dropped_by_lane_cap": ranking.dropped_by_lane_cap,
             "dropped_by_issue_cap": ranking.dropped_by_issue_cap,

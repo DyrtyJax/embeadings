@@ -64,6 +64,10 @@ embead sweep [--size 9]
 ```
 
 Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.
+Sweeps keep their conservative similarity thresholds while allowing a narrow, corroborated exception
+band. Use `--exception-margin`, `--reciprocal-rank`, `--max-candidates-per-issue`, and
+`--max-candidates` to tune that policy; deterministic caps remain enabled even with permissive
+thresholds.
 
 See [the product and technical specification](docs/spec.md) for the proposed contracts, safety
 invariants, batch format, architecture, and milestones.

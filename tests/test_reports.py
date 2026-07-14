@@ -132,6 +132,7 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
             "related_issue_id": "bd-6",
             "kind": "possible_overlap",
             "similarity": 0.82,
+            "admission_reason": "shared-parent-threshold-exception",
         },
         {
             "issue_id": "bd-2",
@@ -150,6 +151,7 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
         cache=CACHE,
         filters={"status": ["open"]},
         thresholds={"echo": 0.9},
+        candidate_policy={"max_total": 250},
         target_batch_size=9,
         warnings=["z warning", "a warning"],
         duration_ms=42,
@@ -159,6 +161,7 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert [batch["batch"] for batch in payload["batches"]] == [1, 2]
     assert payload["warnings"] == ["a warning", "z warning"]
     assert payload["parameters"]["target_batch_size"] == 9
+    assert payload["parameters"]["candidate_policy"]["max_total"] == 250
 
     markdown = render_sweep_markdown(payload)
     assert "Completed-work echoes: 1" in markdown
@@ -167,6 +170,7 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "local-model" in markdown
     assert "8 hits, 2 misses" in markdown
     assert "verify" in markdown.lower()
+    assert "shared-parent-threshold-exception" in markdown
 
 
 def test_empty_sweep_is_a_successful_report() -> None:

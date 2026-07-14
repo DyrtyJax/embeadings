@@ -68,7 +68,7 @@ def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
         scoring_ms = _milliseconds(started)
 
         started = time.perf_counter()
-        candidates = _candidate_evidence(
+        ranking = _candidate_evidence(
             population,
             issues,
             vectors,
@@ -94,10 +94,10 @@ def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
                 "analysis_total": scoring_ms + candidate_analysis_ms + batching_ms,
             }
         )
-        candidate_counts.append(len(candidates))
+        candidate_counts.append(len(ranking.candidates))
         batch_counts.append(len(batches))
         stable_output = {
-            "candidates": candidates,
+            "candidates": ranking.candidates,
             "batches": [[issue.id for issue in batch] for batch in batches],
         }
         output_fingerprints.append(

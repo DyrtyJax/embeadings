@@ -21,6 +21,7 @@ from .cache import VectorCache
 from .explain import explain_candidate
 from .models import IssueRecord, canonical_text
 from .provider import HashingProvider, Model2VecProvider
+from .ranking import CandidatePolicy, CandidateRanking, rank_candidates
 from .reports import (
     build_batch_manifest,
     build_neighbors_payload,
@@ -31,7 +32,6 @@ from .reports import (
 )
 
 ACTIVE_STATUSES = {"open", "in_progress", "blocked", "deferred"}
-CLOSED_STATUSES = {"closed", "done", "completed", "resolved"}
 REVIEW_RUBRIC = (
     "Verify each candidate against current source, documentation, and shipped behavior.",
     "Record counterevidence when similar wording reflects different scope.",
@@ -70,6 +70,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     sweep.add_argument("--echo-threshold", type=float, default=0.72)
     sweep.add_argument("--overlap-threshold", type=float, default=0.82)
+    _candidate_policy_arguments(sweep)
     sweep.add_argument("--output", type=Path)
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
@@ -78,9 +79,27 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--status", action="append")
     batch.add_argument("--echo-threshold", type=float, default=0.72)
     batch.add_argument("--overlap-threshold", type=float, default=0.82)
+    _candidate_policy_arguments(batch)
     batch.add_argument("--output", type=Path)
     batch.add_argument("--json", action="store_true", dest="as_json")
     return parser
+
+
+def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--exception-margin",
+        type=float,
+        default=0.08,
+        help="Maximum below-threshold margin requiring corroborating evidence",
+    )
+    parser.add_argument(
+        "--reciprocal-rank",
+        type=int,
+        default=5,
+        help="Admit near-threshold pairs that mutually rank within this depth (0 disables)",
+    )
+    parser.add_argument("--max-candidates-per-issue", type=int, default=3)
+    parser.add_argument("--max-candidates", type=int, default=250)
 
 
 def _provider(name: str) -> Model2VecProvider | HashingProvider:
@@ -226,65 +245,61 @@ def _candidate_evidence(
     echo_threshold: float,
     overlap_threshold: float,
     similarity_index: SimilarityIndex | None = None,
-) -> list[dict[str, Any]]:
-    score_index = similarity_index or SimilarityIndex(vectors)
-    closed = [issue for issue in all_issues if issue.status.casefold() in CLOSED_STATUSES]
-    closed_by_id = {issue.id: issue for issue in closed}
-    evidence: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
-    for issue in population:
-        if closed:
-            related_id, score = score_index.ranked(issue.id, [item.id for item in closed])[0]
-            related = closed_by_id[related_id]
-            if score >= echo_threshold:
-                context = _structural_context(issue, related)
-                evidence.append(
-                    {
-                        "kind": "completed-work-echo",
-                        "issue_id": issue.id,
-                        "related_issue_id": related.id,
-                        "similarity": round(score, 6),
-                        "structural_context": context,
-                        **explain_candidate(
-                            issue,
-                            related,
-                            kind="completed-work-echo",
-                            similarity=score,
-                            structural_context=context,
-                        ),
-                    }
-                )
-                seen.add(("completed-work-echo", issue.id, related.id))
-    for position, issue in enumerate(population):
-        for related in population[position + 1 :]:
-            score = score_index.score(issue.id, related.id)
-            key = ("possible-overlap", issue.id, related.id)
-            if score >= overlap_threshold and key not in seen:
-                context = _structural_context(issue, related)
-                evidence.append(
-                    {
-                        "kind": "possible-overlap",
-                        "issue_id": issue.id,
-                        "related_issue_id": related.id,
-                        "similarity": round(score, 6),
-                        "structural_context": context,
-                        **explain_candidate(
-                            issue,
-                            related,
-                            kind="possible-overlap",
-                            similarity=score,
-                            structural_context=context,
-                        ),
-                    }
-                )
-    return evidence
+    exception_margin: float = 0.08,
+    reciprocal_rank: int = 5,
+    max_candidates_per_issue: int = 3,
+    max_candidates: int = 250,
+) -> CandidateRanking:
+    ranking = rank_candidates(
+        population,
+        all_issues,
+        similarity_index or SimilarityIndex(vectors),
+        CandidatePolicy(
+            echo_threshold=echo_threshold,
+            overlap_threshold=overlap_threshold,
+            exception_margin=exception_margin,
+            reciprocal_rank=reciprocal_rank,
+            max_per_issue=max_candidates_per_issue,
+            max_total=max_candidates,
+        ),
+    )
+    by_id = {issue.id: issue for issue in all_issues}
+    explained = []
+    for candidate in ranking.candidates:
+        left = by_id[candidate["issue_id"]]
+        right = by_id[candidate["related_issue_id"]]
+        explained.append(
+            {
+                **candidate,
+                **explain_candidate(
+                    left,
+                    right,
+                    kind=candidate["kind"],
+                    similarity=candidate["similarity"],
+                    structural_context=candidate["structural_context"],
+                ),
+            }
+        )
+    return CandidateRanking(
+        candidates=tuple(explained),
+        qualified=ranking.qualified,
+        dropped_by_issue_cap=ranking.dropped_by_issue_cap,
+        dropped_by_run_cap=ranking.dropped_by_run_cap,
+    )
 
 
 def _sweep(args: argparse.Namespace) -> int:
     if args.size < 1:
         raise ValueError("--size must be positive")
-    if not -1 <= args.echo_threshold <= 1 or not -1 <= args.overlap_threshold <= 1:
-        raise ValueError("similarity thresholds must be between -1 and 1")
+    policy = CandidatePolicy(
+        echo_threshold=args.echo_threshold,
+        overlap_threshold=args.overlap_threshold,
+        exception_margin=args.exception_margin,
+        reciprocal_rank=args.reciprocal_rank,
+        max_per_issue=args.max_candidates_per_issue,
+        max_total=args.max_candidates,
+    )
+    policy.validate()
     started = time.monotonic()
     phase_started = started
     snapshot, issues = BeadsAdapter().load()
@@ -300,14 +315,19 @@ def _sweep(args: argparse.Namespace) -> int:
     similarity_index = SimilarityIndex(vectors)
     similarity_scoring_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
-    candidates = _candidate_evidence(
+    ranking = _candidate_evidence(
         population,
         issues,
         vectors,
         echo_threshold=args.echo_threshold,
         overlap_threshold=args.overlap_threshold,
         similarity_index=similarity_index,
+        exception_margin=args.exception_margin,
+        reciprocal_rank=args.reciprocal_rank,
+        max_candidates_per_issue=args.max_candidates_per_issue,
+        max_candidates=args.max_candidates,
     )
+    candidates = list(ranking.candidates)
     candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
     batches = balanced_batches(
@@ -347,6 +367,15 @@ def _sweep(args: argparse.Namespace) -> int:
         {"batch": item["batch"], "issue_ids": [issue["id"] for issue in item["issues"]]}
         for item in manifests
     ]
+    ranking_warnings = []
+    if ranking.dropped_by_issue_cap:
+        ranking_warnings.append(
+            f"Per-issue candidate cap omitted {ranking.dropped_by_issue_cap} qualified pairs."
+        )
+    if ranking.dropped_by_run_cap:
+        ranking_warnings.append(
+            f"Run candidate cap omitted {ranking.dropped_by_run_cap} qualified pairs."
+        )
     payload = build_sweep_payload(
         run_id,
         candidates,
@@ -359,6 +388,16 @@ def _sweep(args: argparse.Namespace) -> int:
             "completed_work_echo": args.echo_threshold,
             "possible_overlap": args.overlap_threshold,
         },
+        candidate_policy={
+            "exception_margin": args.exception_margin,
+            "reciprocal_rank": args.reciprocal_rank,
+            "max_per_issue": args.max_candidates_per_issue,
+            "max_total": args.max_candidates,
+            "qualified": ranking.qualified,
+            "dropped_by_issue_cap": ranking.dropped_by_issue_cap,
+            "dropped_by_run_cap": ranking.dropped_by_run_cap,
+        },
+        warnings=ranking_warnings,
         target_batch_size=args.size,
         duration_ms=round((time.monotonic() - started) * 1000),
     )

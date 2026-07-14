@@ -198,6 +198,9 @@ dependency/relation, or reciprocal-neighbor rank. Reports record why the excepti
 
 Candidate volume must be bounded through a deterministic per-issue cap or equivalent global budget.
 Lowering a global threshold without a volume control is not an acceptable substitute for ranking.
+The synchronous CLI defaults to a `0.08` exception margin, reciprocal rank `5`, three candidates per
+issue, and 250 candidates per run. Direct parent/child structure is reported as counterevidence and
+does not enable a below-threshold exception on its own.
 
 ### Evidence-specific explanations
 

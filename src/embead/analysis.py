@@ -217,8 +217,7 @@ def balanced_batches(
                 key=lambda identifier: (-totals[identifier] / (len(remaining) - 1), identifier),
             )
         ordered = [
-            identifier
-            for identifier, _score in index.ranked(seed, sorted(remaining - {seed}))
+            identifier for identifier, _score in index.ranked(seed, sorted(remaining - {seed}))
         ]
         member_ids = [seed, *ordered[: capacity - 1]]
         batches.append([by_id[identifier] for identifier in member_ids])

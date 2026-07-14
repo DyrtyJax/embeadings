@@ -269,6 +269,16 @@ def _counterevidence_text(value: Any) -> str:
     return "; ".join(str(item) for item in counterevidence or []) or "none recorded"
 
 
+def _dependency_text(value: Any) -> str | None:
+    evidence = _field(value, "dependency_evidence")
+    if not evidence:
+        return None
+    source = _field(evidence, "source_id", default="unknown")
+    target = _field(evidence, "target_id", default="unknown")
+    relationship_type = _field(evidence, "type", "relationship_type", default="depends-on")
+    return f"{source} → {target} ({relationship_type})"
+
+
 def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     snapshot = payload.get("snapshot") or {}
     model = payload.get("model") or {}
@@ -405,16 +415,21 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
         score = _score(item)
         score_text = f"{score:.2f}" if score >= 0 else "not recorded"
         context = _field(item, "structural_context", "relationship", default="none recorded")
-        lines.extend(
+        detail = [
+            f"### {_kind_label(item)}: `{_escape(source)}` ↔ `{_escape(related)}`",
+            "",
+            f"- Similarity: {score_text} (advisory)",
+            "- Admission reason: "
+            + _escape(_field(item, "admission_reason", default="semantic-threshold")),
+            f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
+            "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
+            f"- Structural context: {_escape(context)}",
+        ]
+        dependency = _dependency_text(item)
+        if dependency:
+            detail.append(f"- Typed dependency: {_escape(dependency)}")
+        detail.extend(
             [
-                f"### {_kind_label(item)}: `{_escape(source)}` ↔ `{_escape(related)}`",
-                "",
-                f"- Similarity: {score_text} (advisory)",
-                "- Admission reason: "
-                + _escape(_field(item, "admission_reason", default="semantic-threshold")),
-                f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
-                "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
-                f"- Structural context: {_escape(context)}",
                 "- Counterevidence: " + _escape(_counterevidence_text(item)),
                 "- What to verify: "
                 + _escape(
@@ -428,6 +443,7 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
                 "",
             ]
         )
+        lines.extend(detail)
     lines.extend(["## Review rubric", ""])
     if rubric:
         for item in rubric:
@@ -503,24 +519,29 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         related = _field(item, "related_issue_id", "neighbor_id", default="unknown")
         score = _score(item)
         score_text = f"{score:.2f}" if score >= 0 else "not recorded"
-        lines.extend(
+        detail = [
+            f"### {_kind_label(item)}: `{_escape(issue_id)}` ↔ `{_escape(related)}`",
+            "",
+            f"- Similarity: {score_text} (advisory)",
+            "- Admission reason: "
+            + _escape(_field(item, "admission_reason", default="semantic-threshold")),
+            f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
+            "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
+            "- Structural context: "
+            + _escape(
+                _field(
+                    item,
+                    "structural_context",
+                    "relationship",
+                    default="none recorded",
+                )
+            ),
+        ]
+        dependency = _dependency_text(item)
+        if dependency:
+            detail.append(f"- Typed dependency: {_escape(dependency)}")
+        detail.extend(
             [
-                f"### {_kind_label(item)}: `{_escape(issue_id)}` ↔ `{_escape(related)}`",
-                "",
-                f"- Similarity: {score_text} (advisory)",
-                "- Admission reason: "
-                + _escape(_field(item, "admission_reason", default="semantic-threshold")),
-                f"- Pattern: {_escape(_field(item, 'pattern', default='not classified'))}",
-                "- Why surfaced: " + _escape(_field(item, "why_surfaced", default="not recorded")),
-                "- Structural context: "
-                + _escape(
-                    _field(
-                        item,
-                        "structural_context",
-                        "relationship",
-                        default="none recorded",
-                    )
-                ),
                 "- Counterevidence: " + _escape(_counterevidence_text(item)),
                 "- What to verify: "
                 + _escape(
@@ -534,6 +555,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 "",
             ]
         )
+        lines.extend(detail)
     lines.extend(["## Batches", ""])
     if not batches:
         lines.append("No batches were generated.")

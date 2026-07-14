@@ -132,7 +132,12 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
             "related_issue_id": "bd-6",
             "kind": "possible_overlap",
             "similarity": 0.82,
-            "admission_reason": "shared-parent-threshold-exception",
+            "admission_reason": "dependency-threshold-exception",
+            "dependency_evidence": {
+                "source_id": "bd-5",
+                "target_id": "bd-6",
+                "type": "blocks",
+            },
         },
         {
             "issue_id": "bd-2",
@@ -186,7 +191,8 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "local-model" in markdown
     assert "8 hits, 2 misses" in markdown
     assert "verify" in markdown.lower()
-    assert "shared-parent-threshold-exception" in markdown
+    assert "dependency-threshold-exception" in markdown
+    assert "Typed dependency: bd-5 → bd-6 (blocks)" in markdown
 
 
 def test_empty_sweep_is_a_successful_report() -> None:

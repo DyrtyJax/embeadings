@@ -302,8 +302,6 @@ def structural_context(left: Any, right: Any) -> str:
     right_id = issue_id(right)
     left_parent = getattr(left, "parent_id", None)
     right_parent = getattr(right, "parent_id", None)
-    if left_parent and left_parent == right_parent:
-        return f"same parent {left_parent}"
     if left_parent == right_id or right_parent == left_id:
         return "parent/child"
     relationship = _direct_relationship(left, right_id)
@@ -316,6 +314,8 @@ def structural_context(left: Any, right: Any) -> str:
         return "parent/child"
     if relationship:
         return f"{right_id} depends on {left_id} ({relationship})"
+    if left_parent and left_parent == right_parent:
+        return f"same parent {left_parent}"
     return "none recorded"
 
 

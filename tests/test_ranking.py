@@ -92,6 +92,24 @@ def test_typed_dependency_preserves_direction_and_type_in_context() -> None:
     assert result.candidates[0]["admission_reason"] == "dependency-threshold-exception"
 
 
+def test_typed_dependency_takes_precedence_over_shared_parent_context() -> None:
+    issues = [
+        IssueRecord(
+            id="A",
+            title="A",
+            status="open",
+            parent_id="P",
+            dependency_links=(DependencyLink("A", "B", "blocks"),),
+        ),
+        issue("B", parent="P"),
+    ]
+
+    result = rank_candidates(issues, issues, Scores({("A", "B"): 0.75}), policy())
+
+    assert result.candidates[0]["lane"] == "dependency"
+    assert result.candidates[0]["structural_context"] == "A depends on B (blocks)"
+
+
 def test_current_beads_payload_routes_typed_dependency_to_protected_lane() -> None:
     payload = [
         {

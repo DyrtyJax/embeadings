@@ -561,7 +561,8 @@ def _sweep(args: argparse.Namespace) -> int:
     reciprocal_omissions = (ranking.reciprocal_diagnostics or {}).get("omitted", 0)
     if reciprocal_omissions:
         ranking_warnings.append(
-            f"Reciprocal evidence guard omitted {reciprocal_omissions} generic-vocabulary pairs."
+            "Reciprocal evidence guard omitted "
+            f"{reciprocal_omissions} pairs without discriminative local evidence."
         )
     if ranking.cap_replacements:
         ranking_warnings.append(

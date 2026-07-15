@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import heapq
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -148,6 +149,7 @@ def rank_candidates(
     active = sorted(population, key=issue_id)
     closed = sorted((item for item in all_issues if _is_closed(issue_status(item))), key=issue_id)
     ranks = _Ranks.build(active, closed, score, policy.reciprocal_rank)
+    reciprocal_evidence = _ReciprocalEvidence.build((*active, *closed))
 
     reciprocal_diagnostics = _empty_reciprocal_diagnostics()
     requested = _qualifying_candidates(
@@ -158,6 +160,7 @@ def rank_candidates(
         policy,
         echo_threshold=policy.echo_threshold,
         overlap_threshold=policy.overlap_threshold,
+        reciprocal_evidence=reciprocal_evidence,
         reciprocal_diagnostics=reciprocal_diagnostics,
     )
     if eligible_issue_ids is not None:
@@ -190,6 +193,7 @@ def rank_candidates(
             policy,
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
+            reciprocal_evidence=reciprocal_evidence,
         )
         if eligible_issue_ids is not None:
             baseline = [
@@ -214,9 +218,12 @@ def rank_candidates(
         for item in result.candidates
     )
     reciprocal_diagnostics["admitted"] = reciprocal_admitted
-    reciprocal_diagnostics["admission_reasons"] = (
-        {"substantive-field-token": reciprocal_admitted} if reciprocal_admitted else {}
-    )
+    admitted_reasons: dict[str, int] = defaultdict(int)
+    for item in result.candidates:
+        reason = item.get("reciprocal_evidence")
+        if reason:
+            admitted_reasons[str(reason)] += 1
+    reciprocal_diagnostics["admission_reasons"] = dict(sorted(admitted_reasons.items()))
     replacements: tuple[dict[str, Any], ...] = ()
     is_conservative = (
         policy.echo_threshold > policy.baseline_echo_threshold
@@ -231,6 +238,7 @@ def rank_candidates(
             policy,
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
+            reciprocal_evidence=reciprocal_evidence,
         )
         if eligible_issue_ids is not None:
             reference = [
@@ -240,7 +248,13 @@ def rank_candidates(
                 or item["related_issue_id"] in eligible_issue_ids
             ]
         reference_result = _select_candidates((), reference, policy)
-        replacements = _cap_replacements(reference_result.candidates, result.candidates, policy)
+        replacements = _cap_replacements(
+            reference_result.candidates,
+            result.candidates,
+            policy,
+            reference_qualified=reference,
+            conservative_qualified=requested,
+        )
     return replace(
         result,
         reciprocal_diagnostics=reciprocal_diagnostics,
@@ -358,6 +372,7 @@ def _qualifying_candidates(
     *,
     echo_threshold: float,
     overlap_threshold: float,
+    reciprocal_evidence: _ReciprocalEvidence,
     reciprocal_diagnostics: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     qualified: list[dict[str, Any]] = []
@@ -373,6 +388,7 @@ def _qualifying_candidates(
                 reciprocal_rank=policy.reciprocal_rank,
                 left_rank=ranks.overlap.get((issue_id(left), issue_id(right))),
                 right_rank=ranks.overlap.get((issue_id(right), issue_id(left))),
+                reciprocal_evidence=reciprocal_evidence,
                 reciprocal_diagnostics=reciprocal_diagnostics,
             )
             if candidate is not None:
@@ -398,6 +414,7 @@ def _qualifying_candidates(
                 right_rank=ranks.closed_to_active.get(
                     (issue_id(completed_issue), issue_id(active_issue))
                 ),
+                reciprocal_evidence=reciprocal_evidence,
                 reciprocal_diagnostics=reciprocal_diagnostics,
             )
             if candidate is not None:
@@ -588,6 +605,7 @@ def _qualify(
     reciprocal_rank: int,
     left_rank: int | None,
     right_rank: int | None,
+    reciprocal_evidence: _ReciprocalEvidence,
     reciprocal_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     left_id = issue_id(left)
@@ -604,6 +622,7 @@ def _qualify(
     )
     admission_reason = "semantic-threshold"
     signal_quality = "semantic"
+    reciprocal_reason: str | None = None
     if similarity < threshold:
         if similarity < max(-1.0, threshold - exception_margin):
             return None
@@ -612,18 +631,14 @@ def _qualify(
         elif relationship is not None:
             admission_reason = "dependency-threshold-exception"
         elif context != "parent/child" and reciprocal:
-            signal_quality = _reciprocal_signal_quality(left, right)
-            if signal_quality == "generic-vocabulary-only":
+            reciprocal_reason = reciprocal_evidence.reason(left, right)
+            if reciprocal_reason is None:
                 _increment_reciprocal(
-                    reciprocal_diagnostics, "omission_reasons", "generic-vocabulary-only"
+                    reciprocal_diagnostics, "omission_reasons", "no-discriminative-local-evidence"
                 )
                 return None
             admission_reason = "reciprocal-neighbor-threshold-exception"
-            _increment_reciprocal(
-                reciprocal_diagnostics,
-                "admission_reasons",
-                "substantive-field-token",
-            )
+            signal_quality = "discriminative-local-evidence"
         else:
             return None
 
@@ -664,6 +679,7 @@ def _qualify(
         "dependency_evidence": relationship,
         "admission_reason": admission_reason,
         "signal_quality": signal_quality,
+        "reciprocal_evidence": reciprocal_reason if similarity < threshold and reciprocal else None,
         "candidate_evidence": {
             "evidence_basis": evidence_basis,
             "structural_corroboration": structural_corroboration,
@@ -680,41 +696,125 @@ def _qualify(
     }
 
 
-def _reciprocal_signal_quality(left: Any, right: Any) -> str:
-    generic = {
-        "add",
-        "architecture",
-        "build",
-        "change",
-        "component",
-        "data",
-        "design",
-        "flow",
-        "implement",
-        "implementation",
-        "infrastructure",
-        "lifecycle",
-        "module",
-        "process",
-        "project",
-        "service",
-        "state",
-        "system",
-        "update",
-        "workflow",
+@dataclass(frozen=True, slots=True)
+class _ReciprocalEvidence:
+    """Corpus-relative field evidence without exposing matched tracker text."""
+
+    token_frequency: dict[str, int]
+    phrase_frequency: dict[str, int]
+    corpus_size: int
+
+    @classmethod
+    def build(cls, issues: Sequence[Any]) -> _ReciprocalEvidence:
+        unique = {issue_id(item): item for item in issues}
+        token_frequency: dict[str, int] = defaultdict(int)
+        phrase_frequency: dict[str, int] = defaultdict(int)
+        for item in unique.values():
+            fields = _reciprocal_fields(item)
+            for token in set().union(*(set(tokens) for tokens in fields.values())):
+                token_frequency[token] += 1
+            for phrase in set().union(*(_phrases(tokens) for tokens in fields.values())):
+                phrase_frequency[phrase] += 1
+        return cls(dict(token_frequency), dict(phrase_frequency), len(unique))
+
+    @property
+    def rarity_limit(self) -> int:
+        return max(2, math.floor(self.corpus_size * 0.1))
+
+    @property
+    def title_alignment_limit(self) -> int:
+        return max(2, math.floor(self.corpus_size * 0.03))
+
+    def reason(self, left: Any, right: Any) -> str | None:
+        left_fields = _reciprocal_fields(left)
+        right_fields = _reciprocal_fields(right)
+
+        shared_title = set(left_fields["title"]) & set(right_fields["title"])
+        if any(self.token_frequency[token] <= self.rarity_limit for token in shared_title):
+            return "discriminative-title-token"
+        left_all = set().union(*(set(tokens) for tokens in left_fields.values()))
+        right_all = set().union(*(set(tokens) for tokens in right_fields.values()))
+        aligned_title = (set(left_fields["title"]) & right_all) | (
+            set(right_fields["title"]) & left_all
+        )
+        if any(
+            self.token_frequency[token] <= self.title_alignment_limit for token in aligned_title
+        ):
+            return "discriminative-title-alignment"
+
+        for field in ("description", "acceptance_criteria", "design"):
+            left_tokens = left_fields[field]
+            right_tokens = right_fields[field]
+            shared_phrases = _phrases(left_tokens) & _phrases(right_tokens)
+            if any(self.phrase_frequency[phrase] <= self.rarity_limit for phrase in shared_phrases):
+                return "discriminative-field-phrase"
+        return None
+
+
+_GENERIC_RECIPROCAL_TOKENS = {
+    "add",
+    "architecture",
+    "api",
+    "apis",
+    "application",
+    "behavior",
+    "build",
+    "change",
+    "code",
+    "component",
+    "configure",
+    "create",
+    "data",
+    "design",
+    "ensure",
+    "feature",
+    "flow",
+    "handling",
+    "implement",
+    "implementation",
+    "improve",
+    "infrastructure",
+    "issue",
+    "lifecycle",
+    "module",
+    "native",
+    "new",
+    "path",
+    "process",
+    "project",
+    "resource",
+    "runtime",
+    "platform",
+    "provide",
+    "refactor",
+    "service",
+    "support",
+    "state",
+    "system",
+    "task",
+    "test",
+    "update",
+    "use",
+    "workflow",
+}
+
+
+def _reciprocal_fields(issue: Any) -> dict[str, tuple[str, ...]]:
+    return {
+        field: tuple(
+            token
+            for token in re.findall(
+                r"[a-z0-9][a-z0-9_-]{2,}",
+                re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(getattr(issue, field, ""))).casefold(),
+            )
+            if token not in _GENERIC_RECIPROCAL_TOKENS
+        )
+        for field in ("title", "description", "acceptance_criteria", "design")
     }
 
-    def tokens(field: str) -> set[str]:
-        return set(re.findall(r"[a-z0-9]{3,}", field.casefold())) - generic
 
-    substantive = ("description", "acceptance_criteria", "design")
-    substantive_shared = set().union(
-        *(
-            tokens(str(getattr(left, field, ""))) & tokens(str(getattr(right, field, "")))
-            for field in substantive
-        )
-    )
-    return "substantive" if substantive_shared else "generic-vocabulary-only"
+def _phrases(tokens: Sequence[str]) -> set[str]:
+    return {f"{left} {right}" for left, right in zip(tokens, tokens[1:], strict=False)}
 
 
 def _empty_reciprocal_diagnostics() -> dict[str, Any]:
@@ -733,6 +833,9 @@ def _cap_replacements(
     reference: Sequence[dict[str, Any]],
     conservative: Sequence[dict[str, Any]],
     policy: CandidatePolicy,
+    *,
+    reference_qualified: Sequence[dict[str, Any]],
+    conservative_qualified: Sequence[dict[str, Any]],
 ) -> tuple[dict[str, Any], ...]:
     """Explain stricter-threshold additions caused by bounded winner selection."""
 
@@ -740,6 +843,12 @@ def _cap_replacements(
     conservative_keys = {_candidate_identity(item) for item in conservative}
     introduced = [item for item in conservative if _candidate_identity(item) not in reference_keys]
     displaced = [item for item in reference if _candidate_identity(item) not in conservative_keys]
+    conservative_qualified_keys = {_candidate_identity(item) for item in conservative_qualified}
+    removed_qualifications = [
+        item
+        for item in reference_qualified
+        if _candidate_identity(item) not in conservative_qualified_keys
+    ]
     diagnostics: list[dict[str, Any]] = []
     for candidate in introduced:
         cap = _governing_replacement_cap(candidate, reference, displaced, policy)
@@ -748,21 +857,168 @@ def _cap_replacements(
         related = [
             item
             for item in displaced
-            if item["lane"] == candidate["lane"]
-            and (
-                candidate["issue_id"] in (item["issue_id"], item["related_issue_id"])
-                or candidate["related_issue_id"] in (item["issue_id"], item["related_issue_id"])
-                or cap in {"run-cap", f"lane-cap:{candidate['lane']}"}
+            if (
+                cap == "max-candidates-per-issue"
+                and item["lane"] != "dependency"
+                and (
+                    candidate["issue_id"] in (item["issue_id"], item["related_issue_id"])
+                    or candidate["related_issue_id"] in (item["issue_id"], item["related_issue_id"])
+                )
+            )
+            or (
+                item["lane"] == candidate["lane"]
+                and (
+                    candidate["issue_id"] in (item["issue_id"], item["related_issue_id"])
+                    or candidate["related_issue_id"] in (item["issue_id"], item["related_issue_id"])
+                    or cap in {"run-cap", f"lane-cap:{candidate['lane']}"}
+                )
             )
         ]
+        chain = _replacement_chain(
+            candidate,
+            introduced,
+            displaced,
+            removed_qualifications,
+            reference,
+            policy,
+            cap,
+        )
         diagnostics.append(
             {
                 "candidate_id": _candidate_id(candidate),
                 "governing_cap": cap,
                 "displaced_candidate_ids": sorted(_candidate_id(item) for item in related),
+                "causal_chain": chain,
             }
         )
     return tuple(sorted(diagnostics, key=lambda item: item["candidate_id"]))
+
+
+def _replacement_chain(
+    candidate: dict[str, Any],
+    introduced: Sequence[dict[str, Any]],
+    displaced: Sequence[dict[str, Any]],
+    removed: Sequence[dict[str, Any]],
+    reference: Sequence[dict[str, Any]],
+    policy: CandidatePolicy,
+    governing_cap: str,
+) -> list[dict[str, str]]:
+    """Find a bounded resource path from a removed qualification to an admission."""
+
+    by_key = {_candidate_identity(item): item for item in (*removed, *displaced, *introduced)}
+    start = _candidate_identity(candidate)
+    targets = {_candidate_identity(item) for item in removed}
+    queue: list[tuple[str, str, str]] = [start]
+    previous: dict[tuple[str, str, str], tuple[tuple[str, str, str], str] | None] = {start: None}
+    found: tuple[str, str, str] | None = start if start in targets else None
+    while queue and found is None:
+        current = queue.pop(0)
+        for neighbor in sorted(by_key):
+            if neighbor in previous:
+                continue
+            resource = _shared_bounded_resource(
+                by_key[current], by_key[neighbor], reference, policy
+            )
+            if resource is None:
+                continue
+            previous[neighbor] = (current, resource)
+            if neighbor in targets:
+                found = neighbor
+                break
+            queue.append(neighbor)
+
+    if not removed:
+        raise AssertionError("bounded replacement has no removed qualification")
+    # A future cap type may lack a narrower graph edge. Retain a complete,
+    # explicit governing-cap transition rather than an unexplained empty chain.
+    if found is None:
+        removed_item = min(removed, key=_candidate_id)
+        resource = f"governing-cap:{governing_cap}"
+        return [
+            {
+                "candidate_id": _candidate_id(removed_item),
+                "event": "qualification-removed",
+                "resource": resource,
+            },
+            {
+                "candidate_id": _candidate_id(candidate),
+                "event": "selection-admitted",
+                "resource": resource,
+            },
+        ]
+
+    path = [found]
+    resources: list[str] = []
+    while path[-1] != start:
+        link = previous[path[-1]]
+        assert link is not None
+        parent, resource = link
+        resources.append(resource)
+        path.append(parent)
+    resources.reverse()
+    path.reverse()
+    # The search runs admission -> removed qualification; report causality in
+    # the reviewer-facing direction: qualification removal -> freed slots -> admission.
+    path.reverse()
+    resources.reverse()
+    displaced_keys = {_candidate_identity(item) for item in displaced}
+    introduced_keys = {_candidate_identity(item) for item in introduced}
+    chain: list[dict[str, str]] = []
+    for index, key in enumerate(path):
+        event = (
+            "qualification-removed"
+            if index == 0
+            else "selection-admitted"
+            if key in introduced_keys
+            else "selection-displaced"
+            if key in displaced_keys
+            else "selection-transition"
+        )
+        resource = resources[index] if index < len(resources) else resources[-1]
+        chain.append(
+            {"candidate_id": _candidate_id(by_key[key]), "event": event, "resource": resource}
+        )
+    return chain
+
+
+def _shared_bounded_resource(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    reference: Sequence[dict[str, Any]],
+    policy: CandidatePolicy,
+) -> str | None:
+    left_endpoints = {left["issue_id"], left["related_issue_id"]}
+    right_endpoints = {right["issue_id"], right["related_issue_id"]}
+    shared = sorted(left_endpoints & right_endpoints)
+    same_dependency_budget = left["lane"] == right["lane"] == "dependency"
+    same_semantic_budget = left["lane"] != "dependency" and right["lane"] != "dependency"
+    if (same_dependency_budget or same_semantic_budget) and shared:
+        lane = "dependency" if same_dependency_budget else "semantic"
+        cap = policy.max_dependencies_per_issue if same_dependency_budget else policy.max_per_issue
+        for endpoint in shared:
+            count = sum(
+                (
+                    item["lane"] == "dependency"
+                    if same_dependency_budget
+                    else item["lane"] != "dependency"
+                )
+                and endpoint in (item["issue_id"], item["related_issue_id"])
+                for item in reference
+            )
+            if count >= cap:
+                return f"{lane}-issue:{endpoint}"
+    if (
+        left["kind"] == right["kind"] == "completed-work-echo"
+        and left["issue_id"] == right["issue_id"]
+    ):
+        return f"one-echo:{left['issue_id']}"
+    if left["lane"] == right["lane"]:
+        lane = str(left["lane"])
+        if sum(item["lane"] == lane for item in reference) >= policy.lane_caps[lane]:
+            return f"lane:{lane}"
+    if len(reference) >= policy.max_total:
+        return "run"
+    return None
 
 
 def _governing_replacement_cap(
@@ -782,8 +1038,14 @@ def _governing_replacement_cap(
         if candidate["lane"] == "dependency"
         else policy.max_per_issue
     )
+    budgeted_reference = [
+        item
+        for item in reference
+        if (item["lane"] == "dependency") == (candidate["lane"] == "dependency")
+    ]
     if any(
-        sum(endpoint in (item["issue_id"], item["related_issue_id"]) for item in reference) >= cap
+        sum(endpoint in (item["issue_id"], item["related_issue_id"]) for item in budgeted_reference)
+        >= cap
         for endpoint in endpoints
     ):
         return (

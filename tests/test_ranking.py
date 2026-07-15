@@ -205,7 +205,7 @@ def test_parent_child_is_counterevidence_not_an_exception() -> None:
 def test_reciprocal_neighbor_rank_admits_exception() -> None:
     issues = [
         issue("A", description="Preserve the checksum contract"),
-        issue("B", description="Verify the checksum output"),
+        issue("B", description="Verify the checksum contract"),
         issue("C"),
     ]
     scores = Scores({("A", "B"): 0.75, ("A", "C"): 0.2, ("B", "C"): 0.1})
@@ -218,7 +218,7 @@ def test_reciprocal_neighbor_rank_admits_exception() -> None:
     assert result.reciprocal_diagnostics == {
         "admitted": 1,
         "omitted": 0,
-        "admission_reasons": {"substantive-field-token": 1},
+        "admission_reasons": {"discriminative-field-phrase": 1},
         "omission_reasons": {},
     }
 
@@ -590,7 +590,90 @@ def test_generic_vocabulary_only_reciprocal_candidate_is_rejected() -> None:
         "D",
     )
     assert result.candidates[0]["signal_quality"] == "semantic"
-    assert result.reciprocal_diagnostics["omission_reasons"] == {"generic-vocabulary-only": 1}
+    assert result.reciprocal_diagnostics["omission_reasons"] == {
+        "no-discriminative-local-evidence": 1
+    }
+
+
+def test_long_broad_descriptions_do_not_qualify_reciprocal_exception() -> None:
+    issues = [
+        issue(
+            "A", title="First path", description="Support resource handling across runtime platform"
+        ),
+        issue(
+            "B", title="Second path", description="Improve resource handling for runtime platform"
+        ),
+        issue("C", title="Unrelated"),
+    ]
+
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.76}),
+        policy(reciprocal_rank=1),
+    )
+
+    assert result.candidates == ()
+    assert result.reciprocal_diagnostics["omission_reasons"] == {
+        "no-discriminative-local-evidence": 1
+    }
+
+
+def test_sparse_title_led_pair_qualifies_with_redacted_reason_category() -> None:
+    issues = [
+        issue("A", title="Delta parser"),
+        issue("B", title="Delta validation"),
+        issue("C", title="Unrelated"),
+    ]
+
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.76}),
+        policy(reciprocal_rank=1),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0]["reciprocal_evidence"] == "discriminative-title-token"
+    assert "delta" not in json.dumps(result.reciprocal_diagnostics)
+
+
+def test_title_entity_aligned_to_description_preserves_sparse_subsystem_pair() -> None:
+    issues = [
+        issue("A", title="Add command palette", description="Open it inside the Chat interface"),
+        issue("B", title="ChatView paste handling", status="closed"),
+        issue("C", title="Unrelated"),
+    ]
+
+    result = rank_candidates(
+        [issues[0], issues[2]],
+        issues,
+        Scores({("A", "B"): 0.76}),
+        policy(reciprocal_rank=1),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0]["reciprocal_evidence"] == "discriminative-title-alignment"
+
+
+def test_corpus_common_title_token_is_not_discriminative() -> None:
+    issues = [
+        issue("A", title="Parser alpha"),
+        issue("B", title="Parser beta"),
+        issue("C", title="Parser gamma"),
+        issue("D", title="Parser theta"),
+        issue("E", title="Other epsilon"),
+        issue("F", title="Other zeta"),
+    ]
+
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.76}),
+        policy(reciprocal_rank=1),
+    )
+
+    assert result.candidates == ()
 
 
 def test_conservative_threshold_reports_cap_driven_replacement() -> None:
@@ -598,7 +681,7 @@ def test_conservative_threshold_reports_cap_driven_replacement() -> None:
         issue("A", description="architecture lifecycle"),
         issue("B", description="architecture lifecycle"),
         issue("C", description="preserve checksum contract"),
-        issue("D", description="validate checksum output"),
+        issue("D", description="validate checksum contract"),
     ]
     scores = Scores({("A", "B"): 0.81, ("C", "D"): 0.805})
 
@@ -622,6 +705,61 @@ def test_conservative_threshold_reports_cap_driven_replacement() -> None:
             "candidate_id": "possible-overlap|C|D",
             "governing_cap": "run-cap",
             "displaced_candidate_ids": ["possible-overlap|A|B"],
+            "causal_chain": [
+                {
+                    "candidate_id": "possible-overlap|A|B",
+                    "event": "qualification-removed",
+                    "resource": "run",
+                },
+                {
+                    "candidate_id": "possible-overlap|C|D",
+                    "event": "selection-admitted",
+                    "resource": "run",
+                },
+            ],
+        },
+    )
+
+
+def test_cross_lane_cap_replacement_has_complete_causal_chain() -> None:
+    active = [issue("A"), issue("B")]
+    closed = issue("X", status="closed")
+    scores = Scores({("A", "X"): 0.81, ("A", "B"): 0.805})
+
+    result = rank_candidates(
+        active,
+        [*active, closed],
+        scores,
+        policy(
+            echo_threshold=0.82,
+            baseline_echo_threshold=0.8,
+            overlap_threshold=0.8,
+            baseline_overlap_threshold=0.8,
+            max_per_issue=1,
+        ),
+    )
+
+    identities = [
+        (item["kind"], item["issue_id"], item["related_issue_id"]) for item in result.candidates
+    ]
+    assert identities == [("possible-overlap", "A", "B")]
+    assert result.cap_replacements == (
+        {
+            "candidate_id": "possible-overlap|A|B",
+            "governing_cap": "max-candidates-per-issue",
+            "displaced_candidate_ids": ["completed-work-echo|A|X"],
+            "causal_chain": [
+                {
+                    "candidate_id": "completed-work-echo|A|X",
+                    "event": "qualification-removed",
+                    "resource": "semantic-issue:A",
+                },
+                {
+                    "candidate_id": "possible-overlap|A|B",
+                    "event": "selection-admitted",
+                    "resource": "semantic-issue:A",
+                },
+            ],
         },
     )
 

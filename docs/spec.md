@@ -201,14 +201,16 @@ Lowering a global threshold without a volume control is not an acceptable substi
 The synchronous CLI defaults to a `0.08` exception margin, reciprocal rank `5`, three candidates per
 issue, and 250 candidates per run. Candidates are assigned to typed-dependency, completed-work echo,
 and overlap lanes with independent budgets. Typed dependencies are admitted before semantic lanes;
-within the overlap lane, vocabulary-only reciprocal exceptions rank behind stronger semantic signals.
+within the overlap lane, reciprocal exceptions rank behind stronger semantic signals.
 Direct parent/child structure is reported as counterevidence and does not enable a below-threshold
 exception on its own.
 
 Reciprocal rank is corroboration, not sufficient evidence by itself. A below-threshold reciprocal
-pair must also share a non-generic token in description, acceptance criteria, or design. Generic
-architecture, lifecycle, workflow, and implementation vocabulary is rejected. Reports aggregate
-the deterministic admission and omission reasons without copying source text.
+pair must also have corpus-discriminative, field-aligned local evidence: a rare title token aligned
+with the other record (including CamelCase entities), or a rare multi-token phrase in the same
+substantive field. A single long-form token outside a title is intentionally
+insufficient. Frequency is derived deterministically from the local snapshot. Reports expose only
+bounded evidence categories and counts, never matched terms or source text.
 
 For recurring maintenance, `--weekly-review-budget N` is an opinionated hard total budget layered on
 the existing lane and per-issue allowances. It selects typed dependencies first, high-confidence
@@ -230,9 +232,10 @@ queue under the same lane, endpoint, and run caps. Only remaining capacity is of
 additions. Reports expose qualified, admitted, baseline-protected, and cap-drop counts for every lane,
 making sensitivity runs monotonic with respect to the bounded default queue.
 If a stricter threshold changes which candidate survives a one-per-record, per-issue, lane, or run
-cap, the report emits a deterministic `cap_replacements` entry. It contains only candidate IDs, the
-governing cap, and displaced candidate IDs so reviewers can distinguish threshold qualification
-from bounded-queue replacement.
+cap, the report emits a deterministic `cap_replacements` entry. It contains candidate IDs, the
+governing cap, displaced candidate IDs, and a nonempty causal chain from removed qualification
+through each consumed or freed endpoint, echo, lane, or run slot. This makes cross-lane and cascading
+bounded-queue replacements distinguishable from new semantic qualifications without exposing text.
 
 ### Evidence-specific explanations
 

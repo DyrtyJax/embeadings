@@ -64,10 +64,12 @@ during a lower-threshold sensitivity run; it is evidence about ranking stability
 Typed dependencies have a separate per-issue allowance, so semantic candidates cannot consume their
 capacity. Qualified typed edges omitted by a per-issue, lane, or run cap remain available in
 `capped_typed_dependencies` as compact structural context; these entries are not review candidates.
-`reciprocal_diagnostics` counts substantive reciprocal admissions and generic-vocabulary omissions
-without exposing issue text. `cap_replacements` explains the exceptional case where a threshold
-change alters a bounded winner; consumers should name the governing cap instead of presenting that
-candidate as newly semantically qualified.
+`reciprocal_diagnostics` counts corpus-discriminative reciprocal admissions and omissions without
+exposing matched terms or issue text. Candidate `reciprocal_evidence` values are bounded reason
+categories, not extracted tracker data. `cap_replacements` explains the exceptional case where a
+threshold change alters a bounded winner. Its nonempty `causal_chain` follows the removed
+qualification and each bounded resource transition to the admitted candidate; consumers should
+render that chain instead of presenting the candidate as newly semantically qualified.
 
 `dependency_funnel` distinguishes a corpus with no typed structure from one whose typed edges are
 closed-only, below the qualification floor, or eligible but capped. Its fields are mutually

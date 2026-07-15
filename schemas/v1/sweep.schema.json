@@ -140,6 +140,10 @@
         "related_issue_id": { "type": "string", "minLength": 1 },
         "similarity": { "type": "number", "minimum": -1, "maximum": 1 },
         "structural_context": { "type": "string" },
+        "reciprocal_evidence": {
+          "type": ["string", "null"],
+          "enum": [null, "discriminative-title-token", "discriminative-title-alignment", "discriminative-field-phrase"]
+        },
         "verification_anchor": {
           "type": "object",
           "required": ["category", "operation", "entity_class", "source_field"],
@@ -260,7 +264,7 @@
     },
     "cap-replacement": {
       "type": "object",
-      "required": ["candidate_id", "governing_cap", "displaced_candidate_ids"],
+      "required": ["candidate_id", "governing_cap", "displaced_candidate_ids", "causal_chain"],
       "properties": {
         "candidate_id": { "type": "string", "minLength": 1 },
         "governing_cap": { "type": "string", "minLength": 1 },
@@ -268,6 +272,20 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
+        },
+        "causal_chain": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["candidate_id", "event", "resource"],
+            "properties": {
+              "candidate_id": { "type": "string", "minLength": 1 },
+              "event": { "enum": ["qualification-removed", "selection-displaced", "selection-transition", "selection-admitted"] },
+              "resource": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

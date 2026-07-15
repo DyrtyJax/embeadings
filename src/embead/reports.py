@@ -686,7 +686,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
             "",
             "- Admitted by substantive local evidence: "
             + str(_field(reciprocal, "admitted", default=0)),
-            f"- Omitted as generic vocabulary only: {_field(reciprocal, 'omitted', default=0)}",
+            "- Omitted without discriminative local evidence: "
+            + str(_field(reciprocal, "omitted", default=0)),
         ]
     )
     replacements = _field(candidate_policy, "cap_replacements", default=[]) or []
@@ -699,6 +700,16 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 f"`{_escape(_field(item, 'governing_cap'))}` bound; displaced: "
                 f"{_escape(displaced or 'none recorded')}"
             )
+            for step in _field(item, "causal_chain", default=[]) or []:
+                lines.append(
+                    "  - "
+                    + _escape(_field(step, "event", default="selection-transition"))
+                    + ": `"
+                    + _escape(_field(step, "candidate_id", default="unknown"))
+                    + "` via `"
+                    + _escape(_field(step, "resource", default="unknown"))
+                    + "`"
+                )
     if capped_dependencies:
         lines.extend(["", "## Capped typed dependencies", ""])
         for item in capped_dependencies:

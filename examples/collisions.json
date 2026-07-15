@@ -20,6 +20,7 @@
   },
   "code_surface_analysis": {
     "repository_available": true,
+    "repository_context": "invocation-worktree",
     "repository_revision": "synthetic-revision",
     "base_reference": "origin/main",
     "base_revision": "synthetic-base-revision",
@@ -36,6 +37,7 @@
     "hub_surface_limit": 5,
     "hub_surfaces": [],
     "pairs_omitted_by_hub_guard": 0,
+    "pairs_omitted_by_module_guard": 0,
     "surfaces": [
       {
         "issue_id": "demo-1",

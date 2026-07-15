@@ -64,6 +64,7 @@ EVIDENCE = {
 }
 CODE_SURFACE_ANALYSIS = {
     "repository_available": True,
+    "repository_context": "invocation-worktree",
     "repository_revision": "synthetic-revision",
     "base_reference": "origin/main",
     "base_revision": "synthetic-base-revision",
@@ -78,6 +79,7 @@ CODE_SURFACE_ANALYSIS = {
     "hub_surface_limit": 5,
     "hub_surfaces": [],
     "pairs_omitted_by_hub_guard": 0,
+    "pairs_omitted_by_module_guard": 0,
     "surfaces": [],
     "collisions": [
         {

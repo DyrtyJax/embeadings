@@ -39,7 +39,7 @@ def test_explicit_paths_are_conservative_and_never_copy_snippets() -> None:
     assert all(not hasattr(item, "snippet") for item in pointers)
 
 
-def test_explicit_surfaces_report_exact_and_module_collisions_without_git() -> None:
+def test_explicit_surfaces_report_exact_collisions_and_suppress_module_only_pairs() -> None:
     issues = [
         IssueRecord(id="proj-1", title="Edit src/parser/dependencies.py"),
         IssueRecord(id="proj-2", title="Repair src/parser/dependencies.py"),
@@ -52,11 +52,8 @@ def test_explicit_surfaces_report_exact_and_module_collisions_without_git() -> N
     assert analysis.repository_available is False
     assert analysis.pointer_count == 3
     assert analysis.issues_without_surfaces == 1
-    assert [item.kind for item in analysis.collisions] == [
-        "exact-file",
-        "shared-module",
-        "shared-module",
-    ]
+    assert [item.kind for item in analysis.collisions] == ["exact-file"]
+    assert analysis.pairs_omitted_by_module_guard == 2
     exact = analysis.collisions[0]
     assert exact.shared_paths == ("src/parser/dependencies.py",)
     assert exact.confidence == "explicit"
@@ -66,7 +63,7 @@ def test_explicit_surfaces_report_exact_and_module_collisions_without_git() -> N
     )
 
 
-def test_shared_directory_pointer_is_module_evidence_not_exact_file() -> None:
+def test_explicit_only_shared_directory_pointer_is_suppressed() -> None:
     issues = [
         IssueRecord(id="proj-1", title="Update `src/parser/`"),
         IssueRecord(id="proj-2", title="Refactor `src/parser/`"),
@@ -74,11 +71,8 @@ def test_shared_directory_pointer_is_module_evidence_not_exact_file() -> None:
 
     analysis = analyze_code_surfaces(issues, workspace_path=None)
 
-    assert len(analysis.collisions) == 1
-    collision = analysis.collisions[0]
-    assert collision.kind == "shared-module"
-    assert collision.shared_paths == ()
-    assert collision.shared_modules == ("src/parser",)
+    assert analysis.collisions == ()
+    assert analysis.pairs_omitted_by_module_guard == 1
 
 
 def test_shared_path_symbol_is_preserved_as_bounded_evidence() -> None:
@@ -183,6 +177,150 @@ def test_worktree_diffs_are_observed_and_revision_bound(tmp_path: Path) -> None:
     assert collision.confidence == "observed"
     assert collision.shared_paths == ("src/shared/cache.py",)
     assert collision.revision_relation == "different"
+
+
+def test_observed_shared_module_remains_a_collision_lead(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    first = tmp_path / "worktree-1"
+    second = tmp_path / "worktree-2"
+    root.mkdir()
+    first.mkdir()
+    second.mkdir()
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        responses = {
+            ("rev-parse", "--is-inside-work-tree"): "true\n",
+            ("rev-parse", "HEAD"): "root-head\n",
+            ("rev-parse", "--verify", "origin/main"): "base-head\n",
+            ("rev-parse", "origin/main"): "base-head\n",
+        }
+        if command in responses:
+            return completed(responses[command])
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(
+                f"worktree {root}\nHEAD root-head\nbranch refs/heads/main\n\n"
+                f"worktree {first}\nHEAD head-one\nbranch refs/heads/bead-1\n\n"
+                f"worktree {second}\nHEAD head-two\nbranch refs/heads/bead-2\n"
+            )
+        if command[:2] == ("diff", "--name-only"):
+            changed = {
+                first.resolve(): "src/parser/left.py\0",
+                second.resolve(): "src/parser/right.py\0",
+            }
+            return completed(changed.get(cwd.resolve(), ""))
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed()
+        raise AssertionError((cwd, arguments))
+
+    analysis = analyze_code_surfaces(
+        [
+            IssueRecord(id="proj.1", title="First"),
+            IssueRecord(id="proj.2", title="Second"),
+            IssueRecord(id="proj.3", title="Plan src/parser/third.py"),
+        ],
+        workspace_path=root,
+        runner=runner,
+    )
+
+    assert len(analysis.collisions) == 3
+    assert {collision.kind for collision in analysis.collisions} == {"shared-module"}
+    assert [collision.confidence for collision in analysis.collisions] == [
+        "observed",
+        "corroborated",
+        "corroborated",
+    ]
+    assert {collision.shared_modules for collision in analysis.collisions} == {("src/parser",)}
+    assert analysis.pairs_omitted_by_module_guard == 0
+
+
+def test_invoking_worktree_controls_revision_provenance(tmp_path: Path) -> None:
+    owner = tmp_path / "owner"
+    invoking = tmp_path / "worktree"
+    common = owner / ".git"
+    owner.mkdir()
+    invoking.mkdir()
+    common.mkdir()
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        if command == ("rev-parse", "--show-toplevel"):
+            return completed(f"{cwd.resolve()}\n")
+        if command == ("rev-parse", "--path-format=absolute", "--git-common-dir"):
+            return completed(f"{common.resolve()}\n")
+        if command == ("rev-parse", "--is-inside-work-tree"):
+            return completed("true\n")
+        if command == ("rev-parse", "HEAD"):
+            return completed(
+                "invoking-head\n" if cwd.resolve() == invoking.resolve() else "stale-head\n"
+            )
+        if command == ("rev-parse", "--verify", "origin/main"):
+            return completed("base-head\n")
+        if command == ("rev-parse", "origin/main"):
+            return completed("base-head\n")
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(
+                f"worktree {owner}\nHEAD stale-head\nbranch refs/heads/main\n\n"
+                f"worktree {invoking}\nHEAD invoking-head\nbranch refs/heads/bead-1\n"
+            )
+        if command[:2] == ("diff", "--name-only"):
+            return completed()
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed()
+        raise AssertionError((cwd, arguments))
+
+    analysis = analyze_code_surfaces(
+        [IssueRecord(id="proj.1", title="Change src/parser/core.py")],
+        workspace_path=owner,
+        invocation_path=invoking,
+        runner=runner,
+    )
+
+    assert analysis.repository_context == "invocation-worktree"
+    assert analysis.repository_revision == "invoking-head"
+    assert analysis.base_revision == "base-head"
+    assert analysis.surfaces[0]["pointers"][0]["revision"] == "invoking-head"
+    assert analysis.warnings == ()
+
+
+def test_unrelated_invocation_falls_back_to_tracker_workspace(tmp_path: Path) -> None:
+    owner = tmp_path / "owner"
+    invoking = tmp_path / "unrelated"
+    owner.mkdir()
+    invoking.mkdir()
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        if command == ("rev-parse", "--show-toplevel"):
+            return completed(f"{cwd.resolve()}\n")
+        if command == ("rev-parse", "--path-format=absolute", "--git-common-dir"):
+            return completed(f"{(cwd / '.git').resolve()}\n")
+        if command == ("rev-parse", "--is-inside-work-tree"):
+            return completed("true\n")
+        if command == ("rev-parse", "HEAD"):
+            return completed("owner-head\n")
+        if command == ("rev-parse", "--verify", "origin/main"):
+            return completed("base-head\n")
+        if command == ("rev-parse", "origin/main"):
+            return completed("base-head\n")
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(f"worktree {owner}\nHEAD owner-head\nbranch refs/heads/main\n")
+        if command[:2] == ("diff", "--name-only"):
+            return completed()
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed()
+        raise AssertionError((cwd, arguments))
+
+    analysis = analyze_code_surfaces(
+        [], workspace_path=owner, invocation_path=invoking, runner=runner
+    )
+
+    assert analysis.repository_context == "tracker-workspace"
+    assert analysis.repository_revision == "owner-head"
+    assert analysis.warnings == (
+        "Invoking Git repository does not share the tracker repository; provenance uses the "
+        "tracker workspace.",
+    )
 
 
 def test_observed_to_explicit_exact_path_bypasses_hub_guard(tmp_path: Path) -> None:

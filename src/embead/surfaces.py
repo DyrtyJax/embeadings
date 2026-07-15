@@ -122,6 +122,7 @@ class CodeSurfaceCollision:
 @dataclass(frozen=True, slots=True)
 class CodeSurfaceAnalysis:
     repository_available: bool
+    repository_context: str
     repository_revision: str | None
     base_reference: str | None
     base_revision: str | None
@@ -136,6 +137,7 @@ class CodeSurfaceAnalysis:
     hub_surface_limit: int
     hub_surfaces: tuple[dict[str, Any], ...]
     pairs_omitted_by_hub_guard: int
+    pairs_omitted_by_module_guard: int
     surfaces: tuple[dict[str, Any], ...]
     collisions: tuple[CodeSurfaceCollision, ...]
     warnings: tuple[str, ...] = ()
@@ -190,6 +192,7 @@ def analyze_code_surfaces(
     issues: Sequence[Any],
     *,
     workspace_path: str | Path | None,
+    invocation_path: str | Path | None = None,
     worktree_mappings: Mapping[str, str | Path] | None = None,
     base_reference: str = "origin/main",
     runner: GitRunner = _default_git_runner,
@@ -202,8 +205,15 @@ def analyze_code_surfaces(
         raise ValueError("hub surface issue limit must be positive")
     ordered_issues = sorted(issues, key=lambda item: str(getattr(item, "id", "")))
     issue_ids = tuple(str(getattr(issue, "id", "")) for issue in ordered_issues)
-    repo = Path(workspace_path).resolve() if workspace_path else None
     warnings: list[str] = []
+    tracker_repo = Path(workspace_path).resolve() if workspace_path else None
+    repo, repository_context, context_warning = _select_repository_context(
+        tracker_repo,
+        Path(invocation_path).resolve() if invocation_path else None,
+        runner,
+    )
+    if context_warning:
+        warnings.append(context_warning)
     repository_available = bool(repo and _is_git_repository(repo, runner))
     revision = _git_value(repo, ["rev-parse", "HEAD"], runner) if repository_available else None
     effective_base: str | None = None
@@ -253,7 +263,7 @@ def analyze_code_surfaces(
     by_issue: dict[str, list[CodePointer]] = defaultdict(list)
     for pointer in pointers:
         by_issue[pointer.issue_id].append(pointer)
-    collisions, hub_surfaces, hub_omissions = _collisions(
+    collisions, hub_surfaces, hub_omissions, module_omissions = _collisions(
         by_issue,
         max_evidence=max_collision_evidence,
         hub_surface_limit=hub_surface_limit,
@@ -273,6 +283,7 @@ def analyze_code_surfaces(
     )
     return CodeSurfaceAnalysis(
         repository_available=repository_available,
+        repository_context=repository_context,
         repository_revision=revision,
         base_reference=effective_base,
         base_revision=base_revision,
@@ -287,6 +298,7 @@ def analyze_code_surfaces(
         hub_surface_limit=hub_surface_limit,
         hub_surfaces=hub_surfaces,
         pairs_omitted_by_hub_guard=hub_omissions,
+        pairs_omitted_by_module_guard=module_omissions,
         surfaces=surfaces,
         collisions=collisions,
         warnings=tuple(warnings),
@@ -351,7 +363,7 @@ def _collisions(
     *,
     max_evidence: int,
     hub_surface_limit: int,
-) -> tuple[tuple[CodeSurfaceCollision, ...], tuple[dict[str, Any], ...], int]:
+) -> tuple[tuple[CodeSurfaceCollision, ...], tuple[dict[str, Any], ...], int, int]:
     path_issues: dict[str, set[str]] = defaultdict(set)
     module_issues: dict[str, set[str]] = defaultdict(set)
     for issue_id, pointers in by_issue.items():
@@ -387,6 +399,7 @@ def _collisions(
     )
     results: list[CodeSurfaceCollision] = []
     omitted_by_hub_guard = 0
+    omitted_by_module_guard = 0
     issue_ids = sorted(by_issue)
     for index, issue_id in enumerate(issue_ids):
         for related_id in issue_ids[index + 1 :]:
@@ -419,12 +432,29 @@ def _collisions(
             )[:max_evidence]
             symbol_paths = {symbol.rsplit("::", 1)[0] for symbol in shared_symbols}
             shared_paths = sorted(set(shared_paths) | symbol_paths)[:max_evidence]
-            shared_modules = sorted(
+            non_hub_shared_modules = sorted(
                 module for module in left_modules & right_modules if module not in hub_modules
             )[:max_evidence]
-            if not shared_paths and not shared_symbols and not shared_modules:
+            observed_modules = {
+                module
+                for pointer in (*left, *right)
+                if pointer.source == "active-worktree-diff"
+                and (module := _module_for(pointer.path))
+            }
+            shared_modules = [
+                module for module in non_hub_shared_modules if module in observed_modules
+            ]
+            if not shared_paths and not shared_symbols and not non_hub_shared_modules:
                 if all_shared_paths or left_modules & right_modules:
                     omitted_by_hub_guard += 1
+                continue
+            if (
+                not shared_paths
+                and not shared_symbols
+                and non_hub_shared_modules
+                and not shared_modules
+            ):
+                omitted_by_module_guard += 1
                 continue
             contributing_left = [
                 pointer
@@ -490,7 +520,69 @@ def _collisions(
             ),
         )
     )
-    return collisions, hub_surfaces, omitted_by_hub_guard
+    return collisions, hub_surfaces, omitted_by_hub_guard, omitted_by_module_guard
+
+
+def _select_repository_context(
+    tracker_repo: Path | None,
+    invocation_path: Path | None,
+    runner: GitRunner,
+) -> tuple[Path | None, str, str | None]:
+    """Prefer the invoking worktree when it belongs to the tracker repository."""
+
+    if invocation_path is None:
+        return (
+            (tracker_repo, "tracker-workspace", None)
+            if tracker_repo is not None
+            else (None, "unavailable", None)
+        )
+
+    invocation_root = _git_path(invocation_path, ["rev-parse", "--show-toplevel"], runner)
+    tracker_root = (
+        _git_path(tracker_repo, ["rev-parse", "--show-toplevel"], runner)
+        if tracker_repo is not None
+        else None
+    )
+    if invocation_root is not None and tracker_root is None:
+        return (
+            invocation_root,
+            "invocation-worktree",
+            "Tracker workspace is not a Git repository; provenance uses the invoking worktree.",
+        )
+    if invocation_root is None and tracker_root is not None:
+        return (
+            tracker_root,
+            "tracker-workspace",
+            "Invocation is outside a Git worktree; provenance uses the tracker workspace.",
+        )
+    if invocation_root is None or tracker_root is None:
+        return None, "unavailable", None
+    if invocation_root == tracker_root:
+        return invocation_root, "invocation-worktree", None
+
+    invocation_common = _git_path(
+        invocation_root,
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        runner,
+    )
+    tracker_common = _git_path(
+        tracker_root,
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        runner,
+    )
+    if invocation_common is not None and invocation_common == tracker_common:
+        return invocation_root, "invocation-worktree", None
+    return (
+        tracker_root,
+        "tracker-workspace",
+        "Invoking Git repository does not share the tracker repository; provenance uses the "
+        "tracker workspace.",
+    )
+
+
+def _git_path(path: Path, arguments: Sequence[str], runner: GitRunner) -> Path | None:
+    value = _git_value(path, arguments, runner)
+    return Path(value).resolve() if value else None
 
 
 def _is_git_repository(path: Path, runner: GitRunner) -> bool:

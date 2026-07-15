@@ -39,6 +39,12 @@ investigating when screened from public titles and the narrow shared surface. Th
 review and did not verify the source-level edit contract, so it is evidence of review usefulness—not
 a precision estimate for actual merge conflicts.
 
+Subsequent private review did not reproduce the apparent module precision: only 1 of 22
+explicit-only shared-module leads was useful. The primary queue now requires observed worktree
+evidence for module-only matches. The public counts above preserve the policy that was actually tested
+in this round rather than retroactively presenting results from the revised policy. A corrected-policy
+replay preserved all 19 exact-file leads and omitted the 7 explicit-only module leads.
+
 ## Sensitivity
 
 | Maximum explicit records per non-hub surface | Morphir | opencode-beads | ralph-tui | Total |

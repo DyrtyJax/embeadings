@@ -94,10 +94,13 @@ second non-hub surface or a shared `path::symbol` can still qualify the pair. Ex
 an active worktree are never suppressed by this guard. Use `--max-hub-surface-issues` to tune the
 record-count boundary for a corpus.
 
-This MVP intentionally does not index the whole codebase or add a vector database. The next evidence
-gate is evaluation across the public and private pilot repositories. Semantic code retrieval, AST
-symbols, Git-history inference, and MCP integration belong behind a future optional evidence-provider
-interface only if they improve collision recall without producing an impractical warning queue.
+This MVP intentionally does not index the whole codebase or add a vector database. In the first
+three-repository public pilot, the hub guard reduced 119 explicit-pointer leads to a bounded queue of
+26, but only 30.2% of active records contained an extractable pointer and none had an associated
+active worktree. The next evidence gate is therefore a private pilot that exercises observed edits,
+not a larger source index. Semantic code retrieval, AST symbols, Git-history inference, and MCP
+integration belong behind a future optional evidence-provider interface only if they measurably
+improve collision recall without producing an impractical warning queue.
 
 ## Proposed commands
 
@@ -144,6 +147,8 @@ Research notes:
 
 - [Open-source semantic search and Beads ecosystem sweep](docs/ecosystem-sweep.md)
 - [Anonymized aggregate findings from the first private pilot](docs/research/private-pilot-01.md)
+- [Aggregate findings from the first public code-surface pilot](docs/research/code-surface-public-eval-01.md)
+- [Privacy-preserving private code-surface evaluation protocol](docs/evaluation-code-surfaces.md)
 - [Public synthetic warm-path performance benchmark](docs/performance.md)
 - [Safe offline evaluation and readiness checks](docs/evaluation.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)

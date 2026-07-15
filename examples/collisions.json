@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "report_type": "collisions",
+  "policy": {
+    "read_only": true,
+    "tracker_mutation_allowed": false,
+    "source_mutation_allowed": false,
+    "advisory": true,
+    "snippets_included": false,
+    "notice": "Read-only report: verify every pointer before coordinating work."
+  },
+  "snapshot": {
+    "workspace_id": "synthetic-workspace",
+    "beads_version": "1.0.5",
+    "workspace_path": null
+  },
+  "filters": {
+    "status": ["in_progress", "open"],
+    "include_epics": false
+  },
+  "code_surface_analysis": {
+    "repository_available": true,
+    "repository_revision": "synthetic-revision",
+    "base_reference": "origin/main",
+    "base_revision": "synthetic-base-revision",
+    "issue_count": 2,
+    "pointer_count": 2,
+    "issues_with_explicit_surfaces": 0,
+    "issues_with_observed_surfaces": 2,
+    "issues_without_surfaces": 0,
+    "worktrees_discovered": 3,
+    "worktrees_associated": 2,
+    "source_counts": {
+      "active-worktree-diff": 2
+    },
+    "surfaces": [
+      {
+        "issue_id": "demo-1",
+        "pointers": [
+          {
+            "issue_id": "demo-1",
+            "path": "src/cache/index.py",
+            "source": "active-worktree-diff",
+            "confidence": "observed",
+            "revision": "revision-one",
+            "symbol": null,
+            "source_field": null
+          }
+        ]
+      },
+      {
+        "issue_id": "demo-2",
+        "pointers": [
+          {
+            "issue_id": "demo-2",
+            "path": "src/cache/index.py",
+            "source": "active-worktree-diff",
+            "confidence": "observed",
+            "revision": "revision-two",
+            "symbol": null,
+            "source_field": null
+          }
+        ]
+      }
+    ],
+    "collisions": [
+      {
+        "issue_id": "demo-1",
+        "related_issue_id": "demo-2",
+        "kind": "exact-file",
+        "confidence": "observed",
+        "shared_paths": ["src/cache/index.py"],
+        "shared_symbols": [],
+        "shared_modules": ["src/cache"],
+        "evidence_sources": ["active-worktree-diff"],
+        "revision_relation": "different",
+        "what_to_verify": "Verify whether concurrent work will modify the shared file paths before implementation or merge."
+      }
+    ],
+    "warnings": []
+  }
+}

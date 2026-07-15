@@ -261,6 +261,24 @@ Providers return validated normalized vectors. Analysis must avoid renormalizing
 each comparison and must reuse pairwise scores within a run. A vectorized similarity matrix or an
 equivalent bounded score cache is preferred for populations that fit comfortably in memory.
 
+### Code-surface collision evidence
+
+Code surfaces are optional corroborating evidence, not canonical tracker state and not a replacement
+code-search index. The MVP may extract repository-relative file, directory, and `path::symbol`
+pointers from work-record text and observe changed paths from associated local Git worktrees. It must
+not copy source snippets, mutate a worktree, or persist inferred pointers back into Beads.
+
+Every pointer records its source (`explicit-reference` or `active-worktree-diff`), bounded confidence,
+and Git revision when available. Collision leads distinguish exact-file from shared-module evidence
+and report whether their revisions match. Automatic worktree association may use a full issue ID or
+an unambiguous numeric Bead suffix in the branch name; ambiguous associations require an explicit
+operator mapping and otherwise remain unavailable.
+
+The focused `collisions` command does not load an embedding model. Sweeps may include the same
+analysis additively. A shared path is a prompt to coordinate before implementation or merge, never a
+claim that the tasks have identical intent. Semantic code retrieval, AST indexing, and source
+snippets remain outside the MVP and may be added only behind an optional evidence-provider contract.
+
 ## 12. Candidate-focused disposable batching
 
 Batching operates on issues participating in review signals after structural filtering, ranking,

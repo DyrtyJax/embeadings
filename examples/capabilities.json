@@ -3,7 +3,7 @@
   "protocol_version": 1,
   "role": "consumer",
   "schema_versions": [1],
-  "report_types": ["neighbors", "batch", "sweep"],
-  "capabilities": ["additive-fields", "advisory-evidence", "read-only-review"],
+  "report_types": ["neighbors", "batch", "sweep", "collisions"],
+  "capabilities": ["additive-fields", "advisory-evidence", "read-only-review", "code-surface-pointers"],
   "required_capabilities": ["read-only-review"]
 }

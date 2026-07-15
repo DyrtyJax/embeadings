@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/collisions.schema.json",
+  "title": "emBEADings code-surface collision report, schema version 1",
+  "type": "object",
+  "required": ["schema_version", "report_type", "policy", "snapshot", "filters", "code_surface_analysis"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report_type": { "const": "collisions" },
+    "policy": {
+      "type": "object",
+      "required": ["read_only", "tracker_mutation_allowed", "source_mutation_allowed", "advisory", "snippets_included", "notice"],
+      "properties": {
+        "read_only": { "const": true },
+        "tracker_mutation_allowed": { "const": false },
+        "source_mutation_allowed": { "const": false },
+        "advisory": { "const": true },
+        "snippets_included": { "const": false },
+        "notice": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["workspace_id", "beads_version"],
+      "properties": {
+        "workspace_id": { "type": "string", "minLength": 1 },
+        "beads_version": { "type": "string", "minLength": 1 },
+        "workspace_path": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "filters": { "type": "object" },
+    "code_surface_analysis": { "$ref": "#/$defs/code-surface-analysis" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "code-surface-analysis": {
+      "type": "object",
+      "required": ["repository_available", "repository_revision", "base_reference", "base_revision", "issue_count", "pointer_count", "issues_with_explicit_surfaces", "issues_with_observed_surfaces", "issues_without_surfaces", "worktrees_discovered", "worktrees_associated", "source_counts", "surfaces", "collisions", "warnings"],
+      "properties": {
+        "repository_available": { "type": "boolean" },
+        "repository_revision": { "type": ["string", "null"] },
+        "base_reference": { "type": ["string", "null"] },
+        "base_revision": { "type": ["string", "null"] },
+        "issue_count": { "type": "integer", "minimum": 0 },
+        "pointer_count": { "type": "integer", "minimum": 0 },
+        "issues_with_explicit_surfaces": { "type": "integer", "minimum": 0 },
+        "issues_with_observed_surfaces": { "type": "integer", "minimum": 0 },
+        "issues_without_surfaces": { "type": "integer", "minimum": 0 },
+        "worktrees_discovered": { "type": "integer", "minimum": 0 },
+        "worktrees_associated": { "type": "integer", "minimum": 0 },
+        "source_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["issue_id", "pointers"],
+            "properties": {
+              "issue_id": { "type": "string", "minLength": 1 },
+              "pointers": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/code-pointer" }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "collisions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/code-surface-collision" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "code-pointer": {
+      "type": "object",
+      "required": ["issue_id", "path", "source", "confidence", "revision", "symbol", "source_field"],
+      "properties": {
+        "issue_id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["explicit-reference", "active-worktree-diff"] },
+        "confidence": { "enum": ["explicit", "observed"] },
+        "revision": { "type": ["string", "null"] },
+        "symbol": { "type": ["string", "null"] },
+        "source_field": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "code-surface-collision": {
+      "type": "object",
+      "required": ["issue_id", "related_issue_id", "kind", "confidence", "shared_paths", "shared_symbols", "shared_modules", "evidence_sources", "revision_relation", "what_to_verify"],
+      "properties": {
+        "issue_id": { "type": "string", "minLength": 1 },
+        "related_issue_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["exact-file", "shared-module"] },
+        "confidence": { "enum": ["observed", "corroborated", "explicit"] },
+        "shared_paths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "shared_symbols": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "shared_modules": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "evidence_sources": {
+          "type": "array",
+          "items": { "enum": ["explicit-reference", "active-worktree-diff"] },
+          "uniqueItems": true
+        },
+        "revision_relation": { "enum": ["same", "different", "unavailable"] },
+        "what_to_verify": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -8,7 +8,12 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
 
-from embead.reports import build_batch_manifest, build_neighbors_payload, build_sweep_payload
+from embead.reports import (
+    build_batch_manifest,
+    build_collisions_payload,
+    build_neighbors_payload,
+    build_sweep_payload,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMAS = ROOT / "schemas" / "v1"
@@ -57,13 +62,45 @@ EVIDENCE = {
     "what_to_verify": "Confirm whether completed work changed the active scope.",
     "counterevidence": ["no direct dependency is recorded"],
 }
+CODE_SURFACE_ANALYSIS = {
+    "repository_available": True,
+    "repository_revision": "synthetic-revision",
+    "base_reference": "origin/main",
+    "base_revision": "synthetic-base-revision",
+    "issue_count": 2,
+    "pointer_count": 2,
+    "issues_with_explicit_surfaces": 0,
+    "issues_with_observed_surfaces": 2,
+    "issues_without_surfaces": 0,
+    "worktrees_discovered": 3,
+    "worktrees_associated": 2,
+    "source_counts": {"active-worktree-diff": 2},
+    "surfaces": [],
+    "collisions": [
+        {
+            "issue_id": "demo-1",
+            "related_issue_id": "demo-2",
+            "kind": "exact-file",
+            "confidence": "observed",
+            "shared_paths": ["src/cache/index.py"],
+            "shared_symbols": [],
+            "shared_modules": ["src/cache"],
+            "evidence_sources": ["active-worktree-diff"],
+            "revision_relation": "same",
+            "what_to_verify": "Coordinate changes to the shared file.",
+        }
+    ],
+    "warnings": [],
+}
 
 
 def _load(directory: Path, name: str) -> dict[str, Any]:
     return json.loads((directory / name).read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize("name", ["neighbors", "batch", "sweep", "capabilities", "checkpoint"])
+@pytest.mark.parametrize(
+    "name", ["neighbors", "batch", "sweep", "collisions", "capabilities", "checkpoint"]
+)
 def test_schema_is_valid_draft_2020_12_and_accepts_example(name: str) -> None:
     schema = _load(SCHEMAS, f"{name}.schema.json")
     Draft202012Validator.check_schema(schema)
@@ -107,6 +144,12 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
             excluded={"count": 1, "by_reason": {"epic": 1}, "issue_ids": ["demo-epic"]},
             target_batch_size=5,
             duration_ms=12,
+            code_surface_analysis=CODE_SURFACE_ANALYSIS,
+        ),
+        "collisions": build_collisions_payload(
+            CODE_SURFACE_ANALYSIS,
+            snapshot=SNAPSHOT,
+            filters={"status": ["open"]},
         ),
     }
 

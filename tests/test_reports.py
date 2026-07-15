@@ -192,6 +192,16 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
                     "displaced_candidate_ids": ["possible-overlap|bd-7|bd-8"],
                 }
             ],
+            "dependency_funnel": {
+                "total_non_parent_typed": 3,
+                "inactive_or_closed_only": 1,
+                "below_qualification": 0,
+                "eligible": 2,
+                "admitted": 1,
+                "omitted_by_per_issue_cap": 1,
+                "omitted_by_lane_cap": 0,
+                "omitted_by_run_cap": 0,
+            },
             "lanes": {
                 "dependency": {"qualified": 2, "admitted": 1, "dropped_by_lane_cap": 1},
                 "echo": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
@@ -228,6 +238,8 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "Excluded records: 1" in markdown
     assert "Dependency: 1 admitted / 2 qualified" in markdown
     assert "Typed dependencies dropped by their independent per-issue allowance" in markdown
+    assert "Discovery conservation: 3 = 1 + 0 + 2" in markdown
+    assert "Admission conservation: 2 = 1 + 1 + 0 + 0" in markdown
     assert "Baseline candidates protected in sensitivity mode: 1" in markdown
     assert "Admitted by substantive local evidence: 1" in markdown
     assert "Omitted as generic vocabulary only: 2" in markdown

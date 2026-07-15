@@ -454,6 +454,98 @@ def test_all_typed_dependency_cap_reasons_are_summarized() -> None:
         policy(max_total=1, max_dependencies=5, max_dependencies_per_issue=5),
     )
     assert run_capped.capped_typed_dependencies[0]["drop_reason"] == "run-cap"
+    assert result.dependency_funnel.omitted_by_lane_cap == 1
+    assert run_capped.dependency_funnel.omitted_by_run_cap == 1
+
+
+def test_dependency_funnel_zero_structure_is_explicit_and_conserved() -> None:
+    issues = [issue("A"), issue("B", status="closed")]
+
+    result = rank_candidates(issues[:1], issues, Scores({}), policy())
+
+    assert result.dependency_funnel.total_non_parent_typed == 0
+    assert result.dependency_funnel.inactive_or_closed_only == 0
+    assert result.dependency_funnel.eligible == 0
+    result.dependency_funnel.validate()
+
+
+def test_dependency_funnel_identifies_closed_only_structure() -> None:
+    issues = [
+        IssueRecord(
+            id="A",
+            title="A",
+            status="closed",
+            dependency_links=(DependencyLink("A", "B", "blocks"),),
+        ),
+        IssueRecord(
+            id="B",
+            title="B",
+            status="closed",
+            dependency_links=(DependencyLink("B", "C", "relates-to"),),
+        ),
+        IssueRecord(
+            id="C",
+            title="C",
+            status="closed",
+            dependency_links=(DependencyLink("C", "A", "discovered-from"),),
+        ),
+        issue("D"),
+    ]
+
+    result = rank_candidates([issues[-1]], issues, Scores({}), policy())
+
+    assert result.dependency_funnel.total_non_parent_typed == 3
+    assert result.dependency_funnel.inactive_or_closed_only == 3
+    assert result.dependency_funnel.below_qualification == 0
+    assert result.dependency_funnel.eligible == 0
+    result.dependency_funnel.validate()
+
+
+def test_dependency_funnel_reconciles_rich_structure_without_endpoints() -> None:
+    hub = IssueRecord(
+        id="A",
+        title="A",
+        status="open",
+        dependency_links=tuple(
+            DependencyLink("A", target, "blocks") for target in ("B", "C", "D", "E")
+        ),
+    )
+    closed_source = IssueRecord(
+        id="X",
+        title="X",
+        status="closed",
+        dependency_links=(DependencyLink("X", "Y", "blocks"),),
+    )
+    issues = [
+        hub,
+        *(issue(identifier) for identifier in "BCDE"),
+        closed_source,
+        issue("Y", status="closed"),
+    ]
+
+    result = rank_candidates(
+        issues[:5],
+        issues,
+        Scores(
+            {
+                ("A", "B"): 0.90,
+                ("A", "C"): 0.85,
+                ("A", "D"): 0.75,
+                ("A", "E"): 0.60,
+            }
+        ),
+        policy(max_dependencies_per_issue=1),
+    )
+
+    funnel = result.dependency_funnel
+    assert funnel.total_non_parent_typed == 5
+    assert funnel.inactive_or_closed_only == 1
+    assert funnel.below_qualification == 1
+    assert funnel.eligible == 3
+    assert funnel.admitted == 1
+    assert funnel.omitted_by_per_issue_cap == 2
+    assert not hasattr(funnel, "source_id")
+    funnel.validate()
 
 
 def test_sensitivity_run_preserves_baseline_queue_under_caps() -> None:

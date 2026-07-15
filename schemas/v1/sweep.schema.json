@@ -203,6 +203,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/cap-replacement" }
         },
+        "dependency_funnel": { "$ref": "#/$defs/dependency-funnel" },
         "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
         "lane_caps": {
           "type": "object",
@@ -239,6 +240,21 @@
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 }
         }
+      },
+      "additionalProperties": false
+    },
+    "dependency-funnel": {
+      "type": "object",
+      "required": ["total_non_parent_typed", "inactive_or_closed_only", "below_qualification", "eligible", "admitted", "omitted_by_per_issue_cap", "omitted_by_lane_cap", "omitted_by_run_cap"],
+      "properties": {
+        "total_non_parent_typed": { "type": "integer", "minimum": 0 },
+        "inactive_or_closed_only": { "type": "integer", "minimum": 0 },
+        "below_qualification": { "type": "integer", "minimum": 0 },
+        "eligible": { "type": "integer", "minimum": 0 },
+        "admitted": { "type": "integer", "minimum": 0 },
+        "omitted_by_per_issue_cap": { "type": "integer", "minimum": 0 },
+        "omitted_by_lane_cap": { "type": "integer", "minimum": 0 },
+        "omitted_by_run_cap": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },

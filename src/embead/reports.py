@@ -590,6 +590,7 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
 
 def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
     collisions = _field(analysis, "collisions", default=[]) or []
+    hub_surfaces = _field(analysis, "hub_surfaces", default=[]) or []
     lines = [
         "## Code-surface collision evidence",
         "",
@@ -609,9 +610,25 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
         + str(_field(analysis, "worktrees_associated", default=0))
         + " / "
         + str(_field(analysis, "worktrees_discovered", default=0)),
+        "- Hub surfaces summarized: " + str(len(hub_surfaces)),
+        "- Pairs omitted by hub guard: "
+        + str(_field(analysis, "pairs_omitted_by_hub_guard", default=0)),
         "- Collision leads: " + str(len(collisions)),
         "",
     ]
+    if hub_surfaces:
+        lines.extend(["### Hub surfaces", ""])
+        for item in hub_surfaces:
+            lines.append(
+                "- `"
+                + _escape(_field(item, "surface", default="unknown"))
+                + "` ("
+                + _escape(_field(item, "kind", default="surface"))
+                + ", referenced by "
+                + str(_field(item, "issue_count", default=0))
+                + " active records)"
+            )
+        lines.append("")
     if not collisions:
         lines.extend(["No code-surface collisions were found.", ""])
         return lines

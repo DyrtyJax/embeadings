@@ -219,6 +219,15 @@ def _code_surface_arguments(parser: argparse.ArgumentParser, *, opt_in: bool) ->
         default="origin/main",
         help="Local Git reference used to identify committed worktree changes",
     )
+    parser.add_argument(
+        "--max-hub-surface-issues",
+        type=int,
+        default=5,
+        help=(
+            "Summarize explicit-only paths/modules referenced by more than this many "
+            "active records instead of emitting every pair"
+        ),
+    )
 
 
 def _provider(name: str) -> Model2VecProvider | HashingProvider:
@@ -326,6 +335,7 @@ def _surface_analysis(
         workspace_path=snapshot.workspace_path,
         worktree_mappings=mappings,
         base_reference=args.base_ref,
+        hub_surface_limit=args.max_hub_surface_issues,
     )
     return analysis.to_dict()
 

@@ -133,6 +133,9 @@ class CodeSurfaceAnalysis:
     worktrees_discovered: int
     worktrees_associated: int
     source_counts: dict[str, int]
+    hub_surface_limit: int
+    hub_surfaces: tuple[dict[str, Any], ...]
+    pairs_omitted_by_hub_guard: int
     surfaces: tuple[dict[str, Any], ...]
     collisions: tuple[CodeSurfaceCollision, ...]
     warnings: tuple[str, ...] = ()
@@ -191,9 +194,12 @@ def analyze_code_surfaces(
     base_reference: str = "origin/main",
     runner: GitRunner = _default_git_runner,
     max_collision_evidence: int = 8,
+    hub_surface_limit: int = 5,
 ) -> CodeSurfaceAnalysis:
     """Build explicit and observed surfaces, then derive bounded pairwise collisions."""
 
+    if hub_surface_limit < 1:
+        raise ValueError("hub surface issue limit must be positive")
     ordered_issues = sorted(issues, key=lambda item: str(getattr(item, "id", "")))
     issue_ids = tuple(str(getattr(issue, "id", "")) for issue in ordered_issues)
     repo = Path(workspace_path).resolve() if workspace_path else None
@@ -247,7 +253,11 @@ def analyze_code_surfaces(
     by_issue: dict[str, list[CodePointer]] = defaultdict(list)
     for pointer in pointers:
         by_issue[pointer.issue_id].append(pointer)
-    collisions = _collisions(by_issue, max_evidence=max_collision_evidence)
+    collisions, hub_surfaces, hub_omissions = _collisions(
+        by_issue,
+        max_evidence=max_collision_evidence,
+        hub_surface_limit=hub_surface_limit,
+    )
     explicit_ids = {
         pointer.issue_id for pointer in pointers if pointer.source == "explicit-reference"
     }
@@ -274,6 +284,9 @@ def analyze_code_surfaces(
         worktrees_discovered=len(worktrees),
         worktrees_associated=len(associations),
         source_counts=dict(sorted(Counter(pointer.source for pointer in pointers).items())),
+        hub_surface_limit=hub_surface_limit,
+        hub_surfaces=hub_surfaces,
+        pairs_omitted_by_hub_guard=hub_omissions,
         surfaces=surfaces,
         collisions=collisions,
         warnings=tuple(warnings),
@@ -334,9 +347,46 @@ def _module_for(path: str) -> str | None:
 
 
 def _collisions(
-    by_issue: Mapping[str, Sequence[CodePointer]], *, max_evidence: int
-) -> tuple[CodeSurfaceCollision, ...]:
+    by_issue: Mapping[str, Sequence[CodePointer]],
+    *,
+    max_evidence: int,
+    hub_surface_limit: int,
+) -> tuple[tuple[CodeSurfaceCollision, ...], tuple[dict[str, Any], ...], int]:
+    path_issues: dict[str, set[str]] = defaultdict(set)
+    module_issues: dict[str, set[str]] = defaultdict(set)
+    for issue_id, pointers in by_issue.items():
+        for pointer in pointers:
+            if not pointer.path.endswith("/"):
+                path_issues[pointer.path].add(issue_id)
+            module = _module_for(pointer.path)
+            if module:
+                module_issues[module].add(issue_id)
+    hub_paths = {path for path, members in path_issues.items() if len(members) > hub_surface_limit}
+    hub_modules = {
+        module for module, members in module_issues.items() if len(members) > hub_surface_limit
+    }
+    hub_surfaces = tuple(
+        sorted(
+            (
+                {"kind": "path", "surface": path, "issue_count": len(path_issues[path])}
+                for path in hub_paths
+            ),
+            key=lambda item: (-item["issue_count"], item["surface"]),
+        )
+        + sorted(
+            (
+                {
+                    "kind": "module",
+                    "surface": module,
+                    "issue_count": len(module_issues[module]),
+                }
+                for module in hub_modules
+            ),
+            key=lambda item: (-item["issue_count"], item["surface"]),
+        )
+    )
     results: list[CodeSurfaceCollision] = []
+    omitted_by_hub_guard = 0
     issue_ids = sorted(by_issue)
     for index, issue_id in enumerate(issue_ids):
         for related_id in issue_ids[index + 1 :]:
@@ -344,7 +394,7 @@ def _collisions(
             right = by_issue[related_id]
             left_paths = {pointer.path for pointer in left if not pointer.path.endswith("/")}
             right_paths = {pointer.path for pointer in right if not pointer.path.endswith("/")}
-            shared_paths = sorted(left_paths & right_paths)[:max_evidence]
+            all_shared_paths = left_paths & right_paths
             left_symbols = {
                 f"{pointer.path}::{pointer.symbol}" for pointer in left if pointer.symbol
             }
@@ -354,15 +404,48 @@ def _collisions(
             shared_symbols = sorted(left_symbols & right_symbols)[:max_evidence]
             left_modules = {module for pointer in left if (module := _module_for(pointer.path))}
             right_modules = {module for pointer in right if (module := _module_for(pointer.path))}
-            shared_modules = sorted((left_modules & right_modules) - set(shared_paths))[
-                :max_evidence
-            ]
-            if not shared_paths and not shared_modules:
+            observed_shared_paths = {
+                path
+                for path in all_shared_paths
+                if any(
+                    pointer.path == path and pointer.source == "active-worktree-diff"
+                    for pointer in (*left, *right)
+                )
+            }
+            shared_paths = sorted(
+                path
+                for path in all_shared_paths
+                if path not in hub_paths or path in observed_shared_paths
+            )[:max_evidence]
+            symbol_paths = {symbol.rsplit("::", 1)[0] for symbol in shared_symbols}
+            shared_paths = sorted(set(shared_paths) | symbol_paths)[:max_evidence]
+            shared_modules = sorted(
+                module for module in left_modules & right_modules if module not in hub_modules
+            )[:max_evidence]
+            if not shared_paths and not shared_symbols and not shared_modules:
+                if all_shared_paths or left_modules & right_modules:
+                    omitted_by_hub_guard += 1
                 continue
-            sources = tuple(sorted({pointer.source for pointer in (*left, *right)}))
+            contributing_left = [
+                pointer
+                for pointer in left
+                if pointer.path in shared_paths
+                or (pointer.symbol and f"{pointer.path}::{pointer.symbol}" in shared_symbols)
+                or _module_for(pointer.path) in shared_modules
+            ]
+            contributing_right = [
+                pointer
+                for pointer in right
+                if pointer.path in shared_paths
+                or (pointer.symbol and f"{pointer.path}::{pointer.symbol}" in shared_symbols)
+                or _module_for(pointer.path) in shared_modules
+            ]
+            sources = tuple(
+                sorted({pointer.source for pointer in (*contributing_left, *contributing_right)})
+            )
             observed_sides = (
-                any(pointer.source == "active-worktree-diff" for pointer in left),
-                any(pointer.source == "active-worktree-diff" for pointer in right),
+                any(pointer.source == "active-worktree-diff" for pointer in contributing_left),
+                any(pointer.source == "active-worktree-diff" for pointer in contributing_right),
             )
             confidence = (
                 "observed"
@@ -396,7 +479,7 @@ def _collisions(
                     ),
                 )
             )
-    return tuple(
+    collisions = tuple(
         sorted(
             results,
             key=lambda item: (
@@ -407,6 +490,7 @@ def _collisions(
             ),
         )
     )
+    return collisions, hub_surfaces, omitted_by_hub_guard
 
 
 def _is_git_repository(path: Path, runner: GitRunner) -> bool:

@@ -142,6 +142,9 @@ def test_collisions_is_corpus_read_only_and_does_not_load_embedding_provider(
         "worktrees_discovered": 3,
         "worktrees_associated": 2,
         "source_counts": {"active-worktree-diff": 2},
+        "hub_surface_limit": 5,
+        "hub_surfaces": [],
+        "pairs_omitted_by_hub_guard": 0,
         "surfaces": [],
         "collisions": [
             {
@@ -187,6 +190,9 @@ def test_sweep_can_include_code_surface_analysis(monkeypatch, tmp_path, capsys) 
         "worktrees_discovered": 0,
         "worktrees_associated": 0,
         "source_counts": {},
+        "hub_surface_limit": 5,
+        "hub_surfaces": [],
+        "pairs_omitted_by_hub_guard": 0,
         "surfaces": [],
         "collisions": [],
         "warnings": ["No Git repository was available."],

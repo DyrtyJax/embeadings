@@ -31,12 +31,15 @@ from .provider import HashingProvider, Model2VecProvider, provider_readiness
 from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
 from .reports import (
     build_batch_manifest,
+    build_collisions_payload,
     build_neighbors_payload,
     build_sweep_payload,
     render_batch_markdown,
+    render_collisions_markdown,
     render_neighbors_markdown,
     render_sweep_markdown,
 )
+from .surfaces import analyze_code_surfaces, parse_worktree_mappings
 
 ACTIVE_STATUSES = {"open", "in_progress", "blocked", "deferred"}
 REVIEW_RUBRIC = (
@@ -86,6 +89,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     _candidate_policy_arguments(sweep)
     _incremental_arguments(sweep)
+    _code_surface_arguments(sweep, opt_in=True)
     sweep.add_argument("--output", type=Path)
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
@@ -99,6 +103,7 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--include-epics", action="store_true")
     _candidate_policy_arguments(batch)
     _incremental_arguments(batch)
+    _code_surface_arguments(batch, opt_in=True)
     batch.add_argument("--output", type=Path)
     batch.add_argument("--json", action="store_true", dest="as_json")
 
@@ -112,6 +117,20 @@ def _parser() -> argparse.ArgumentParser:
         help="Require model artifacts to already exist in the configured local cache",
     )
     readiness.add_argument("--json", action="store_true", dest="as_json")
+
+    collisions = subparsers.add_parser(
+        "collisions",
+        help="Find active work that points at the same local code surfaces",
+    )
+    collisions.add_argument(
+        "--status",
+        action="append",
+        help="Include a stored status (repeatable; defaults to all active work)",
+    )
+    collisions.add_argument("--include-epics", action="store_true")
+    _code_surface_arguments(collisions, opt_in=False)
+    collisions.add_argument("--output", type=Path)
+    collisions.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -175,6 +194,30 @@ def _incremental_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         metavar="PATH",
         help="Atomically write a portable metadata-only checkpoint outside the repository",
+    )
+
+
+def _code_surface_arguments(parser: argparse.ArgumentParser, *, opt_in: bool) -> None:
+    if opt_in:
+        parser.add_argument(
+            "--code-surfaces",
+            action="store_true",
+            help="Add local explicit-reference and active-worktree collision evidence",
+        )
+    parser.add_argument(
+        "--worktree-map",
+        action="append",
+        default=[],
+        metavar="ISSUE_ID=PATH",
+        help=(
+            "Associate an active issue with a registered Git worktree; repeatable. "
+            "Supplying a mapping enables code-surface analysis for sweeps."
+        ),
+    )
+    parser.add_argument(
+        "--base-ref",
+        default="origin/main",
+        help="Local Git reference used to identify committed worktree changes",
     )
 
 
@@ -269,6 +312,43 @@ def _readiness(args: argparse.Namespace) -> int:
             f"Vector dimension: {payload['vector_dimension']}\n"
             "Corpus loaded: no\n"
         )
+    return 0
+
+
+def _surface_analysis(
+    args: argparse.Namespace,
+    snapshot: Any,
+    issues: list[IssueRecord],
+) -> dict[str, Any]:
+    mappings = parse_worktree_mappings(args.worktree_map)
+    analysis = analyze_code_surfaces(
+        issues,
+        workspace_path=snapshot.workspace_path,
+        worktree_mappings=mappings,
+        base_reference=args.base_ref,
+    )
+    return analysis.to_dict()
+
+
+def _collisions(args: argparse.Namespace) -> int:
+    snapshot, issues = BeadsAdapter().load()
+    statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
+    population = [
+        issue
+        for issue in issues
+        if issue.status.casefold() in statuses
+        and (args.include_epics or issue.issue_type.casefold() != "epic")
+    ]
+    analysis = _surface_analysis(args, snapshot, population)
+    payload = build_collisions_payload(
+        analysis,
+        snapshot=asdict(snapshot),
+        filters={"status": sorted(statuses), "include_epics": args.include_epics},
+    )
+    rendered = _json_text(payload) if args.as_json else render_collisions_markdown(payload)
+    if args.output:
+        _atomic_text(args.output, rendered)
+    sys.stdout.write(rendered)
     return 0
 
 
@@ -446,6 +526,12 @@ def _sweep(args: argparse.Namespace) -> int:
     ]
     excluded_ids = {issue.id for issue in excluded_epics}
     population = [issue for issue in selected_population if issue.id not in excluded_ids]
+    code_surface_payload: dict[str, Any] | None = None
+    code_surface_ms = 0
+    if args.code_surfaces or args.worktree_map:
+        phase_started = time.monotonic()
+        code_surface_payload = _surface_analysis(args, snapshot, population)
+        code_surface_ms = round((time.monotonic() - phase_started) * 1000)
     scope: IncrementalScope | None = None
     if args.changed_since:
         scope = scope_since_timestamp(issues, args.changed_since)
@@ -673,6 +759,7 @@ def _sweep(args: argparse.Namespace) -> int:
         target_batch_size=args.size,
         batch_diagnostics=asdict(packaging.diagnostics),
         duration_ms=round((time.monotonic() - started) * 1000),
+        code_surface_analysis=code_surface_payload,
     )
     payload["timings_ms"] = {
         "acquisition": acquisition_ms,
@@ -680,6 +767,7 @@ def _sweep(args: argparse.Namespace) -> int:
         "similarity_scoring": similarity_scoring_ms,
         "candidate_analysis": candidate_analysis_ms,
         "batching": batching_ms,
+        "code_surface_analysis": code_surface_ms,
     }
     payload["output_directory"] = str(run_dir)
     _atomic_text(run_dir / "report.json", _json_text(payload))
@@ -702,6 +790,8 @@ def main(argv: list[str] | None = None) -> int:
             return _neighbors(args)
         if args.command == "readiness":
             return _readiness(args)
+        if args.command == "collisions":
+            return _collisions(args)
         return _sweep(args)
     except (BeadsError, OSError, RuntimeError, ValueError) as exc:
         print(f"embead: {exc}", file=sys.stderr)

@@ -10,8 +10,8 @@ Beads dependencies answer “what blocks this?” Semantic neighborhoods answer 
 find that neighborhood without adding durable labels, changing issue state, or replacing Beads'
 dependency graph.
 
-> Status: MVP implementation. `neighbors`, synchronous `sweep`, and `batch` are available; async
-> runs and agent dispatch remain future work.
+> Status: MVP implementation. `neighbors`, synchronous `sweep`, `batch`, and local code-surface
+> `collisions` are available; async runs and agent dispatch remain future work.
 
 ## Install and try it
 
@@ -21,6 +21,15 @@ Python 3.11 or later and an installed `bd` CLI are required.
 python -m pip install -e .
 embead neighbors ISSUE_ID --include-closed
 embead sweep --size 9
+
+# Find active work pointing at the same files or implementation modules
+embead collisions
+
+# Associate a worktree when its branch does not contain the Bead's numeric suffix
+embead collisions --worktree-map embead-3ur.49=../embead-code-surface
+
+# Include the same collision evidence in a semantic sweep report
+embead sweep --code-surfaces
 
 # Review only candidates touching active work changed after a timestamp
 embead sweep --changed-since 2026-07-01T00:00:00Z
@@ -65,12 +74,32 @@ The tool discovers a Beads workspace, reads current records through the `bd` CLI
 locally, and emits disposable JSON and Markdown reports. A separate human or coordinator may decide
 whether any tracker update is appropriate.
 
+## Code-surface collision evidence
+
+The optional code-surface layer addresses a narrower coordination question: “which active work may
+touch the same implementation boundary?” It extracts conservative repository-relative path and
+`path::symbol` references from Beads and observes changed paths in associated local Git worktrees.
+Worktrees are associated automatically when the branch contains the full Bead ID or an unambiguous
+`bead-N` suffix; `--worktree-map ISSUE_ID=PATH` supplies an explicit association when needed.
+
+`embead collisions` does not load an embedding model. It reports exact-file and shared-module leads,
+the evidence source, confidence, and whether the pointers came from the same Git revision. The report
+contains pointers rather than source snippets, invokes only read-only Git commands, and never writes
+the inferred surfaces back into Beads. Shared paths are coordination evidence, not proof that two
+tasks have conflicting intent.
+
+This MVP intentionally does not index the whole codebase or add a vector database. The next evidence
+gate is evaluation across the public and private pilot repositories. Semantic code retrieval, AST
+symbols, Git-history inference, and MCP integration belong behind a future optional evidence-provider
+interface only if they improve collision recall without producing an impractical warning queue.
+
 ## Proposed commands
 
 ```bash
 embead neighbors <issue-id>
 embead batch [--size 9]
 embead sweep [--size 9]
+embead collisions [--worktree-map ISSUE_ID=PATH]
 ```
 
 Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.

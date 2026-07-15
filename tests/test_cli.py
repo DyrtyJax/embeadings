@@ -113,11 +113,96 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
         "similarity_scoring",
         "candidate_analysis",
         "batching",
+        "code_surface_analysis",
     }
     assert all(value >= 0 for value in payload["timings_ms"].values())
     assert (output / "report.json").is_file()
     assert (output / "report.md").is_file()
     assert list(output.glob("batch-*.json")) == []
+
+
+def test_collisions_is_corpus_read_only_and_does_not_load_embedding_provider(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+
+    def no_provider(_name):
+        raise AssertionError("collision analysis must not load an embedding provider")
+
+    analysis = {
+        "repository_available": True,
+        "repository_revision": "revision",
+        "base_reference": "origin/main",
+        "base_revision": "base-revision",
+        "issue_count": 2,
+        "pointer_count": 2,
+        "issues_with_explicit_surfaces": 0,
+        "issues_with_observed_surfaces": 2,
+        "issues_without_surfaces": 0,
+        "worktrees_discovered": 3,
+        "worktrees_associated": 2,
+        "source_counts": {"active-worktree-diff": 2},
+        "surfaces": [],
+        "collisions": [
+            {
+                "issue_id": "demo-1",
+                "related_issue_id": "demo-3",
+                "kind": "exact-file",
+                "confidence": "observed",
+                "shared_paths": ["src/cache/index.py"],
+                "shared_symbols": [],
+                "shared_modules": ["src/cache"],
+                "evidence_sources": ["active-worktree-diff"],
+                "revision_relation": "same",
+                "what_to_verify": "Coordinate the shared file.",
+            }
+        ],
+        "warnings": [],
+    }
+    monkeypatch.setattr(cli, "_provider", no_provider)
+    monkeypatch.setattr(cli, "_surface_analysis", lambda *_args: analysis)
+
+    output = tmp_path / "collisions.json"
+    assert cli.main(["collisions", "--output", str(output), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["report_type"] == "collisions"
+    assert payload["policy"]["snippets_included"] is False
+    assert payload["code_surface_analysis"]["collisions"][0]["kind"] == "exact-file"
+    assert json.loads(output.read_text()) == payload
+
+
+def test_sweep_can_include_code_surface_analysis(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    analysis = {
+        "repository_available": False,
+        "repository_revision": None,
+        "base_reference": None,
+        "base_revision": None,
+        "issue_count": 2,
+        "pointer_count": 0,
+        "issues_with_explicit_surfaces": 0,
+        "issues_with_observed_surfaces": 0,
+        "issues_without_surfaces": 2,
+        "worktrees_discovered": 0,
+        "worktrees_associated": 0,
+        "source_counts": {},
+        "surfaces": [],
+        "collisions": [],
+        "warnings": ["No Git repository was available."],
+    }
+    monkeypatch.setattr(cli, "_surface_analysis", lambda *_args: analysis)
+
+    output = tmp_path / "surface-sweep"
+    assert (
+        cli.main(["sweep", "--code-surfaces", "--output", str(output), "--json"])
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["code_surface_analysis"] == analysis
+    assert payload["timings_ms"]["code_surface_analysis"] >= 0
+    assert "Code-surface collision evidence" in (output / "report.md").read_text()
 
 
 def test_sweep_propagates_non_sensitive_source_warning(monkeypatch, tmp_path, capsys) -> None:

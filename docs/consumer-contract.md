@@ -2,8 +2,8 @@
 
 emBEADings artifacts are read-only, advisory evidence. The JSON Schemas in
 [`schemas/v1`](../schemas/v1/) describe the stable machine-readable envelope for the `neighbors`,
-`batch`, and `sweep` report types. The files in [`examples`](../examples/) are synthetic and contain
-no tracker data.
+`batch`, `sweep`, and `collisions` report types. The files in [`examples`](../examples/) are synthetic
+and contain no private tracker or source content.
 
 ## Version negotiation
 
@@ -114,8 +114,8 @@ object. Core emBEADings does not launch a dispatcher or grant it tracker access.
   "protocol_version": 1,
   "role": "consumer",
   "schema_versions": [1],
-  "report_types": ["neighbors", "batch", "sweep"],
-  "capabilities": ["additive-fields", "advisory-evidence", "read-only-review"],
+  "report_types": ["neighbors", "batch", "sweep", "collisions"],
+  "capabilities": ["additive-fields", "advisory-evidence", "read-only-review", "code-surface-pointers"],
   "required_capabilities": ["read-only-review"]
 }
 ```
@@ -136,6 +136,8 @@ The version 1 producer capabilities are:
 - `advisory-evidence`: semantic scores and explanations are evidence, not tracker truth;
 - `read-only-review`: artifacts prohibit tracker mutation and batch manifests also prohibit
   implementation.
+- `code-surface-pointers`: collision artifacts may contain repository-relative paths and symbols
+  bound to a reported Git revision, but never source snippets.
 
 ## Consumer requirements
 
@@ -160,6 +162,7 @@ score as a Beads dependency, status transition, duplicate decision, or authoriza
 | `neighbors` | [`neighbors.schema.json`](../schemas/v1/neighbors.schema.json) | [`neighbors.json`](../examples/neighbors.json) |
 | `batch` | [`batch.schema.json`](../schemas/v1/batch.schema.json) | [`batch.json`](../examples/batch.json) |
 | `sweep` | [`sweep.schema.json`](../schemas/v1/sweep.schema.json) | [`sweep.json`](../examples/sweep.json) |
+| `collisions` | [`collisions.schema.json`](../schemas/v1/collisions.schema.json) | [`collisions.json`](../examples/collisions.json) |
 | Incremental checkpoint | [`checkpoint.schema.json`](../schemas/v1/checkpoint.schema.json) | [`checkpoint.json`](../examples/checkpoint.json) |
 
 Schemas use JSON Schema Draft 2020-12. Published `$id` values point to the corresponding files on the

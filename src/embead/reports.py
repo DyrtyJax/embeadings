@@ -251,6 +251,31 @@ def build_batch_manifest(
     }
 
 
+def build_collisions_payload(
+    analysis: Any,
+    *,
+    snapshot: Any,
+    filters: Any | None = None,
+) -> dict[str, Any]:
+    """Build a versioned code-surface collision report without source contents."""
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "report_type": "collisions",
+        "policy": {
+            "read_only": True,
+            "tracker_mutation_allowed": False,
+            "source_mutation_allowed": False,
+            "advisory": True,
+            "snippets_included": False,
+            "notice": f"{READ_ONLY_NOTICE} {ADVISORY_NOTICE}",
+        },
+        "snapshot": _jsonable(snapshot),
+        "filters": _jsonable(filters or {}),
+        "code_surface_analysis": _jsonable(analysis),
+    }
+
+
 def build_sweep_payload(
     run_id: str,
     candidates: Iterable[Any],
@@ -269,6 +294,7 @@ def build_sweep_payload(
     batch_diagnostics: Any | None = None,
     warnings: Iterable[str] = (),
     duration_ms: int | float | None = None,
+    code_surface_analysis: Any | None = None,
 ) -> dict[str, Any]:
     """Build a versioned summary of one synchronous or asynchronous sweep."""
 
@@ -317,6 +343,8 @@ def build_sweep_payload(
     }
     if duration_ms is not None:
         payload["duration_ms"] = _jsonable(duration_ms)
+    if code_surface_analysis is not None:
+        payload["code_surface_analysis"] = _jsonable(code_surface_analysis)
     return payload
 
 
@@ -560,6 +588,116 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
+    collisions = _field(analysis, "collisions", default=[]) or []
+    lines = [
+        "## Code-surface collision evidence",
+        "",
+        "> Paths and symbols are revision-bound pointers. No source snippets are included.",
+        "",
+        "- Repository available: "
+        + ("yes" if _field(analysis, "repository_available", default=False) else "no"),
+        "- Active records analyzed: " + str(_field(analysis, "issue_count", default=0)),
+        "- Records with explicit surfaces: "
+        + str(_field(analysis, "issues_with_explicit_surfaces", default=0)),
+        "- Records with observed worktree surfaces: "
+        + str(_field(analysis, "issues_with_observed_surfaces", default=0)),
+        "- Records without surfaces: "
+        + str(_field(analysis, "issues_without_surfaces", default=0)),
+        "- Surface pointers: " + str(_field(analysis, "pointer_count", default=0)),
+        "- Git worktrees associated: "
+        + str(_field(analysis, "worktrees_associated", default=0))
+        + " / "
+        + str(_field(analysis, "worktrees_discovered", default=0)),
+        "- Collision leads: " + str(len(collisions)),
+        "",
+    ]
+    if not collisions:
+        lines.extend(["No code-surface collisions were found.", ""])
+        return lines
+    for collision in collisions:
+        issue_id = _field(collision, "issue_id", default="unknown")
+        related = _field(collision, "related_issue_id", default="unknown")
+        shared_paths = _field(collision, "shared_paths", default=[]) or []
+        shared_symbols = _field(collision, "shared_symbols", default=[]) or []
+        shared_modules = _field(collision, "shared_modules", default=[]) or []
+        lines.extend(
+            [
+                f"### `{_escape(issue_id)}` ↔ `{_escape(related)}`",
+                "",
+                "- Collision kind: " + _escape(_field(collision, "kind", default="unknown")),
+                "- Confidence: "
+                + _escape(_field(collision, "confidence", default="unknown")),
+                "- Revision relation: "
+                + _escape(_field(collision, "revision_relation", default="unavailable")),
+                "- Shared paths: "
+                + _escape(", ".join(str(item) for item in shared_paths) or "none"),
+                "- Shared symbols: "
+                + _escape(", ".join(str(item) for item in shared_symbols) or "none"),
+                "- Shared modules: "
+                + _escape(", ".join(str(item) for item in shared_modules) or "none"),
+                "- Evidence sources: "
+                + _escape(
+                    ", ".join(
+                        str(item)
+                        for item in _field(collision, "evidence_sources", default=[]) or []
+                    )
+                    or "none"
+                ),
+                "- What to verify: "
+                + _escape(_field(collision, "what_to_verify", default="Coordinate the work.")),
+                "",
+            ]
+        )
+    return lines
+
+
+def render_collisions_markdown(payload: Mapping[str, Any]) -> str:
+    """Render a focused code-surface collision report."""
+
+    analysis = payload.get("code_surface_analysis") or {}
+    snapshot = payload.get("snapshot") or {}
+    warnings = _field(analysis, "warnings", default=[]) or []
+    lines = [
+        "# emBEADings code-surface collision review",
+        "",
+        f"> {READ_ONLY_NOTICE} {ADVISORY_NOTICE}",
+        "",
+        *_code_surface_markdown(analysis),
+        "## Snapshot",
+        "",
+        "- Workspace snapshot: `"
+        + _escape(_field(snapshot, "workspace_id", default="unknown"))
+        + "` (Beads `"
+        + _escape(_field(snapshot, "beads_version", default="unknown"))
+        + "`)",
+        "- Acquisition source: `"
+        + _escape(_field(snapshot, "acquisition_source", default="unknown"))
+        + "`",
+        "- Repository revision: `"
+        + _escape(_field(analysis, "repository_revision", default="unavailable"))
+        + "`",
+        "- Base reference: `"
+        + _escape(_field(analysis, "base_reference", default="unavailable"))
+        + "`",
+        "- Base revision: `"
+        + _escape(_field(analysis, "base_revision", default="unavailable"))
+        + "`",
+    ]
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        lines.extend(f"- {_escape(warning)}" for warning in warnings)
+    lines.extend(
+        [
+            "",
+            "Coordinate against the referenced revision before implementation or merge; "
+            "shared paths do not prove conflicting intent.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     """Render the sweep outcome and bounded candidate evidence."""
 
@@ -577,6 +715,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
     anchor_metrics = payload.get("anchor_metrics") or {}
+    code_surface_analysis = payload.get("code_surface_analysis") or {}
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
     lines = [
@@ -619,6 +758,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         + " (non-generic finite-vocabulary anchors; not a human rating)",
         "",
     ]
+    if code_surface_analysis:
+        lines.extend(_code_surface_markdown(code_surface_analysis))
     if review_budget:
         priority = " → ".join(_field(review_budget, "priority_order", default=[]) or [])
         omitted_by_lane = _field(review_budget, "omitted_by_lane", default={}) or {}

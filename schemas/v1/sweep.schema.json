@@ -40,6 +40,7 @@
     "batch_diagnostics": { "$ref": "#/$defs/batch-diagnostics" },
     "no_signal": { "$ref": "#/$defs/population-summary" },
     "excluded": { "$ref": "#/$defs/excluded-summary" },
+    "code_surface_analysis": { "$ref": "#/$defs/code-surface-analysis" },
     "warnings": { "type": "array", "items": { "type": "string" } },
     "duration_ms": { "type": "number", "minimum": 0 },
     "output_directory": { "type": "string" }
@@ -54,6 +55,31 @@
         "tracker_mutation_allowed": { "const": false },
         "advisory": { "const": true },
         "notice": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "code-surface-analysis": {
+      "type": "object",
+      "required": ["repository_available", "issue_count", "pointer_count", "issues_with_explicit_surfaces", "issues_with_observed_surfaces", "issues_without_surfaces", "worktrees_discovered", "worktrees_associated", "source_counts", "surfaces", "collisions", "warnings"],
+      "properties": {
+        "repository_available": { "type": "boolean" },
+        "repository_revision": { "type": ["string", "null"] },
+        "base_reference": { "type": ["string", "null"] },
+        "base_revision": { "type": ["string", "null"] },
+        "issue_count": { "type": "integer", "minimum": 0 },
+        "pointer_count": { "type": "integer", "minimum": 0 },
+        "issues_with_explicit_surfaces": { "type": "integer", "minimum": 0 },
+        "issues_with_observed_surfaces": { "type": "integer", "minimum": 0 },
+        "issues_without_surfaces": { "type": "integer", "minimum": 0 },
+        "worktrees_discovered": { "type": "integer", "minimum": 0 },
+        "worktrees_associated": { "type": "integer", "minimum": 0 },
+        "source_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "surfaces": { "type": "array" },
+        "collisions": { "type": "array" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": true
     },

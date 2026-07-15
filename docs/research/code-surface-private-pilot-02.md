@@ -77,3 +77,14 @@ hides useful path-level coordination, while eight substantially expands exact-fi
    0.2.0 tag.
 5. Do not begin the Linear transfer probe or missing-pointer provider experiment until the corrected
    private gate passes.
+
+## Corrected rerun preflight
+
+The first corrected preflight stopped safely before collision analysis. Nine registered worktrees
+were available, but only one contained genuine active implementation changes. The others represented
+merged work, a stale reconstruction, administrative state, or clean worktrees. Associating one would
+have fabricated observed evidence.
+
+No collision command ran, no repository state changed, and temporary inventory artifacts were
+removed. The public tag remains withheld until naturally concurrent work or a deliberately started
+real implementation task supplies a second active worktree.

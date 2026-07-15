@@ -20,6 +20,11 @@ titles, descriptions, repository paths, symbols, snippets, branch names, or work
 Do not rename branches, edit issues, create repository files, or copy mappings into the evaluation
 report merely to improve association coverage.
 
+If fewer than two worktrees contain genuine active implementation changes, stop before running
+`embead collisions`. Report only the aggregate worktree inventory, non-mutation checks, and the
+blocked gate. Do not map clean, merged, administrative, or reconstructed worktrees merely to satisfy
+the count; doing so fabricates observed evidence and invalidates the evaluation.
+
 ## Run
 
 ```console

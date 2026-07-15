@@ -30,3 +30,4 @@
 {"id":"int-8cd5c5ca16d37afd92c520d8834ef427","kind":"field_change","created_at":"2026-07-14T22:53:33.316013Z","actor":"Jackson Cantrell","issue_id":"embead-3ur.45","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
 {"id":"int-2aed7c865c1cab3116fd80bd49a3b8c5","kind":"field_change","created_at":"2026-07-14T23:59:32.766055Z","actor":"Jackson Cantrell","issue_id":"embead-3ur.39","extra":{"field":"status","new_value":"open","old_value":"closed"}}
 {"id":"int-5d370e82b0e4296f72e12e2ed81911e7","kind":"field_change","created_at":"2026-07-14T23:59:36.737967Z","actor":"Jackson Cantrell","issue_id":"embead-3ur.13","extra":{"field":"priority","new_value":"2","old_value":"3"}}
+{"id":"int-48987ce00e1e1acc3db3add214a6def5","kind":"field_change","created_at":"2026-07-15T00:08:29.073583Z","actor":"Jackson Cantrell","issue_id":"embead-3ur.43","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}

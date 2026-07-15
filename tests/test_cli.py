@@ -40,6 +40,38 @@ def _configure(monkeypatch, tmp_path):
     )
 
 
+def test_readiness_is_corpus_free_and_machine_readable(monkeypatch, capsys) -> None:
+    class FailingAdapter:
+        def load(self):
+            raise AssertionError("readiness must not load Beads records")
+
+    monkeypatch.setattr(cli, "BeadsAdapter", FailingAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
+
+    assert cli.main(["readiness", "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "corpus_loaded": False,
+        "model_id": "hashing/32",
+        "model_revision": "1",
+        "network_policy": "prefetch-allowed",
+        "readiness_version": 1,
+        "status": "ready",
+        "vector_dimension": 32,
+    }
+
+
+def test_readiness_offline_sets_huggingface_policy(monkeypatch, capsys) -> None:
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=8))
+
+    assert cli.main(["readiness", "--offline", "--json"]) == 0
+
+    assert cli.os.environ["HF_HUB_OFFLINE"] == "1"
+    assert json.loads(capsys.readouterr().out)["network_policy"] == "offline"
+
+
 def test_neighbors_json_stdout_is_machine_readable(monkeypatch, tmp_path, capsys) -> None:
     _configure(monkeypatch, tmp_path)
 

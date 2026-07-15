@@ -27,7 +27,7 @@ from .incremental import (
     scope_since_timestamp,
 )
 from .models import IssueRecord, canonical_text
-from .provider import HashingProvider, Model2VecProvider
+from .provider import HashingProvider, Model2VecProvider, provider_readiness
 from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
 from .reports import (
     build_batch_manifest,
@@ -101,6 +101,17 @@ def _parser() -> argparse.ArgumentParser:
     _incremental_arguments(batch)
     batch.add_argument("--output", type=Path)
     batch.add_argument("--json", action="store_true", dest="as_json")
+
+    readiness = subparsers.add_parser(
+        "readiness",
+        help="Prepare the local embedding model without reading Beads issues",
+    )
+    readiness.add_argument(
+        "--offline",
+        action="store_true",
+        help="Require model artifacts to already exist in the configured local cache",
+    )
+    readiness.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -237,6 +248,28 @@ def _issue_summary(issue: IssueRecord) -> dict[str, Any]:
 
 def _model_metadata(provider: Model2VecProvider | HashingProvider) -> dict[str, str]:
     return {"model_id": provider.model_id, "model_revision": provider.model_revision}
+
+
+def _readiness(args: argparse.Namespace) -> int:
+    if args.offline:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+    result = provider_readiness(_provider(args.provider))
+    payload = {
+        "readiness_version": 1,
+        **result,
+        "corpus_loaded": False,
+        "network_policy": "offline" if args.offline else "prefetch-allowed",
+    }
+    if args.as_json:
+        sys.stdout.write(_json_text(payload))
+    else:
+        sys.stdout.write(
+            "Embedding model ready\n"
+            f"Model: {payload['model_id']}@{payload['model_revision']}\n"
+            f"Vector dimension: {payload['vector_dimension']}\n"
+            "Corpus loaded: no\n"
+        )
+    return 0
 
 
 def _atomic_text(path: Path, text: str) -> None:
@@ -393,9 +426,17 @@ def _sweep(args: argparse.Namespace) -> int:
     snapshot, issues = BeadsAdapter().load()
     acquisition_ms = round((time.monotonic() - phase_started) * 1000)
     if args.write_checkpoint:
-        ensure_external_path(args.write_checkpoint, snapshot.workspace_path)
+        ensure_external_path(
+            args.write_checkpoint,
+            snapshot.workspace_path,
+            purpose="checkpoint output",
+        )
     if args.since_checkpoint:
-        ensure_external_path(args.since_checkpoint, snapshot.workspace_path)
+        ensure_external_path(
+            args.since_checkpoint,
+            snapshot.workspace_path,
+            purpose="checkpoint input",
+        )
     statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
     selected_population = [issue for issue in issues if issue.status.casefold() in statuses]
     excluded_epics = [
@@ -658,6 +699,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "neighbors":
             return _neighbors(args)
+        if args.command == "readiness":
+            return _readiness(args)
         return _sweep(args)
     except (BeadsError, OSError, RuntimeError, ValueError) as exc:
         print(f"embead: {exc}", file=sys.stderr)

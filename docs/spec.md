@@ -209,8 +209,9 @@ Reciprocal rank is corroboration, not sufficient evidence by itself. A below-thr
 pair must also have corpus-discriminative, field-aligned local evidence: a rare title token aligned
 with the other record (including CamelCase entities), or a rare multi-token phrase in the same
 substantive field. A single long-form token outside a title is intentionally
-insufficient. Frequency is derived deterministically from the local snapshot. Reports expose only
-bounded evidence categories and counts, never matched terms or source text.
+insufficient. When either record has no substantive body, a shared non-function title token provides
+a narrow sparse-record fallback. Frequency is derived deterministically from the local snapshot.
+Reports expose only bounded evidence categories and counts, never matched terms or source text.
 
 For recurring maintenance, `--weekly-review-budget N` is an opinionated hard total budget layered on
 the existing lane and per-issue allowances. It selects typed dependencies first, high-confidence

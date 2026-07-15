@@ -741,6 +741,11 @@ class _ReciprocalEvidence:
             self.token_frequency[token] <= self.title_alignment_limit for token in aligned_title
         ):
             return "discriminative-title-alignment"
+        if not _has_substantive_body(left) or not _has_substantive_body(right):
+            sparse_title_overlap = _sparse_title_tokens(left) & _sparse_title_tokens(right)
+            workflow_terms = {"cli", "command", "commands", "target", "task", "test", "tests"}
+            if len(sparse_title_overlap) >= 2 or sparse_title_overlap & workflow_terms:
+                return "sparse-title-alignment"
 
         for field in ("description", "acceptance_criteria", "design"):
             left_tokens = left_fields[field]
@@ -815,6 +820,29 @@ def _reciprocal_fields(issue: Any) -> dict[str, tuple[str, ...]]:
 
 def _phrases(tokens: Sequence[str]) -> set[str]:
     return {f"{left} {right}" for left, right in zip(tokens, tokens[1:], strict=False)}
+
+
+def _has_substantive_body(issue: Any) -> bool:
+    return any(
+        str(getattr(issue, field, "")).strip()
+        for field in ("description", "acceptance_criteria", "design")
+    )
+
+
+def _sparse_title_tokens(issue: Any) -> set[str]:
+    title = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(getattr(issue, "title", "")))
+    function_words = {
+        "add",
+        "and",
+        "for",
+        "from",
+        "into",
+        "the",
+        "this",
+        "using",
+        "with",
+    }
+    return set(re.findall(r"[a-z0-9][a-z0-9_-]{2,}", title.casefold())) - function_words
 
 
 def _empty_reciprocal_diagnostics() -> dict[str, Any]:

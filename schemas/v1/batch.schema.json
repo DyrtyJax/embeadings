@@ -147,7 +147,7 @@
         "structural_context": { "type": "string" },
         "reciprocal_evidence": {
           "type": ["string", "null"],
-          "enum": [null, "discriminative-title-token", "discriminative-title-alignment", "discriminative-field-phrase"]
+          "enum": [null, "discriminative-title-token", "discriminative-title-alignment", "sparse-title-alignment", "discriminative-field-phrase"]
         },
         "verification_anchor": {
           "type": "object",

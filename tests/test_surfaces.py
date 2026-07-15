@@ -93,6 +93,46 @@ def test_shared_path_symbol_is_preserved_as_bounded_evidence() -> None:
     assert collision.shared_symbols == ("src/parser/core.py::parse",)
 
 
+def test_explicit_hub_path_is_summarized_instead_of_emitting_every_pair() -> None:
+    issues = [
+        IssueRecord(id=f"proj-{index}", title="Review docs/architecture/session.md")
+        for index in range(6)
+    ]
+
+    analysis = analyze_code_surfaces(issues, workspace_path=None, hub_surface_limit=5)
+
+    assert analysis.collisions == ()
+    assert analysis.pairs_omitted_by_hub_guard == 15
+    assert analysis.hub_surfaces == (
+        {
+            "kind": "path",
+            "surface": "docs/architecture/session.md",
+            "issue_count": 6,
+        },
+        {"kind": "module", "surface": "docs/architecture", "issue_count": 6},
+    )
+
+
+def test_non_hub_second_path_preserves_one_pair_behind_hub_guard() -> None:
+    issues = [
+        IssueRecord(
+            id=f"proj-{index}",
+            title=(
+                "Review docs/architecture/session.md and src/specific/pair.py"
+                if index < 2
+                else "Review docs/architecture/session.md"
+            ),
+        )
+        for index in range(6)
+    ]
+
+    analysis = analyze_code_surfaces(issues, workspace_path=None, hub_surface_limit=5)
+
+    assert len(analysis.collisions) == 1
+    assert analysis.collisions[0].shared_paths == ("src/specific/pair.py",)
+    assert analysis.pairs_omitted_by_hub_guard == 14
+
+
 def test_worktree_diffs_are_observed_and_revision_bound(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     first = tmp_path / "worktree-1"
@@ -143,6 +183,52 @@ def test_worktree_diffs_are_observed_and_revision_bound(tmp_path: Path) -> None:
     assert collision.confidence == "observed"
     assert collision.shared_paths == ("src/shared/cache.py",)
     assert collision.revision_relation == "different"
+
+
+def test_observed_to_explicit_exact_path_bypasses_hub_guard(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    worktree = tmp_path / "worktree-1"
+    root.mkdir()
+    worktree.mkdir()
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        responses = {
+            ("rev-parse", "--is-inside-work-tree"): "true\n",
+            ("rev-parse", "HEAD"): "root-head\n",
+            ("rev-parse", "--verify", "origin/main"): "base-head\n",
+            ("rev-parse", "origin/main"): "base-head\n",
+        }
+        if command in responses:
+            return completed(responses[command])
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(
+                f"worktree {root}\nHEAD root-head\nbranch refs/heads/main\n\n"
+                f"worktree {worktree}\nHEAD work-head\nbranch refs/heads/codex/bead-1\n"
+            )
+        if command[:2] == ("diff", "--name-only"):
+            return completed("src/shared/cache.py\0")
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed()
+        raise AssertionError((cwd, arguments))
+
+    issues = [
+        IssueRecord(id="proj.1", title="Observed implementation"),
+        IssueRecord(id="proj.2", title="Plan src/shared/cache.py"),
+    ]
+    analysis = analyze_code_surfaces(
+        issues,
+        workspace_path=root,
+        runner=runner,
+        hub_surface_limit=1,
+    )
+
+    assert len(analysis.collisions) == 1
+    collision = analysis.collisions[0]
+    assert collision.shared_paths == ("src/shared/cache.py",)
+    assert collision.confidence == "corroborated"
+    assert collision.evidence_sources == ("active-worktree-diff", "explicit-reference")
+    assert analysis.pairs_omitted_by_hub_guard == 0
 
 
 def test_explicit_mapping_validates_issue_and_registered_worktree(tmp_path: Path) -> None:

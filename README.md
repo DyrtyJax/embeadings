@@ -88,6 +88,12 @@ contains pointers rather than source snippets, invokes only read-only Git comman
 the inferred surfaces back into Beads. Shared paths are coordination evidence, not proof that two
 tasks have conflicting intent.
 
+Explicit-only paths or modules referenced by more than five active records are treated as hub
+surfaces: they are summarized once and cannot create an all-pairs warning fan-out on their own. A
+second non-hub surface or a shared `path::symbol` can still qualify the pair. Exact paths observed in
+an active worktree are never suppressed by this guard. Use `--max-hub-surface-issues` to tune the
+record-count boundary for a corpus.
+
 This MVP intentionally does not index the whole codebase or add a vector database. The next evidence
 gate is evaluation across the public and private pilot repositories. Semantic code retrieval, AST
 symbols, Git-history inference, and MCP integration belong behind a future optional evidence-provider

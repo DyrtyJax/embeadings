@@ -37,7 +37,7 @@
   "$defs": {
     "code-surface-analysis": {
       "type": "object",
-      "required": ["repository_available", "repository_revision", "base_reference", "base_revision", "issue_count", "pointer_count", "issues_with_explicit_surfaces", "issues_with_observed_surfaces", "issues_without_surfaces", "worktrees_discovered", "worktrees_associated", "source_counts", "surfaces", "collisions", "warnings"],
+      "required": ["repository_available", "repository_revision", "base_reference", "base_revision", "issue_count", "pointer_count", "issues_with_explicit_surfaces", "issues_with_observed_surfaces", "issues_without_surfaces", "worktrees_discovered", "worktrees_associated", "source_counts", "hub_surface_limit", "hub_surfaces", "pairs_omitted_by_hub_guard", "surfaces", "collisions", "warnings"],
       "properties": {
         "repository_available": { "type": "boolean" },
         "repository_revision": { "type": ["string", "null"] },
@@ -54,6 +54,21 @@
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 }
         },
+        "hub_surface_limit": { "type": "integer", "minimum": 1 },
+        "hub_surfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "surface", "issue_count"],
+            "properties": {
+              "kind": { "enum": ["path", "module"] },
+              "surface": { "type": "string", "minLength": 1 },
+              "issue_count": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pairs_omitted_by_hub_guard": { "type": "integer", "minimum": 0 },
         "surfaces": {
           "type": "array",
           "items": {

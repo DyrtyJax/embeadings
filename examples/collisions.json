@@ -33,6 +33,9 @@
     "source_counts": {
       "active-worktree-diff": 2
     },
+    "hub_surface_limit": 5,
+    "hub_surfaces": [],
+    "pairs_omitted_by_hub_guard": 0,
     "surfaces": [
       {
         "issue_id": "demo-1",

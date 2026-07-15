@@ -274,6 +274,12 @@ and report whether their revisions match. Automatic worktree association may use
 an unambiguous numeric Bead suffix in the branch name; ambiguous associations require an explicit
 operator mapping and otherwise remain unavailable.
 
+Common explicit-only paths and modules are hub surfaces, analogous to broad semantic vocabulary.
+When their active-record frequency exceeds the configured bound, reports summarize the surface and
+the number of pairs it would have created rather than emitting every pair. A non-hub shared surface
+or shared `path::symbol` can still qualify a pair. An exact path observed in either active worktree is
+never suppressed by the hub guard.
+
 The focused `collisions` command does not load an embedding model. Sweeps may include the same
 analysis additively. A shared path is a prompt to coordinate before implementation or merge, never a
 claim that the tasks have identical intent. Semantic code retrieval, AST indexing, and source

@@ -75,6 +75,9 @@ CODE_SURFACE_ANALYSIS = {
     "worktrees_discovered": 3,
     "worktrees_associated": 2,
     "source_counts": {"active-worktree-diff": 2},
+    "hub_surface_limit": 5,
+    "hub_surfaces": [],
+    "pairs_omitted_by_hub_guard": 0,
     "surfaces": [],
     "collisions": [
         {

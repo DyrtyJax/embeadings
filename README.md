@@ -86,6 +86,9 @@ budgets; dependency evidence is admitted first. Use `--exception-margin`, `--rec
 three `--max-*-candidates` lane controls to tune that policy. Lower-threshold sensitivity runs
 protect the candidates selected by the default
 thresholds before admitting additions, so a permissive run cannot silently replace the baseline queue.
+Reciprocal exceptions additionally require corpus-discriminative, field-aligned local evidence;
+reports expose bounded reason categories without copying matched terms. Stricter-threshold cap
+replacements include complete deterministic causal chains, including cross-lane endpoint cascades.
 For a smaller recurring queue, `--weekly-review-budget N` (also available as `--review-budget N`)
 applies a hard total candidate budget while retaining the independent dependency allowance. Selection
 is deterministic: typed dependencies are considered first, followed by high-confidence completed-work

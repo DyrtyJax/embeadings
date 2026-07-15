@@ -84,6 +84,53 @@ def test_neighbors_json_stdout_is_machine_readable(monkeypatch, tmp_path, capsys
     assert {item["id"] for item in payload["neighbors"]} == {"demo-2", "demo-3"}
 
 
+def test_neighbors_can_load_linear_source(monkeypatch, tmp_path, capsys) -> None:
+    captured: list[str] = []
+
+    class FakeLinearAdapter:
+        def __init__(self, *, team: str):
+            captured.append(team)
+
+        def load(self):
+            return (
+                WorkspaceSnapshot(
+                    "linear-workspace",
+                    None,
+                    tracker_name="linear",
+                    tracker_version="graphql-current",
+                ),
+                ISSUES,
+            )
+
+    monkeypatch.setattr(cli, "LinearAdapter", FakeLinearAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
+    monkeypatch.setattr(
+        cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
+    )
+
+    assert (
+        cli.main(
+            [
+                "--source",
+                "linear",
+                "--linear-team",
+                "ENG",
+                "neighbors",
+                "demo-1",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert captured == ["ENG"]
+    assert json.loads(capsys.readouterr().out)["snapshot"]["tracker_name"] == "linear"
+
+
+def test_linear_source_requires_team(capsys) -> None:
+    assert cli.main(["--source", "linear", "neighbors", "demo-1"]) == 2
+    assert "--linear-team or LINEAR_TEAM is required" in capsys.readouterr().err
+
+
 def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path, capsys) -> None:
     _configure(monkeypatch, tmp_path)
     output = tmp_path / "artifacts"

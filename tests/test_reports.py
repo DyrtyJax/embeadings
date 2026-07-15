@@ -69,6 +69,26 @@ def test_neighbors_markdown_is_advisory_and_compact() -> None:
     assert "matrix" not in markdown.lower()
 
 
+def test_neighbors_markdown_uses_generic_tracker_metadata() -> None:
+    payload = build_neighbors_payload(
+        Issue("ENG-1", "Linear issue", "open"),
+        [],
+        snapshot={
+            "workspace_id": "linear-workspace",
+            "beads_version": None,
+            "tracker_name": "linear",
+            "tracker_version": "graphql-current",
+        },
+        model=MODEL,
+        cache=CACHE,
+    )
+
+    markdown = render_neighbors_markdown(payload)
+
+    assert "(linear `graphql-current`)" in markdown
+    assert "Beads `None`" not in markdown
+
+
 def test_markdown_exposes_only_controlled_source_divergence_categories() -> None:
     private_identifier = "private-issue-never-render"
     payload = build_neighbors_payload(

@@ -85,8 +85,10 @@ therefore explain a zero-candidate dependency lane without exposing issue bodies
 In incremental mode, an otherwise comparable edge with no changed active endpoint is counted as
 inactive for that review scope.
 
-Snapshot metadata identifies `live-beads-cli` as the authoritative acquisition source and records
-the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings counts its records
+Snapshot metadata identifies the generic `tracker_name` and `tracker_version` plus the authoritative
+`acquisition_source`. The schema-v1 `beads_version` field remains required for compatibility and is
+`null` for non-Beads sources. Consumers should use the generic fields when present. For Beads,
+`live-beads-cli` records the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings counts its records
 without copying their contents; a count mismatch is reported through `source_warnings` and the
 sweep warning list. Consumers must not substitute a stale export for the live snapshot.
 
@@ -158,7 +160,7 @@ Before acting on an artifact, a consumer must:
 6. fail visibly when validation or capability negotiation fails.
 
 Consumers may filter, visualize, or route valid artifacts. They must not reinterpret a similarity
-score as a Beads dependency, status transition, duplicate decision, or authorization to edit source.
+score as a tracker dependency, status transition, duplicate decision, or authorization to edit source.
 
 ## Schema locations
 

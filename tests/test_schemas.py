@@ -183,6 +183,20 @@ def test_version_one_allows_additive_fields() -> None:
     Draft202012Validator(_load(SCHEMAS, "sweep.schema.json")).validate(payload)
 
 
+@pytest.mark.parametrize("name", ["neighbors", "batch", "sweep", "collisions"])
+def test_version_one_accepts_generic_linear_snapshot(name: str) -> None:
+    payload = _load(EXAMPLES, f"{name}.json")
+    payload["snapshot"] = {
+        "workspace_id": "synthetic-linear-team",
+        "beads_version": None,
+        "workspace_path": None,
+        "tracker_name": "linear",
+        "tracker_version": "graphql-current",
+    }
+
+    Draft202012Validator(_load(SCHEMAS, f"{name}.schema.json")).validate(payload)
+
+
 def test_unsupported_version_and_weakened_policy_are_rejected() -> None:
     schema = _load(SCHEMAS, "neighbors.schema.json")
     example = _load(EXAMPLES, "neighbors.json")

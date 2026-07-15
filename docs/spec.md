@@ -2,7 +2,7 @@
 
 ## 1. Summary
 
-emBEADings is a standalone, read-only companion CLI for Beads. It incrementally embeds issue
+emBEADings is a standalone, read-only companion CLI for engineering work trackers. It incrementally embeds issue
 text, retrieves semantically related records, identifies active work that resembles completed work,
 and partitions a review population into small disposable neighborhoods suitable for humans or
 read-only reviewer agents.
@@ -26,7 +26,7 @@ relationships from current issue text.
 
 ## 3. Goals
 
-1. Read the live Beads tracker through supported machine-readable CLI interfaces.
+1. Read a live Beads workspace or selected Linear team through supported read-only interfaces.
 2. Embed new or changed records incrementally using a content-addressed cache.
 3. Return nearest active and completed neighbors for an issue.
 4. Surface high-similarity active/completed pairs as review candidates.
@@ -38,8 +38,8 @@ relationships from current issue text.
 
 ## 4. Non-goals
 
-- Replacing Beads search, dependencies, readiness, labels, or lifecycle.
-- Persisting clusters or semantic labels into Beads.
+- Replacing tracker search, dependencies, readiness, labels, or lifecycle.
+- Persisting clusters or semantic labels into a tracker.
 - Automatically applying review findings.
 - Acting as an issue editor, dashboard, kanban board, or project-management system.
 - Hosting a daemon, vector database service, or general-purpose memory layer.
@@ -107,7 +107,8 @@ message when failed.
 
 ## 7. Data acquisition
 
-The default adapter invokes the installed `bd` binary with read-only and JSON flags. It must:
+All acquisition implementations satisfy one tracker-neutral, read-only `load()` contract. The
+default adapter invokes the installed `bd` binary with read-only and JSON flags. It must:
 
 - discover the workspace using supported Beads context commands;
 - request all fields needed for canonical text, lifecycle, parentage, labels, and dependencies;
@@ -117,6 +118,12 @@ The default adapter invokes the installed `bd` binary with read-only and JSON fl
 
 The core consumes an internal `IssueRecord` schema so future adapters can be added without coupling
 the semantic algorithms to one Beads output version.
+
+The Linear adapter uses the public GraphQL API with an environment-provided personal API key or
+OAuth access token. It resolves one team, pages team issues and workspace relations without per-issue
+detail calls, filters endpoints back to that team, and canonicalizes one typed structural edge per
+unordered issue pair before ranking. Its transport rejects non-query operations. Generated branch
+suggestions are metadata, never observed edit evidence; observed surfaces still require local Git.
 
 ## 8. Canonical semantic text
 

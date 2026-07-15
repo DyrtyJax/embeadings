@@ -16,7 +16,7 @@ from typing import Any
 from platformdirs import user_cache_path, user_state_path
 
 from .analysis import SimilarityIndex, nearest_neighbors, package_candidate_batches
-from .beads import BeadsAdapter, BeadsError
+from .beads import BeadsAdapter
 from .cache import VectorCache
 from .explain import explain_candidate
 from .incremental import (
@@ -26,7 +26,8 @@ from .incremental import (
     load_checkpoint,
     scope_since_timestamp,
 )
-from .models import IssueRecord, canonical_text
+from .linear import LinearAdapter
+from .models import IssueRecord, WorkspaceSnapshot, canonical_text
 from .provider import HashingProvider, Model2VecProvider, provider_readiness
 from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
 from .reports import (
@@ -40,6 +41,7 @@ from .reports import (
     render_sweep_markdown,
 )
 from .surfaces import analyze_code_surfaces, parse_worktree_mappings
+from .trackers import TrackerAdapter, TrackerError
 
 ACTIVE_STATUSES = {"open", "in_progress", "blocked", "deferred"}
 REVIEW_RUBRIC = (
@@ -52,10 +54,22 @@ REVIEW_RUBRIC = (
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="embead",
-        description="Find related Beads work without changing your tracker.",
+        description="Find related tracker work without changing your tracker.",
         epilog="Read-only • Issue text is embedded locally by default.",
     )
-    parser.add_argument("--version", action="version", version="embead 0.2.0")
+    parser.add_argument("--version", action="version", version="embead 0.3.0")
+    parser.add_argument(
+        "--source",
+        choices=("beads", "linear"),
+        default=os.environ.get("EMBEAD_SOURCE", "beads"),
+        help="Read work from Beads (default) or a Linear team",
+    )
+    parser.add_argument(
+        "--linear-team",
+        default=os.environ.get("LINEAR_TEAM"),
+        metavar="ID|KEY|NAME",
+        help="Linear team ID, key, or exact name (or set LINEAR_TEAM)",
+    )
     parser.add_argument(
         "--provider",
         choices=("model2vec", "hashing"),
@@ -236,6 +250,17 @@ def _provider(name: str) -> Model2VecProvider | HashingProvider:
     return Model2VecProvider()
 
 
+def _load_source(args: argparse.Namespace) -> tuple[WorkspaceSnapshot, tuple[IssueRecord, ...]]:
+    adapter: TrackerAdapter
+    if args.source == "linear":
+        if not args.linear_team:
+            raise ValueError("--linear-team or LINEAR_TEAM is required for the Linear source")
+        adapter = LinearAdapter(team=args.linear_team)
+    else:
+        adapter = BeadsAdapter()
+    return adapter.load()
+
+
 def _workspace_paths(workspace_id: str) -> tuple[Path, Path]:
     namespace = workspace_id[:16]
     return (
@@ -342,7 +367,7 @@ def _surface_analysis(
 
 
 def _collisions(args: argparse.Namespace) -> int:
-    snapshot, issues = BeadsAdapter().load()
+    snapshot, issues = _load_source(args)
     statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
     population = [
         issue
@@ -378,7 +403,7 @@ def _json_text(payload: Any) -> str:
 
 
 def _neighbors(args: argparse.Namespace) -> int:
-    snapshot, issues = BeadsAdapter().load()
+    snapshot, issues = _load_source(args)
     by_id = {issue.id: issue for issue in issues}
     if args.issue_id not in by_id:
         raise ValueError(f"issue not found: {args.issue_id}")
@@ -514,7 +539,7 @@ def _sweep(args: argparse.Namespace) -> int:
     policy.validate()
     started = time.monotonic()
     phase_started = started
-    snapshot, issues = BeadsAdapter().load()
+    snapshot, issues = _load_source(args)
     acquisition_ms = round((time.monotonic() - phase_started) * 1000)
     if args.write_checkpoint:
         ensure_external_path(
@@ -804,7 +829,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "collisions":
             return _collisions(args)
         return _sweep(args)
-    except (BeadsError, OSError, RuntimeError, ValueError) as exc:
+    except (TrackerError, OSError, RuntimeError, ValueError) as exc:
         print(f"embead: {exc}", file=sys.stderr)
         print("emBEADings made no tracker changes.", file=sys.stderr)
         return 2

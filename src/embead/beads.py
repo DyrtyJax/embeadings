@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import Any, TypeAlias
 
 from .models import DependencyLink, IssueRecord, WorkspaceSnapshot
+from .trackers import TrackerError
 
 
-class BeadsError(RuntimeError):
+class BeadsError(TrackerError):
     """Raised when Beads cannot provide a safe, valid snapshot."""
 
 
@@ -91,10 +92,13 @@ class BeadsAdapter:
 
         canonical_path = str(Path(path_value).expanduser().resolve()) if path_value else None
         workspace_id = identity_value or hashlib.sha256(canonical_path.encode("utf-8")).hexdigest()
+        version = self.version()
         return WorkspaceSnapshot(
             workspace_id=workspace_id,
             workspace_path=canonical_path,
-            beads_version=self.version(),
+            beads_version=version,
+            tracker_name="beads",
+            tracker_version=version,
         )
 
     def list_issues(self) -> tuple[IssueRecord, ...]:

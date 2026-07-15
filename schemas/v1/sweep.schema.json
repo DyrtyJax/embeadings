@@ -93,7 +93,9 @@
       "required": ["workspace_id", "beads_version"],
       "properties": {
         "workspace_id": { "type": "string", "minLength": 1 },
-        "beads_version": { "type": "string", "minLength": 1 },
+        "beads_version": { "type": ["string", "null"], "minLength": 1 },
+        "tracker_name": { "enum": ["beads", "linear"] },
+        "tracker_version": { "type": "string", "minLength": 1 },
         "workspace_path": { "type": ["string", "null"] },
         "source_revision": { "type": ["string", "null"] },
         "source_divergence_reasons": {

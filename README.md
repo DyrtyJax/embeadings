@@ -1,21 +1,22 @@
 # emBEADings
 
-Semantic neighborhoods for Beads—without another taxonomy to maintain.
+Semantic neighborhoods for engineering work—without another taxonomy to maintain.
 
-Read-only semantic neighborhoods and freshness-review batches for
-[Beads](https://github.com/gastownhall/beads).
+Read-only semantic neighborhoods, coordination review batches, and code-surface collision leads for
+[Beads](https://github.com/gastownhall/beads) and Linear.
 
 Beads dependencies answer “what blocks this?” Semantic neighborhoods answer a different question:
 “what related work might also need review after the project changes?” emBEADings is intended to
 find that neighborhood without adding durable labels, changing issue state, or replacing Beads'
 dependency graph.
 
-> Status: MVP implementation. `neighbors`, synchronous `sweep`, `batch`, and local code-surface
-> `collisions` are available; async runs and agent dispatch remain future work.
+> Status: v0.3 implementation. `neighbors`, synchronous `sweep`, `batch`, and local code-surface
+> `collisions` are available for Beads and a selected Linear team; async runs and agent dispatch
+> remain future work.
 
 ## Install and try it
 
-Python 3.11 or later and an installed `bd` CLI are required.
+Python 3.11 or later is required. The default Beads source also requires an installed `bd` CLI.
 
 ```bash
 python -m pip install -e .
@@ -42,6 +43,30 @@ embead sweep --since-checkpoint /tmp/embead-checkpoint.json \
 embead sweep --weekly-review-budget 12
 ```
 
+### Use a Linear team
+
+Create a personal API key in Linear's Security & access settings, keep it out of shell history, and
+pass only the team ID, key, or exact name on the command line:
+
+```bash
+export LINEAR_API_KEY="..."
+
+embead --source linear --linear-team ENG neighbors ENG-123 --include-closed
+embead --source linear --linear-team ENG sweep --code-surfaces
+embead --source linear --linear-team ENG collisions
+```
+
+`LINEAR_ACCESS_TOKEN` accepts an OAuth access token instead; set only one credential. `LINEAR_TEAM`
+and `EMBEAD_SOURCE=linear` can supply the repeated source arguments. The standalone CLI does not
+reuse credentials held by an MCP host.
+
+The Linear adapter issues GraphQL queries only. It pages the selected team's issues and the visible
+workspace relation collection, then drops relation endpoints outside the team and canonicalizes
+reciprocal or multi-typed pairs before ranking. This avoids per-issue detail requests and preserves
+the structural ranking conservation invariant. Linear's suggested branch name is not treated as an
+observed edit; only real local Git worktree changes can supply observed code-surface evidence. See
+[the Linear adapter contract](docs/linear.md) for the field mapping and privacy boundary.
+
 The first semantic command downloads the pinned
 [`minishlab/potion-base-8M`](https://huggingface.co/minishlab/potion-base-8M) model (MIT license).
 Issue text is embedded locally and is not uploaded. Vectors are cached in the platform user cache;
@@ -54,7 +79,7 @@ For a lightweight deterministic smoke test without a model download, set
 ## Intended workflow
 
 ```text
-live Beads data
+Beads or Linear data
       │
       ▼
 incremental local embeddings
@@ -70,9 +95,9 @@ incremental local embeddings
                  evidence-backed report
 ```
 
-The tool discovers a Beads workspace, reads current records through the `bd` CLI, computes embeddings
-locally, and emits disposable JSON and Markdown reports. A separate human or coordinator may decide
-whether any tracker update is appropriate.
+The tool discovers a Beads workspace or queries one selected Linear team, computes embeddings locally,
+and emits disposable JSON and Markdown reports. A separate human or coordinator may decide whether
+any tracker update is appropriate.
 
 ## Code-surface collision evidence
 
@@ -104,7 +129,7 @@ This MVP intentionally does not index the whole codebase or add a vector databas
 three-repository public pilot, the hub guard reduced 119 explicit-pointer leads to a bounded queue of
 26, but only 30.2% of active records contained an extractable pointer. The first private code-surface
 pilot validated exact-file evidence while exposing stale-checkout provenance and very low precision
-for explicit-only module matches. Those blockers are fixed in source, but a public 0.2.0 tag remains
+for explicit-only module matches. Those blockers are fixed in source, but a public package tag remains
 gated on a repeat run with at least two associated active worktrees. The first corrected preflight
 found only one genuinely active implementation worktree and stopped without fabricating evidence. A
 separate single-worktree diagnostic passed provenance, module suppression, determinism, and safety,
@@ -168,9 +193,9 @@ Research notes:
 
 ## Principles
 
-- **Read-only means read-only.** The executable will contain no issue mutation commands.
-- **Beads remains authoritative.** Read through supported `bd --json` interfaces, never a stale export.
-- **Semantics complement structure.** Similarity is advisory; dependencies and lifecycle remain Beads data.
+- **Read-only means read-only.** Tracker adapters contain no issue mutation operations.
+- **The tracker remains authoritative.** Read through supported live Beads or Linear interfaces.
+- **Semantics complement structure.** Similarity is advisory; dependencies and lifecycle remain tracker data.
 - **Disposable analysis.** Vectors, models, batches, and reports live outside application repositories.
 - **Local-first and private.** The default provider sends no issue content to a network service.
 - **Agent-neutral.** Core analysis does not depend on Codex, Claude, Cursor, or another runtime.

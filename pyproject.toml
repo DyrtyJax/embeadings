@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "embeadings"
-version = "0.2.0"
-description = "Read-only semantic neighborhoods and review batches for Beads"
+version = "0.3.0"
+description = "Read-only semantic neighborhoods and coordination review for work trackers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

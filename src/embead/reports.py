@@ -374,7 +374,10 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     model = payload.get("model") or {}
     cache = payload.get("cache") or {}
     workspace = _field(snapshot, "workspace_id", "workspace", default="unknown")
-    beads_version = _field(snapshot, "beads_version", default="unknown")
+    tracker_name = _field(snapshot, "tracker_name", default="beads") or "beads"
+    tracker_version = _field(snapshot, "tracker_version", default=None) or _field(
+        snapshot, "beads_version", default="unknown"
+    )
     model_id = _field(model, "id", "model_id", "name", default="unknown")
     revision = _field(model, "revision", "model_revision", default="unknown")
     hits = _field(cache, "hits", "cache_hits", default=0)
@@ -385,7 +388,8 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     divergence_reasons = _field(snapshot, "source_divergence_reasons", default=[]) or []
     warnings = _field(snapshot, "source_warnings", default=[]) or []
     lines = [
-        f"- Workspace snapshot: `{_escape(workspace)}` (Beads `{_escape(beads_version)}`)",
+        f"- Workspace snapshot: `{_escape(workspace)}` "
+        f"({_escape(tracker_name)} `{_escape(tracker_version)}`)",
         f"- Acquisition source: `{_escape(source)}` ({_escape(live_count)} live issues)",
         f"- Embedding model: `{_escape(model_id)}` revision `{_escape(revision)}`",
         f"- Cache: {_escape(hits)} hits, {_escape(misses)} misses",
@@ -677,6 +681,10 @@ def render_collisions_markdown(payload: Mapping[str, Any]) -> str:
 
     analysis = payload.get("code_surface_analysis") or {}
     snapshot = payload.get("snapshot") or {}
+    tracker_name = _field(snapshot, "tracker_name", default="beads") or "beads"
+    tracker_version = _field(snapshot, "tracker_version", default=None) or _field(
+        snapshot, "beads_version", default="unknown"
+    )
     warnings = _field(analysis, "warnings", default=[]) or []
     lines = [
         "# emBEADings code-surface collision review",
@@ -688,8 +696,10 @@ def render_collisions_markdown(payload: Mapping[str, Any]) -> str:
         "",
         "- Workspace snapshot: `"
         + _escape(_field(snapshot, "workspace_id", default="unknown"))
-        + "` (Beads `"
-        + _escape(_field(snapshot, "beads_version", default="unknown"))
+        + "` ("
+        + _escape(tracker_name)
+        + " `"
+        + _escape(tracker_version)
         + "`)",
         "- Acquisition source: `"
         + _escape(_field(snapshot, "acquisition_source", default="unknown"))

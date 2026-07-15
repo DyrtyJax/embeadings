@@ -14,7 +14,7 @@ DEFAULT_FIELD_LIMIT: Final[int] = 16_000
 
 @dataclass(frozen=True, slots=True)
 class DependencyLink:
-    """A typed, directed relationship emitted by Beads for one issue."""
+    """A typed, directed relationship emitted by a tracker for one issue."""
 
     source_id: str
     target_id: str
@@ -43,10 +43,10 @@ class IssueRecord:
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceSnapshot:
-    """Identity and tool metadata for the Beads snapshot being analyzed."""
+    """Identity and tool metadata for the tracker snapshot being analyzed."""
 
     workspace_id: str
-    beads_version: str
+    beads_version: str | None
     workspace_path: str | None = None
     dependency_count: int | None = None
     dependency_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
@@ -57,6 +57,8 @@ class WorkspaceSnapshot:
     export_source_digest: str | None = None
     source_divergence_reasons: tuple[str, ...] = field(default_factory=tuple)
     source_warnings: tuple[str, ...] = field(default_factory=tuple)
+    tracker_name: str = "beads"
+    tracker_version: str = ""
 
 
 def _normalize_text(value: str, *, limit: int) -> str:

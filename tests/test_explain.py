@@ -43,6 +43,8 @@ def test_completed_echo_names_fields_lifecycle_and_contract() -> None:
         "extraction_confidence": "high",
         "confidence_scope": "anchor-extraction",
         "specificity": "category-check",
+        "check_category": "entity-category",
+        "check_source_field": "title",
         "generic_fallback": False,
     }
     assert result["counterevidence"] == ["no structural relationship is recorded"]
@@ -179,6 +181,7 @@ def test_ownership_requires_evidence_in_both_records() -> None:
     )
 
     assert result["verification_anchor"]["category"] != "transferred ownership"
+    assert result["verification_anchor"]["check_category"] != "ownership-boundary"
 
 
 def test_safe_active_contract_survives_different_related_wording() -> None:
@@ -259,7 +262,8 @@ def test_specificity_is_separate_from_extraction_fallback() -> None:
 
     assert concrete["specificity"] == "concrete-check"
     assert category["specificity"] == "category-check"
-    assert broad["specificity"] == "generic"
+    assert broad["specificity"] == "category-check"
+    assert broad["check_category"] == "entity-category"
     assert broad["generic_fallback"] is False
     assert broad["confidence_scope"] == "anchor-extraction"
 
@@ -286,3 +290,94 @@ def test_generic_anchor_abstains_from_concrete_claims() -> None:
     assert result["verification_anchor"]["specificity"] == "generic"
     assert "generic local comparison" in result["what_to_verify"]
     assert "shared contract" not in result["what_to_verify"]
+
+
+def test_concrete_check_requires_a_typed_local_boundary() -> None:
+    category = explain_candidate(
+        issue(
+            "category-a",
+            title="Validate dependency behavior",
+            acceptance_criteria="Complete the acceptance requirement",
+        ),
+        issue(
+            "category-b",
+            title="Validate dependency behavior",
+            acceptance_criteria="Complete the acceptance requirement",
+        ),
+        kind="possible-overlap",
+        similarity=0.9,
+        structural_context="none recorded",
+    )["verification_anchor"]
+    concrete = explain_candidate(
+        issue(
+            "concrete-a",
+            title="Validate dependency behavior",
+            acceptance_criteria="Never retain a dependency after validation",
+        ),
+        issue(
+            "concrete-b",
+            title="Validate dependency behavior",
+            acceptance_criteria="Never retain a dependency after validation",
+        ),
+        kind="possible-overlap",
+        similarity=0.9,
+        structural_context="none recorded",
+    )["verification_anchor"]
+
+    assert category["specificity"] == "category-check"
+    assert category["check_category"] == "entity-category"
+    assert concrete["specificity"] == "concrete-check"
+    assert concrete["check_category"] == "invariant"
+    assert concrete["check_source_field"] == "acceptance criteria"
+
+
+def test_anonymized_corpus_shapes_preserve_reviewable_categories() -> None:
+    # Ralph-like structural work, opencode-like workflow work, and Morphir-like artifact work.
+    # These are synthetic shapes only; no evaluator issue text is retained.
+    fixtures = (
+        ("Review workflow", "Inspect the process", "dependency"),
+        ("Document interface workflow", "Describe the command process", "none recorded"),
+        ("Create issue artifact", "Generate a work item file", "none recorded"),
+    )
+    anchors = []
+    rendered = []
+    for index, (title, description, structure) in enumerate(fixtures):
+        result = explain_candidate(
+            issue(f"shape-a-{index}", title=title, description=description, acceptance_criteria=""),
+            issue(f"shape-b-{index}", title=title, description=description, acceptance_criteria=""),
+            kind="possible-overlap",
+            similarity=0.84,
+            structural_context=structure,
+        )
+        anchors.append(result["verification_anchor"])
+        rendered.append(result["what_to_verify"])
+
+    # Proxy for blinded manual actionability: a safe action/entity category remains reviewable.
+    assert sum(anchor["specificity"] != "generic" for anchor in anchors) == len(fixtures)
+    assert all(anchor["check_category"] != "unspecified" for anchor in anchors)
+    assert all(
+        "category-level check" in prompt or "typed artifact check" in prompt for prompt in rendered
+    )
+
+
+def test_check_categories_are_finite_and_never_copy_arbitrary_text() -> None:
+    allowed = {
+        "ownership-boundary",
+        "test",
+        "invariant",
+        "contract",
+        "artifact",
+        "entity-category",
+        "unspecified",
+    }
+    secret = "internal-customer-boundary-9462"
+    result = explain_candidate(
+        issue("private-a", title="Validate dependency", description=f"{secret} schema"),
+        issue("private-b", title="Validate dependency", description=f"{secret} schema"),
+        kind="possible-overlap",
+        similarity=0.91,
+        structural_context="none recorded",
+    )
+
+    assert result["verification_anchor"]["check_category"] in allowed
+    assert secret not in str(result)

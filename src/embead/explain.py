@@ -108,36 +108,16 @@ _INVARIANT_TERMS = frozenset(
 _IMPLEMENTATION_TERMS = frozenset(
     {"architecture", "backend", "configure", "design", "implement", "implementation", "provider"}
 )
-_CONCRETE_CHECK_TERMS = frozenset(
-    {
-        "acceptance",
-        "assert",
-        "contract",
-        "ensure",
-        "invariant",
-        "must",
-        "never",
-        "prevent",
-        "regression",
-        "requirement",
-        "test",
-        "verify",
-    }
-)
-# These safe pairs often describe a work category without identifying a fact, test, or invariant.
-# Keep them useful as extraction diagnostics, but abstain from dressing them up as specific checks.
-_BROAD_ANCHOR_PAIRS = frozenset(
-    {
-        ("analyze", "issue"),
-        ("analyze", "workflow"),
-        ("create", "artifact"),
-        ("create", "issue"),
-        ("document", "API"),
-        ("document", "interface"),
-        ("document", "issue"),
-        ("document", "workflow"),
-    }
-)
+# A concrete check requires an explicit, finite-vocabulary type in the active record. Merely living
+# in acceptance criteria or containing words such as "acceptance" and "requirement" is not enough.
+# The normalized value is safe to report; arbitrary matching source text never is.
+_CHECK_TYPE_ALIASES = {
+    "ownership-boundary": _OWNERSHIP_TERMS,
+    "test": frozenset({"assert", "benchmark", "regression", "test", "tests", "verify"}),
+    "invariant": frozenset({"ensure", "invariant", "must", "never", "prevent", "restore"}),
+    "contract": frozenset({"contract", "protocol", "schema"}),
+    "artifact": frozenset({"artifact", "file", "manifest", "output", "report"}),
+}
 
 
 def _tokens(value: str) -> frozenset[str]:
@@ -254,6 +234,19 @@ def _normalized_match_in_text(
     return None
 
 
+def _typed_check(left: IssueRecord, *, ownership_corroborated: bool) -> tuple[str, str] | None:
+    """Return the first privacy-safe check type and its field, never source text."""
+
+    for label, attribute in _FIELDS:
+        tokens = _tokens(getattr(left, attribute))
+        for check_type, aliases in _CHECK_TYPE_ALIASES.items():
+            if check_type == "ownership-boundary" and not ownership_corroborated:
+                continue
+            if tokens & aliases:
+                return check_type, label
+    return None
+
+
 def _category(
     left_tokens: frozenset[str],
     right_tokens: frozenset[str],
@@ -357,13 +350,22 @@ def _verification_anchor(
         if not generic_fallback
         else "low"
     )
-    has_concrete_language = bool(source_tokens & _CONCRETE_CHECK_TERMS)
-    broad_pair = (operation, entity) in _BROAD_ANCHOR_PAIRS
+    typed_check = _typed_check(
+        left,
+        ownership_corroborated=category == "transferred ownership" and category_corroborated,
+    )
+    check_category, check_source_field = (
+        typed_check
+        if typed_check is not None
+        else ("entity-category", source_field)
+        if not generic_fallback
+        else ("unspecified", "whole-record semantics")
+    )
     specificity = (
         "generic"
-        if generic_fallback or (broad_pair and not has_concrete_language)
+        if generic_fallback
         else "concrete-check"
-        if source_field == "acceptance criteria" and (pair_corroborated or category_corroborated)
+        if typed_check is not None
         else "category-check"
     )
     return {
@@ -378,6 +380,8 @@ def _verification_anchor(
         "extraction_confidence": confidence,
         "confidence_scope": "anchor-extraction",
         "specificity": specificity,
+        "check_category": check_category,
+        "check_source_field": check_source_field,
         "generic_fallback": generic_fallback,
     }
 
@@ -405,10 +409,15 @@ def explain_candidate(
 
     if anchor["specificity"] == "generic":
         anchor_text = "a generic local comparison; inspect the recorded acceptance conditions"
+    elif anchor["specificity"] == "concrete-check":
+        anchor_text = (
+            f"{anchor['category']} — typed {anchor['check_category']} check: {anchor['operation']} "
+            f"{anchor['entity_class']} (type derived from {anchor['check_source_field']})"
+        )
     else:
         anchor_text = (
-            f"{anchor['category']} — {anchor['operation']} {anchor['entity_class']} "
-            f"(derived from {anchor['source_field']})"
+            f"category-level check — {anchor['operation']} {anchor['entity_class']} "
+            f"(derived from {anchor['source_field']}; no concrete local check was extracted)"
         )
     if kind == "completed-work-echo":
         verify = (

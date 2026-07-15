@@ -117,6 +117,8 @@
           },
           "additionalProperties": false
         },
+        "actionable_proxy_count": { "type": "integer", "minimum": 0 },
+        "actionable_proxy_rate": { "type": "number", "minimum": 0, "maximum": 1 },
         "generic_fallback_count": { "type": "integer", "minimum": 0 },
         "generic_fallback_rate": { "type": "number", "minimum": 0, "maximum": 1 }
       },
@@ -164,6 +166,8 @@
             "extraction_confidence": { "enum": ["high", "medium", "low"] },
             "confidence_scope": { "const": "anchor-extraction" },
             "specificity": { "enum": ["concrete-check", "category-check", "generic"] },
+            "check_category": { "enum": ["ownership-boundary", "test", "invariant", "contract", "artifact", "entity-category", "unspecified"] },
+            "check_source_field": { "enum": ["title", "description", "acceptance criteria", "design", "notes", "whole-record semantics"] },
             "generic_fallback": { "type": "boolean" }
           },
           "additionalProperties": true

@@ -88,3 +88,38 @@ have fabricated observed evidence.
 No collision command ran, no repository state changed, and temporary inventory artifacts were
 removed. The public tag remains withheld until naturally concurrent work or a deliberately started
 real implementation task supplies a second active worktree.
+
+## Partial single-worktree diagnostic
+
+A subsequent non-gating diagnostic used the one genuine active implementation worktree. It passed
+within that limited scope:
+
+- `repository_context` identified the invoking worktree and its reported revision matched `HEAD`.
+- No explicit-only shared-module pair was retained; independently recomputed module-only pairs were
+  fully accounted for by the module-guard omission count.
+- No observed exact-file pair was suppressed by the hub guard.
+- The default repeat was byte-identical, and tracker, Git, repository, cache, state, and scratch
+  non-mutation checks passed.
+
+All 21 retained default leads were explicit-only exact-file matches:
+
+| Rating | Count | Share |
+|---|---:|---:|
+| Likely edit collision | 6 | 28.6% |
+| Useful coordination | 4 | 19.0% |
+| Misleading | 11 | 52.4% |
+
+False positives primarily referenced policy, runbook, inventory, or shared-document files for
+inspection rather than modification. Stronger leads reflected duplicated objectives, coupled
+implementation contracts, or explicit sequencing. A non-blocking follow-up will test a bounded
+edit-intent signal before changing exact-file admission policy.
+
+| Hub limit | Retained | Hubs | Hub-omitted | Module-guard omitted |
+|---:|---:|---:|---:|---:|
+| 3 | 12 | 6 | 212 | 6 |
+| **5** | **21** | **3** | **187** | **22** |
+| 8 | 49 | 2 | 159 | 22 |
+
+Runtime ranged from 1.09 to 2.37 seconds across four runs. The diagnostic did not produce an
+observed-only or observed-to-explicit collision lead, so observed-to-observed behavior and the public
+0.2.0 tag remain blocked on a run with two genuinely active worktrees.

@@ -86,6 +86,31 @@ class LaneMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class DependencyFunnel:
+    """Privacy-safe conservation counts for non-parent typed dependencies."""
+
+    total_non_parent_typed: int = 0
+    inactive_or_closed_only: int = 0
+    below_qualification: int = 0
+    eligible: int = 0
+    admitted: int = 0
+    omitted_by_per_issue_cap: int = 0
+    omitted_by_lane_cap: int = 0
+    omitted_by_run_cap: int = 0
+
+    @property
+    def excluded(self) -> int:
+        return self.inactive_or_closed_only + self.below_qualification
+
+    def validate(self) -> None:
+        if self.total_non_parent_typed != self.excluded + self.eligible:
+            raise ValueError("typed dependency discovery funnel does not conserve")
+        omitted = self.omitted_by_per_issue_cap + self.omitted_by_lane_cap + self.omitted_by_run_cap
+        if self.eligible != self.admitted + omitted:
+            raise ValueError("typed dependency admission funnel does not conserve")
+
+
+@dataclass(frozen=True, slots=True)
 class CandidateRanking:
     candidates: tuple[dict[str, Any], ...]
     qualified: int
@@ -98,6 +123,7 @@ class CandidateRanking:
     capped_typed_dependencies: tuple[dict[str, str], ...] = ()
     reciprocal_diagnostics: dict[str, Any] | None = None
     cap_replacements: tuple[dict[str, Any], ...] = ()
+    dependency_funnel: DependencyFunnel | None = None
 
 
 def rank_candidates(
@@ -141,6 +167,15 @@ def rank_candidates(
             if item["issue_id"] in eligible_issue_ids
             or item["related_issue_id"] in eligible_issue_ids
         ]
+    dependency_funnel = _dependency_discovery_funnel(
+        active,
+        all_issues,
+        score,
+        echo_threshold=policy.echo_threshold,
+        overlap_threshold=policy.overlap_threshold,
+        exception_margin=policy.exception_margin,
+        eligible_issue_ids=eligible_issue_ids,
+    )
     is_sensitivity = (
         policy.echo_threshold < policy.baseline_echo_threshold
         or policy.overlap_threshold < policy.baseline_overlap_threshold
@@ -165,6 +200,15 @@ def rank_candidates(
             ]
 
     result = _select_candidates(baseline, requested, policy)
+    dependency_metrics = (result.lanes or {}).get("dependency", LaneMetrics())
+    dependency_funnel = replace(
+        dependency_funnel,
+        admitted=dependency_metrics.admitted,
+        omitted_by_per_issue_cap=dependency_metrics.dropped_by_dependency_issue_cap,
+        omitted_by_lane_cap=dependency_metrics.dropped_by_lane_cap,
+        omitted_by_run_cap=dependency_metrics.dropped_by_run_cap,
+    )
+    dependency_funnel.validate()
     reciprocal_admitted = sum(
         item["admission_reason"] == "reciprocal-neighbor-threshold-exception"
         for item in result.candidates
@@ -201,6 +245,86 @@ def rank_candidates(
         result,
         reciprocal_diagnostics=reciprocal_diagnostics,
         cap_replacements=replacements,
+        dependency_funnel=dependency_funnel,
+    )
+
+
+def _dependency_discovery_funnel(
+    active: Sequence[Any],
+    all_issues: Sequence[Any],
+    score: Callable[[str, str], float],
+    *,
+    echo_threshold: float,
+    overlap_threshold: float,
+    exception_margin: float,
+    eligible_issue_ids: frozenset[str] | None,
+) -> DependencyFunnel:
+    """Classify each typed edge once without retaining endpoint details.
+
+    An edge is comparable when both endpoints are in the selected active
+    population, or when one selected active endpoint points to a closed record.
+    Incremental runs additionally require one active endpoint in the changed
+    scope. All other edges are inactive for this review queue.
+    """
+
+    active_ids = {issue_id(item) for item in active}
+    records = {issue_id(item): item for item in all_issues}
+    seen: set[tuple[str, str, str]] = set()
+    total = inactive = below = eligible = 0
+    for source in all_issues:
+        source_id = issue_id(source)
+        typed_links = [
+            (
+                str(getattr(link, "target_id", "")),
+                str(getattr(link, "relationship_type", "depends-on")),
+            )
+            for link in tuple(getattr(source, "dependency_links", ()) or ())
+        ]
+        typed_targets = {target for target, _ in typed_links}
+        typed_links.extend(
+            (str(target), "depends-on")
+            for target in tuple(getattr(source, "dependencies", ()) or ())
+            if str(target) not in typed_targets
+        )
+        for target_id, relationship_type in typed_links:
+            if relationship_type == "parent-child":
+                continue
+            identity = (source_id, target_id, relationship_type)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            total += 1
+            target = records.get(target_id)
+            active_endpoints = {
+                identifier for identifier in (source_id, target_id) if identifier in active_ids
+            }
+            in_incremental_scope = eligible_issue_ids is None or bool(
+                active_endpoints & eligible_issue_ids
+            )
+            comparable = (
+                target is not None
+                and in_incremental_scope
+                and (
+                    len(active_endpoints) == 2
+                    or (
+                        len(active_endpoints) == 1
+                        and (_is_closed(issue_status(source)) or _is_closed(issue_status(target)))
+                    )
+                )
+            )
+            if not comparable:
+                inactive += 1
+                continue
+            threshold = overlap_threshold if len(active_endpoints) == 2 else echo_threshold
+            if score(source_id, target_id) < max(-1.0, threshold - exception_margin):
+                below += 1
+            else:
+                eligible += 1
+    return DependencyFunnel(
+        total_non_parent_typed=total,
+        inactive_or_closed_only=inactive,
+        below_qualification=below,
+        eligible=eligible,
     )
 
 

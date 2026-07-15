@@ -565,6 +565,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     filters = _field(payload.get("parameters") or {}, "filters", default={}) or {}
     incremental_scope = _field(filters, "incremental_scope", default={}) or {}
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
+    dependency_funnel = _field(candidate_policy, "dependency_funnel", default={}) or {}
     review_budget = _field(candidate_policy, "review_budget", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
@@ -650,6 +651,33 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         )
     else:
         lines.append("Lane metrics were not recorded by this producer.")
+    lines.extend(["", "## Typed dependency funnel", ""])
+    if dependency_funnel:
+        total = _field(dependency_funnel, "total_non_parent_typed", default=0)
+        inactive = _field(dependency_funnel, "inactive_or_closed_only", default=0)
+        below = _field(dependency_funnel, "below_qualification", default=0)
+        eligible = _field(dependency_funnel, "eligible", default=0)
+        admitted = _field(dependency_funnel, "admitted", default=0)
+        per_issue = _field(dependency_funnel, "omitted_by_per_issue_cap", default=0)
+        lane_cap = _field(dependency_funnel, "omitted_by_lane_cap", default=0)
+        run_cap = _field(dependency_funnel, "omitted_by_run_cap", default=0)
+        lines.extend(
+            [
+                f"- Total non-parent typed edges: {total}",
+                f"- Inactive, closed-only, or outside review scope: {inactive}",
+                f"- Below structural qualification floor: {below}",
+                f"- Eligible: {eligible}",
+                f"- Admitted: {admitted}",
+                f"- Omitted by dependency per-issue allowance: {per_issue}",
+                f"- Omitted by dependency lane cap: {lane_cap}",
+                f"- Omitted by run cap: {run_cap}",
+                f"- Discovery conservation: {total} = {inactive} + {below} + {eligible}",
+                "- Admission conservation: "
+                f"{eligible} = {admitted} + {per_issue} + {lane_cap} + {run_cap}",
+            ]
+        )
+    else:
+        lines.append("Dependency funnel metrics were not recorded by this producer.")
     reciprocal = _field(candidate_policy, "reciprocal_diagnostics", default={}) or {}
     lines.extend(
         [

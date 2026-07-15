@@ -361,6 +361,7 @@ def _candidate_evidence(
         capped_typed_dependencies=ranking.capped_typed_dependencies,
         reciprocal_diagnostics=ranking.reciprocal_diagnostics,
         cap_replacements=ranking.cap_replacements,
+        dependency_funnel=ranking.dependency_funnel,
     )
 
 
@@ -607,6 +608,9 @@ def _sweep(args: argparse.Namespace) -> int:
             "baseline_protected": ranking.baseline_protected,
             "reciprocal_diagnostics": ranking.reciprocal_diagnostics,
             "cap_replacements": list(ranking.cap_replacements),
+            "dependency_funnel": asdict(ranking.dependency_funnel)
+            if ranking.dependency_funnel
+            else {},
             "lanes": {lane: asdict(metrics) for lane, metrics in (ranking.lanes or {}).items()},
             "dropped_by_lane_cap": ranking.dropped_by_lane_cap,
             "dropped_by_issue_cap": ranking.dropped_by_issue_cap,

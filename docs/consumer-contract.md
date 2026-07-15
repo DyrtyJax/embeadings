@@ -69,6 +69,13 @@ without exposing issue text. `cap_replacements` explains the exceptional case wh
 change alters a bounded winner; consumers should name the governing cap instead of presenting that
 candidate as newly semantically qualified.
 
+`dependency_funnel` distinguishes a corpus with no typed structure from one whose typed edges are
+closed-only, below the qualification floor, or eligible but capped. Its fields are mutually
+exclusive aggregate counts and satisfy two producer-checked conservation equations. Consumers can
+therefore explain a zero-candidate dependency lane without exposing issue bodies or edge endpoints.
+In incremental mode, an otherwise comparable edge with no changed active endpoint is counted as
+inactive for that review scope.
+
 Snapshot metadata identifies `live-beads-cli` as the authoritative acquisition source and records
 the live issue count. When `.beads/issues.jsonl` is discoverable, emBEADings counts its records
 without copying their contents; a count mismatch is reported through `source_warnings` and the

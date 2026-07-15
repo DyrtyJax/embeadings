@@ -133,3 +133,23 @@ class HashingProvider:
 def _require_fixed_dimension(vectors: Sequence[Sequence[float]]) -> None:
     if vectors and any(len(vector) != len(vectors[0]) for vector in vectors):
         raise ValueError("embedding provider returned vectors with inconsistent dimensions")
+
+
+def provider_readiness(
+    provider: EmbeddingProvider | None = None,
+    *,
+    probe_text: str = "model readiness probe",
+) -> dict[str, object]:
+    """Load an embedding provider with corpus-free text and report its stable contract."""
+
+    selected = provider or Model2VecProvider()
+    vectors = selected.encode([probe_text])
+    if len(vectors) != 1:
+        raise ValueError("embedding readiness probe returned the wrong number of vectors")
+    vector = vectors[0]
+    return {
+        "status": "ready",
+        "model_id": selected.model_id,
+        "model_revision": selected.model_revision,
+        "vector_dimension": len(vector),
+    }

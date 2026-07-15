@@ -1,0 +1,52 @@
+{
+  "benchmark": "embeadings-embedding-storage-alternatives-v1",
+  "environment": {
+    "fastembed": "0.8.0",
+    "machine": "arm64",
+    "numpy": "2.5.1",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.4",
+    "sqlite_vec": "0.1.9"
+  },
+  "offline_repeat_passed": true,
+  "provider_cache_bytes": {
+    "fastembed": 134360436,
+    "model2vec": 122786812
+  },
+  "provider_peak_rss_bytes": {
+    "fastembed": 334020608,
+    "model2vec": 141754368
+  },
+  "provider_results": [
+    {
+      "cold_encode_ms": 633.998,
+      "deterministic": true,
+      "dimension": 256,
+      "initialization_ms": 0.002,
+      "provider": "model2vec/potion-base-8M",
+      "quality": {"median_pair_margin": 0.073587, "pair_recall_at_1": 0.7083},
+      "records": 24,
+      "warm_encode_ms": 1.241
+    },
+    {
+      "cold_encode_ms": 178.358,
+      "deterministic": true,
+      "dimension": 384,
+      "initialization_ms": 306.683,
+      "provider": "fastembed/BAAI-bge-small-en-v1.5",
+      "quality": {"median_pair_margin": 0.094059, "pair_recall_at_1": 1.0},
+      "records": 24,
+      "warm_encode_ms": 92.059
+    }
+  ],
+  "storage_results": {
+    "json-files": [
+      {"dimension": 256, "disk_bytes": 1194261, "full_read_ms": 128.438, "records": 1000, "write_ms": 397.036},
+      {"dimension": 256, "disk_bytes": 5954324, "full_read_ms": 593.576, "records": 5000, "write_ms": 2412.738}
+    ],
+    "sqlite-vec": [
+      {"dimension": 256, "disk_bytes": 1101824, "full_read_ms": 8.692, "knn_25_ms": 7.774, "records": 1000, "version": "v0.1.9", "write_ms": 22.397},
+      {"dimension": 256, "disk_bytes": 5390336, "full_read_ms": 27.92, "knn_25_ms": 18.712, "records": 5000, "version": "v0.1.9", "write_ms": 134.88}
+    ]
+  }
+}

@@ -158,8 +158,13 @@ def build_checkpoint(
     }
 
 
-def ensure_external_path(path: Path, workspace_path: str | None) -> None:
-    """Reject checkpoint writes inside the repository containing `.beads`."""
+def ensure_external_path(
+    path: Path,
+    workspace_path: str | None,
+    *,
+    purpose: str = "checkpoint output",
+) -> None:
+    """Reject checkpoint inputs or outputs inside the repository containing `.beads`."""
 
     if not workspace_path:
         return
@@ -167,4 +172,4 @@ def ensure_external_path(path: Path, workspace_path: str | None) -> None:
     repository = workspace.parent if workspace.name == ".beads" else workspace
     target = path.expanduser().resolve()
     if target == repository or repository in target.parents:
-        raise ValueError("checkpoint output must be outside the Beads repository")
+        raise ValueError(f"{purpose} must be outside the Beads repository")

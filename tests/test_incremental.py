@@ -87,3 +87,15 @@ def test_checkpoint_output_must_be_outside_repository(tmp_path) -> None:
     ensure_external_path(tmp_path / "external.json", str(beads))
     with pytest.raises(ValueError, match="outside"):
         ensure_external_path(repository / "checkpoint.json", str(repository))
+
+
+def test_checkpoint_input_error_names_input(tmp_path) -> None:
+    repository = tmp_path / "repo"
+    beads = repository / ".beads"
+    beads.mkdir(parents=True)
+    with pytest.raises(ValueError, match="checkpoint input must be outside"):
+        ensure_external_path(
+            repository / "checkpoint.json",
+            str(beads),
+            purpose="checkpoint input",
+        )

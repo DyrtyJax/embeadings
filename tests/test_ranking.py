@@ -656,6 +656,24 @@ def test_title_entity_aligned_to_description_preserves_sparse_subsystem_pair() -
     assert result.candidates[0]["reciprocal_evidence"] == "discriminative-title-alignment"
 
 
+def test_sparse_empty_body_title_pair_uses_narrow_fallback() -> None:
+    issues = [
+        issue("A", title="Define task execution engine", description="Run configured actions"),
+        issue("B", title="Implement direct task reference", status="closed"),
+        issue("C", title="Unrelated"),
+    ]
+
+    result = rank_candidates(
+        [issues[0], issues[2]],
+        issues,
+        Scores({("A", "B"): 0.76}),
+        policy(reciprocal_rank=1),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0]["reciprocal_evidence"] == "sparse-title-alignment"
+
+
 def test_corpus_common_title_token_is_not_discriminative() -> None:
     issues = [
         issue("A", title="Parser alpha"),

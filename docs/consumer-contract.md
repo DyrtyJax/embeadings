@@ -43,10 +43,17 @@ an extraction diagnostic and mirrored as `extraction_confidence`; `confidence_sc
 limited meaning explicit. It is `high` only when the selected field supplies both action and entity
 and the outcome category is corroborated; `generic_fallback` identifies anchors that could not
 safely resolve both. The independent `specificity` tier is `concrete-check`, `category-check`, or
-`generic`; broad category language can therefore be generic even when extraction succeeds. Generic
-verification wording abstains from a concrete claim. The report-level `anchor_metrics` summarizes
-extraction confidence, specificity, and fallback separately without examining or repeating private
-content. Transferred ownership requires ownership evidence in both records. Consumers must
+`generic`. A concrete check additionally requires a locally derived, finite-vocabulary typed
+`check_category`: contract, artifact, invariant, test, or a corroborated ownership boundary.
+`entity-category` preserves a useful safe action/entity pair as category-level guidance without
+claiming that a concrete contract was found; `unspecified` means neither a safe check type nor an
+action/entity category could be extracted. A typed category can remain visible on a generic anchor
+when action/entity extraction fails, but it does not upgrade specificity. Generic verification
+wording abstains from a concrete claim. `check_source_field` identifies only the
+canonical field supplying the type, never its text. The report-level `anchor_metrics` summarizes
+extraction confidence, specificity, fallback, and an `actionable_proxy` count of non-generic safe
+anchors. That proxy supports regression testing but is not a human usefulness rating. Transferred
+ownership requires ownership evidence in both records. Consumers must
 still treat every anchor as advisory and inspect the private source records locally before reaching
 a conclusion.
 

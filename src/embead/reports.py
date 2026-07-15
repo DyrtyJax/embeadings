@@ -148,6 +148,7 @@ def _anchor_metrics(evidence: Iterable[Any]) -> dict[str, Any]:
     confidence = {"high": 0, "medium": 0, "low": 0}
     specificity = {"concrete-check": 0, "category-check": 0, "generic": 0}
     generic_fallback_count = 0
+    actionable_proxy_count = 0
     for item in items:
         anchor = _field(item, "verification_anchor", default={}) or {}
         level = str(_field(anchor, "confidence", default="low"))
@@ -155,11 +156,15 @@ def _anchor_metrics(evidence: Iterable[Any]) -> dict[str, Any]:
         tier = str(_field(anchor, "specificity", default="generic"))
         specificity[tier if tier in specificity else "generic"] += 1
         generic_fallback_count += bool(_field(anchor, "generic_fallback", default=True))
+        actionable_proxy_count += tier in {"concrete-check", "category-check"}
     total = len(items)
     return {
         "total": total,
         "confidence": confidence,
         "specificity": specificity,
+        # This is a deterministic packaging proxy, not a substitute for blinded human ratings.
+        "actionable_proxy_count": actionable_proxy_count,
+        "actionable_proxy_rate": round(actionable_proxy_count / total, 4) if total else 0.0,
         "generic_fallback_count": generic_fallback_count,
         "generic_fallback_rate": round(generic_fallback_count / total, 4) if total else 0.0,
     }
@@ -521,6 +526,8 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
                 ),
                 "- Verification specificity: "
                 + _escape(_field(anchor, "specificity", default="not recorded")),
+                "- Verification check category: "
+                + _escape(_field(anchor, "check_category", default="not recorded")),
             ]
         )
         detail.extend(
@@ -605,6 +612,11 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
             f"{tier}={count}"
             for tier, count in (_field(anchor_metrics, "specificity", default={}) or {}).items()
         ),
+        "- Actionable-anchor proxy: "
+        + str(_field(anchor_metrics, "actionable_proxy_count", default=0))
+        + " / "
+        + str(_field(anchor_metrics, "total", default=len(candidates)))
+        + " (non-generic finite-vocabulary anchors; not a human rating)",
         "",
     ]
     if review_budget:
@@ -770,6 +782,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 ),
                 "- Verification specificity: "
                 + _escape(_field(anchor, "specificity", default="not recorded")),
+                "- Verification check category: "
+                + _escape(_field(anchor, "check_category", default="not recorded")),
             ]
         )
         detail.extend(

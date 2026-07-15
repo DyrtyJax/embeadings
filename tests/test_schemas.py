@@ -44,6 +44,8 @@ EVIDENCE = {
         "extraction_confidence": "high",
         "confidence_scope": "anchor-extraction",
         "specificity": "concrete-check",
+        "check_category": "artifact",
+        "check_source_field": "acceptance criteria",
         "generic_fallback": False,
     },
     "candidate_evidence": {
@@ -117,6 +119,8 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
         "total": 1,
         "confidence": {"high": 1, "medium": 0, "low": 0},
         "specificity": {"concrete-check": 1, "category-check": 0, "generic": 0},
+        "actionable_proxy_count": 1,
+        "actionable_proxy_rate": 1.0,
         "generic_fallback_count": 0,
         "generic_fallback_rate": 0.0,
     }

@@ -246,7 +246,10 @@ explanation.
 
 Anchor extraction confidence, verification specificity, and candidate relationship uncertainty are
 separate signals. Reports retain finite-vocabulary anchors and label specificity as a concrete check,
-category check, or generic. Candidate evidence identifies semantic-only pairs with no structural
+category check, or generic. Concrete checks require an explicit local contract, artifact, invariant,
+test, or corroborated ownership-boundary type; the mere presence of acceptance criteria does not
+qualify. Safe action/entity pairs remain category checks, while only failed extraction becomes
+generic. Candidate evidence identifies semantic-only pairs with no structural
 corroboration and preserves direct-threshold, reciprocal, shared-parent, and typed-dependency
 admission paths. Neither semantic similarity nor an exception path may assert a shared contract or
 completed outcome.

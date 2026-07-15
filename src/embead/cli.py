@@ -55,7 +55,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Find related Beads work without changing your tracker.",
         epilog="Read-only • Issue text is embedded locally by default.",
     )
-    parser.add_argument("--version", action="version", version="embead 0.1.0")
+    parser.add_argument("--version", action="version", version="embead 0.2.0")
     parser.add_argument(
         "--provider",
         choices=("model2vec", "hashing"),

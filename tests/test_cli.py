@@ -1,4 +1,5 @@
 import json
+from argparse import Namespace
 
 from embead import cli
 from embead.models import IssueRecord, WorkspaceSnapshot
@@ -173,6 +174,32 @@ def test_collisions_is_corpus_read_only_and_does_not_load_embedding_provider(
     assert payload["policy"]["snippets_included"] is False
     assert payload["code_surface_analysis"]["collisions"][0]["kind"] == "exact-file"
     assert json.loads(output.read_text()) == payload
+
+
+def test_surface_analysis_passes_the_invoking_worktree(monkeypatch, tmp_path) -> None:
+    invoking = tmp_path / "current-worktree"
+    invoking.mkdir()
+    monkeypatch.chdir(invoking)
+    captured = {}
+
+    class Analysis:
+        def to_dict(self):
+            return {"repository_context": "invocation-worktree"}
+
+    def analyze(_issues, **kwargs):
+        captured.update(kwargs)
+        return Analysis()
+
+    monkeypatch.setattr(cli, "analyze_code_surfaces", analyze)
+    result = cli._surface_analysis(
+        Namespace(worktree_map=[], base_ref="origin/main", max_hub_surface_issues=5),
+        WorkspaceSnapshot("workspace-test", "1.0.5", str(tmp_path / "owner")),
+        [],
+    )
+
+    assert result == {"repository_context": "invocation-worktree"}
+    assert captured["workspace_path"] == str(tmp_path / "owner")
+    assert captured["invocation_path"] == invoking
 
 
 def test_sweep_can_include_code_surface_analysis(monkeypatch, tmp_path, capsys) -> None:

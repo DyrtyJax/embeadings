@@ -13,6 +13,9 @@ titles, descriptions, repository paths, symbols, snippets, branch names, or work
 4. List active worktrees with `git worktree list --porcelain`. Let emBEADings auto-associate branches
    containing a full Bead ID or unique `bead-N` suffix. For other active agent worktrees, supply a
    private repeatable mapping: `--worktree-map ISSUE_ID=/absolute/worktree/path`.
+5. For a release gate, require at least two associated active worktrees so observed-only and
+   corroborated ranking can both be exercised. Run the command from the current implementation
+   worktree, not a tracker-owner checkout retained only to host the shared Beads database.
 
 Do not rename branches, edit issues, create repository files, or copy mappings into the evaluation
 report merely to improve association coverage.
@@ -26,6 +29,11 @@ embead collisions --json --output /private/tmp/embead-collisions-repeat.json
 
 Add the same private `--worktree-map` flags to both commands when needed. Confirm the two outputs are
 byte-identical after excluding no fields; collision reports are deterministic.
+
+Confirm `repository_context` is `invocation-worktree` and `repository_revision` equals the output of
+`git rev-parse HEAD` in the invoking worktree. Treat a silent mismatch as a release-blocking defect. A
+warned fallback is acceptable only when the evaluator intentionally invokes outside the tracker
+repository.
 
 Run two sensitivity checks with `--max-hub-surface-issues 3` and `8`. Keep all artifacts private.
 Do not run a semantic sweep for this code-surface gate unless a separate semantic comparison is
@@ -59,6 +67,7 @@ exact-file evidence should never be hub-suppressed; treat any such case as a rel
 - discovered and associated worktree counts, without their locations;
 - retained leads by kind, evidence source, and rating;
 - hub summaries, omitted-pair count, and the bounded omitted-pair audit;
+- explicit-only module omission count and any retained module leads by observed/corroborated source;
 - results at hub limits 3, 5, and 8;
 - runtime and repeat-output determinism;
 - tracker, Git-visible, and repository-file non-mutation results;

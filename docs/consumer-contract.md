@@ -98,6 +98,11 @@ Different live/export digests produce a non-content warning even when record cou
 `source_divergence_reasons` supplies only controlled metadata categories such as `status`,
 `dependency_structure`, or `record_count`; it never identifies records or includes issue text.
 
+Code-surface analysis may include additive `repository_context` and
+`pairs_omitted_by_module_guard` fields. The former distinguishes invoking-worktree provenance from a
+warned tracker-workspace fallback. The latter counts explicit-only shared-module pairs removed from
+the primary collision queue; it is not evidence that those pairs conflict or are irrelevant.
+
 ## Capability handshake
 
 An optional dispatcher or UI should exchange a capability document before consuming artifacts. The

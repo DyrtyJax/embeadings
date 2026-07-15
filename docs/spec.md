@@ -269,10 +269,18 @@ pointers from work-record text and observe changed paths from associated local G
 not copy source snippets, mutate a worktree, or persist inferred pointers back into Beads.
 
 Every pointer records its source (`explicit-reference` or `active-worktree-diff`), bounded confidence,
-and Git revision when available. Collision leads distinguish exact-file from shared-module evidence
+and Git revision when available. Repository provenance comes from the invoking worktree when it shares
+the tracker checkout's Git common directory. An invocation outside Git or in an unrelated repository
+uses an explicit warned fallback. Collision leads distinguish exact-file from shared-module evidence
 and report whether their revisions match. Automatic worktree association may use a full issue ID or
 an unambiguous numeric Bead suffix in the branch name; ambiguous associations require an explicit
 operator mapping and otherwise remain unavailable.
+
+Exact-file evidence may qualify from explicit or observed pointers. Shared-module evidence qualifies
+only when at least one contributing pointer is an observed active-worktree change; explicit-only
+module pairs are omitted from the primary queue and counted separately. This prevents broad directory
+ownership from overwhelming the narrower collision signal while preserving observed and corroborated
+module coordination.
 
 Common explicit-only paths and modules are hub surfaces, analogous to broad semantic vocabulary.
 When their active-record frequency exceeds the configured bound, reports summarize the surface and

@@ -333,6 +333,7 @@ def _surface_analysis(
     analysis = analyze_code_surfaces(
         issues,
         workspace_path=snapshot.workspace_path,
+        invocation_path=Path.cwd(),
         worktree_mappings=mappings,
         base_reference=args.base_ref,
         hub_surface_limit=args.max_hub_surface_issues,

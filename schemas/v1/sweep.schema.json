@@ -63,6 +63,7 @@
       "required": ["repository_available", "issue_count", "pointer_count", "issues_with_explicit_surfaces", "issues_with_observed_surfaces", "issues_without_surfaces", "worktrees_discovered", "worktrees_associated", "source_counts", "hub_surface_limit", "hub_surfaces", "pairs_omitted_by_hub_guard", "surfaces", "collisions", "warnings"],
       "properties": {
         "repository_available": { "type": "boolean" },
+        "repository_context": { "enum": ["invocation-worktree", "tracker-workspace", "unavailable"] },
         "repository_revision": { "type": ["string", "null"] },
         "base_reference": { "type": ["string", "null"] },
         "base_revision": { "type": ["string", "null"] },
@@ -80,6 +81,7 @@
         "hub_surface_limit": { "type": "integer", "minimum": 1 },
         "hub_surfaces": { "type": "array" },
         "pairs_omitted_by_hub_guard": { "type": "integer", "minimum": 0 },
+        "pairs_omitted_by_module_guard": { "type": "integer", "minimum": 0 },
         "surfaces": { "type": "array" },
         "collisions": { "type": "array" },
         "warnings": { "type": "array", "items": { "type": "string" } }

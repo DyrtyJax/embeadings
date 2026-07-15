@@ -598,6 +598,8 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
         "",
         "- Repository available: "
         + ("yes" if _field(analysis, "repository_available", default=False) else "no"),
+        "- Repository context: "
+        + str(_field(analysis, "repository_context", default="unavailable")),
         "- Active records analyzed: " + str(_field(analysis, "issue_count", default=0)),
         "- Records with explicit surfaces: "
         + str(_field(analysis, "issues_with_explicit_surfaces", default=0)),
@@ -613,6 +615,8 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
         "- Hub surfaces summarized: " + str(len(hub_surfaces)),
         "- Pairs omitted by hub guard: "
         + str(_field(analysis, "pairs_omitted_by_hub_guard", default=0)),
+        "- Explicit-only module pairs omitted: "
+        + str(_field(analysis, "pairs_omitted_by_module_guard", default=0)),
         "- Collision leads: " + str(len(collisions)),
         "",
     ]
@@ -692,6 +696,9 @@ def render_collisions_markdown(payload: Mapping[str, Any]) -> str:
         + "`",
         "- Repository revision: `"
         + _escape(_field(analysis, "repository_revision", default="unavailable"))
+        + "`",
+        "- Repository context: `"
+        + _escape(_field(analysis, "repository_context", default="unavailable"))
         + "`",
         "- Base reference: `"
         + _escape(_field(analysis, "base_reference", default="unavailable"))

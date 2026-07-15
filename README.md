@@ -105,9 +105,11 @@ three-repository public pilot, the hub guard reduced 119 explicit-pointer leads 
 26, but only 30.2% of active records contained an extractable pointer. The first private code-surface
 pilot validated exact-file evidence while exposing stale-checkout provenance and very low precision
 for explicit-only module matches. Those blockers are fixed in source, but a public 0.2.0 tag remains
-gated on a repeat run with at least two associated active worktrees. Semantic code retrieval, AST
-symbols, Git-history inference, and MCP integration belong behind a future optional evidence-provider
-interface only if they measurably improve collision recall without producing an impractical queue.
+gated on a repeat run with at least two associated active worktrees. The first corrected preflight
+found only one genuinely active implementation worktree and stopped without fabricating evidence.
+Semantic code retrieval, AST symbols, Git-history inference, and MCP integration belong behind a
+future optional evidence-provider interface only if they measurably improve collision recall without
+producing an impractical queue.
 
 ## Proposed commands
 

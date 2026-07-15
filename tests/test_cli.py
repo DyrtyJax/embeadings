@@ -194,10 +194,7 @@ def test_sweep_can_include_code_surface_analysis(monkeypatch, tmp_path, capsys) 
     monkeypatch.setattr(cli, "_surface_analysis", lambda *_args: analysis)
 
     output = tmp_path / "surface-sweep"
-    assert (
-        cli.main(["sweep", "--code-surfaces", "--output", str(output), "--json"])
-        == 0
-    )
+    assert cli.main(["sweep", "--code-surfaces", "--output", str(output), "--json"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["code_surface_analysis"] == analysis

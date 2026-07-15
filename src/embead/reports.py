@@ -626,8 +626,7 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
                 f"### `{_escape(issue_id)}` ↔ `{_escape(related)}`",
                 "",
                 "- Collision kind: " + _escape(_field(collision, "kind", default="unknown")),
-                "- Confidence: "
-                + _escape(_field(collision, "confidence", default="unknown")),
+                "- Confidence: " + _escape(_field(collision, "confidence", default="unknown")),
                 "- Revision relation: "
                 + _escape(_field(collision, "revision_relation", default="unavailable")),
                 "- Shared paths: "

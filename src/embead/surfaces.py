@@ -373,17 +373,11 @@ def _collisions(
             )
             revisions = {pointer.revision for pointer in (*left, *right) if pointer.revision}
             revision_relation = (
-                "unavailable"
-                if not revisions
-                else "same"
-                if len(revisions) == 1
-                else "different"
+                "unavailable" if not revisions else "same" if len(revisions) == 1 else "different"
             )
             kind = "exact-file" if shared_paths else "shared-module"
             target = (
-                "the shared file paths"
-                if shared_paths
-                else "the shared implementation modules"
+                "the shared file paths" if shared_paths else "the shared implementation modules"
             )
             results.append(
                 CodeSurfaceCollision(

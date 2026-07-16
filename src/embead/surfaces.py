@@ -822,6 +822,7 @@ def _associate_worktrees(
 ) -> dict[str, _Worktree]:
     by_path = {worktree.path: worktree for worktree in worktrees}
     associations: dict[str, _Worktree] = {}
+    explicit_owners: dict[Path, str] = {}
     for issue_id, raw_path in explicit.items():
         if issue_id not in issue_ids:
             raise ValueError(
@@ -832,22 +833,36 @@ def _associate_worktrees(
         path = Path(raw_path).resolve()
         if path not in by_path:
             raise ValueError(f"mapped path is not a registered Git worktree: {path}")
+        if owner := explicit_owners.get(path):
+            raise ValueError(
+                f"mapped path is already associated with issue {owner}: {path}; "
+                "one worktree can provide observed evidence for only one issue"
+            )
         associations[issue_id] = by_path[path]
+        explicit_owners[path] = issue_id
 
     suffix_counts = Counter(_numeric_suffix(issue_id) for issue_id in issue_ids)
     for worktree in worktrees:
+        if worktree.path in explicit_owners:
+            continue
         branch = worktree.branch or ""
         candidates = []
         for issue_id in issue_ids:
             if issue_id in associations:
                 continue
             suffix = _numeric_suffix(issue_id)
-            full_match = issue_id.casefold() in branch.casefold()
+            full_match = bool(
+                re.search(
+                    rf"(?:^|[/_-]){re.escape(issue_id)}(?:$|[/_-])",
+                    branch,
+                    re.IGNORECASE,
+                )
+            )
             suffix_match = bool(
                 suffix
                 and suffix_counts[suffix] == 1
                 and re.search(
-                    rf"(?:^|[/_.-])(?:bead[-_])?{re.escape(suffix)}(?:$|[/_.-])",
+                    rf"(?:^|[/_.-])bead[-_]{re.escape(suffix)}(?:$|[/_.-])",
                     branch,
                     re.IGNORECASE,
                 )

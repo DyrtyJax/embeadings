@@ -6,21 +6,31 @@ on:
       - "v*"
 
 permissions:
+  attestations: write
   contents: write
+  id-token: write
 
 jobs:
   github-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
           cache: pip
-      - run: python -m pip install build
+      - run: python -m pip install "pip==26.1.2" "build==1.5.0" -e ".[dev]"
+      - name: Validate tagged source
+        run: python scripts/validate.py
       - run: SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) python -m build
       - name: Verify release artifacts
         run: python scripts/verify_release.py --expected-version "${GITHUB_REF_NAME#v}" --write-checksums
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
       - name: Publish immutable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -30,4 +40,5 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --title "$GITHUB_REF_NAME"
           --generate-notes
+          --prerelease
           --verify-tag

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1 — 2026-07-16
+
+Privacy, packaging, and public-repository hardening.
+
+- Restrict POSIX cache/state roots and run directories to `0700`, and sensitive derived files to
+  `0600`, including atomic replacements.
+- Narrow source distributions to runtime source, schemas, and required package metadata; verify fresh
+  installs from both wheel and source archive.
+- Pin release workflow actions and build tooling, validate tagged source, and attest future release
+  artifacts with GitHub build provenance.
+- Replace the internal-reference README with an outcome-led quick start, representative output,
+  evidence boundaries, and task-oriented documentation indexes.
+- Add privacy-aware issue forms, a pull-request checklist, current security guidance, and accurate
+  Linear client version metadata.
+
 ## 0.4.0 — 2026-07-16
 
 First public technical preview.

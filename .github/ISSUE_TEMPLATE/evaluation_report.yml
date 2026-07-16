@@ -1,0 +1,78 @@
+name: Evaluation report
+description: Share approved aggregate findings from a public or private-repository evaluation.
+title: "[evaluation] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Aggregate evaluations help calibrate the product. **Do not attach raw tracker exports, issue
+        text, reports, ratings tied to private IDs, repository paths, credentials, worktree mappings,
+        or private prompts.** Obtain the repository owner's approval before sharing private-corpus
+        aggregates.
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Data and consent confirmation
+      options:
+        - label: I have permission to publish these aggregate findings.
+          required: true
+        - label: This issue contains no raw private tracker, repository, report, prompt, or credential data.
+          required: true
+        - label: I have labeled converted GitHub data as a scale surrogate rather than native tracker evidence.
+          required: false
+  - type: input
+    id: versions
+    attributes:
+      label: Versions under test
+      placeholder: "emBEADings 0.4.1; Beads 1.0.5; model revision …"
+    validations:
+      required: true
+  - type: dropdown
+    id: corpus-kind
+    attributes:
+      label: Corpus kind
+      options:
+        - Native Beads repository
+        - Linear team
+        - Converted public GitHub scale surrogate
+        - Synthetic fixture
+        - Other public tracker
+    validations:
+      required: true
+  - type: input
+    id: corpus-size
+    attributes:
+      label: Aggregate corpus shape
+      placeholder: "8,143 records; 1,681 active / 6,462 closed"
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Protocol and safety checks
+      description: Summarize commands, worktree count, network boundary, determinism, and non-mutation checks without private paths.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Aggregate results
+      description: Include counts, rating rubric, useful/actionable rates, runtime, and memory as applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: failures
+    attributes:
+      label: False-positive, missed-signal, or workflow patterns
+      description: Describe redacted patterns rather than individual private issues.
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation and scope caveat
+      description: State what the result supports, what it does not establish, and the next test you recommend.
+    validations:
+      required: true

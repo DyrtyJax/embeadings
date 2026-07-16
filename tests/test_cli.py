@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 from argparse import Namespace
 
 import pytest
@@ -33,6 +35,21 @@ ISSUES = (
 class FakeAdapter:
     def load(self):
         return WorkspaceSnapshot("workspace-test", "1.0.5", "/tmp/demo/.beads"), ISSUES
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not portable")
+def test_workspace_paths_restrict_cache_and_state_roots_on_posix(monkeypatch, tmp_path) -> None:
+    cache_base = tmp_path / "cache" / "embeadings"
+    state_base = tmp_path / "state" / "embeadings"
+    monkeypatch.setattr(cli, "user_cache_path", lambda _name: cache_base)
+    monkeypatch.setattr(cli, "user_state_path", lambda _name: state_base)
+
+    cache_path, state_path = cli._workspace_paths("workspace-test")
+
+    assert cache_path == cache_base / "vectors" / "workspace-test"
+    assert state_path == state_base / "runs" / "workspace-test"
+    assert stat.S_IMODE(cache_path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(state_path.parent.stat().st_mode) == 0o700
 
 
 def _configure(monkeypatch, tmp_path):
@@ -258,6 +275,26 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert (output / "report.json").is_file()
     assert (output / "report.md").is_file()
     assert list(output.glob("batch-*.json")) == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not portable")
+def test_sweep_restricts_run_reports_and_state_root_on_posix(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    state = tmp_path / "state"
+    state.mkdir(mode=0o755)
+
+    assert cli.main(["sweep", "--size", "1", "--json"]) == 0
+    capsys.readouterr()
+
+    run = next(state.iterdir())
+
+    def mode(path):
+        return stat.S_IMODE(path.stat().st_mode)
+
+    assert mode(state) == 0o700
+    assert mode(run) == 0o700
+    assert mode(run / "report.json") == 0o600
+    assert mode(run / "report.md") == 0o600
 
 
 def test_triage_is_opinionated_compact_and_deterministic(monkeypatch, tmp_path, capsys) -> None:
@@ -941,6 +978,8 @@ def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint
     checkpoint_payload = json.loads(checkpoint.read_text())
     assert set(checkpoint_payload["issues"]) == {"changed", "unchanged"}
     assert "Changed" not in checkpoint.read_text()
+    if os.name == "posix":
+        assert stat.S_IMODE(checkpoint.stat().st_mode) == 0o600
     markdown = (tmp_path / "out" / "report.md").read_text()
     assert "Review scope: changed-since" in markdown
     assert "Unchanged active records excluded: 1" in markdown

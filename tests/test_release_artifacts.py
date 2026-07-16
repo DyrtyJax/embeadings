@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -23,12 +25,74 @@ def _wheel(path: Path, version: str = "0.4.0") -> Path:
     return path
 
 
+def _source_archive(
+    path: Path,
+    version: str = "0.4.0",
+    *,
+    extra_files: tuple[str, ...] = (),
+) -> Path:
+    root = f"embeadings-{version}"
+    files = {
+        "LICENSE": "MIT\n",
+        "PKG-INFO": f"Metadata-Version: 2.4\nName: embeadings\nVersion: {version}\n",
+        "README.md": "# emBEADings\n",
+        "pyproject.toml": "[build-system]\nrequires = ['hatchling']\n",
+        "schemas/v1/sweep.schema.json": "{}\n",
+        "src/embead/__init__.py": "\n",
+    }
+    files.update(dict.fromkeys(extra_files, "test content\n"))
+    with tarfile.open(path, mode="w:gz") as archive:
+        for name, content in files.items():
+            payload = content.encode("utf-8")
+            info = tarfile.TarInfo(f"{root}/{name}")
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+    return path
+
+
 def test_artifact_version_reads_wheel_metadata(tmp_path: Path) -> None:
     assert verify_release.artifact_version(_wheel(tmp_path / "package.whl")) == "0.4.0"
 
 
+def test_source_artifact_version_reads_package_metadata(tmp_path: Path) -> None:
+    source = _source_archive(tmp_path / "package.tar.gz")
+
+    assert verify_release.source_artifact_version(source) == "0.4.0"
+    verify_release.verify_source_contents(source)
+
+
+@pytest.mark.parametrize(
+    "repository_path",
+    (
+        ".beads/interactions.jsonl",
+        ".github/workflows/release.yml",
+        "benchmarks/results.json",
+        "docs/research/private-pilot.md",
+        "plugins/embeadings/plugin.json",
+        "release.log",
+    ),
+)
+def test_source_contents_reject_repository_only_files(tmp_path: Path, repository_path: str) -> None:
+    source = _source_archive(tmp_path / "package.tar.gz", extra_files=(repository_path,))
+
+    with pytest.raises(RuntimeError, match="repository-only content"):
+        verify_release.verify_source_contents(source)
+
+
+def test_source_contents_require_runtime_source_and_schemas(tmp_path: Path) -> None:
+    source = _source_archive(tmp_path / "package.tar.gz")
+    with tarfile.open(source, mode="w:gz") as archive:
+        payload = b"Metadata-Version: 2.4\nName: embeadings\nVersion: 0.4.0\n"
+        info = tarfile.TarInfo("embeadings-0.4.0/PKG-INFO")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+
+    with pytest.raises(RuntimeError, match="missing required package content"):
+        verify_release.verify_source_contents(source)
+
+
 def test_project_version_matches_public_package() -> None:
-    assert verify_release.project_version() == "0.4.0"
+    assert verify_release.project_version() == "0.4.1"
 
 
 def test_discover_artifacts_requires_exact_pair(tmp_path: Path) -> None:

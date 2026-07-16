@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from embead import __version__
 from embead.analysis import SimilarityIndex
 from embead.linear import LinearAdapter, LinearError, _HTTPTransport, _transport_from_environment
 from embead.ranking import CandidatePolicy, rank_candidates
@@ -266,6 +267,7 @@ def test_http_transport_keeps_authorization_out_of_payload(monkeypatch) -> None:
     request = captured["request"]
     assert result == {"viewer": {"id": "viewer-1"}}
     assert request.get_header("Authorization") == "private-key"
+    assert request.get_header("User-agent") == f"embeadings/{__version__}"
     body = json.loads(request.data)
     assert body["variables"] == {"first": 1}
     assert "private-key" not in request.data.decode()

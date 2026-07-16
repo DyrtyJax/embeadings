@@ -18,12 +18,12 @@ repeatable without pretending that generated records measure `bd` or filesystem 
 
 ## Reference result
 
-On 2026-07-14, an Apple arm64 reference machine running Python 3.14.4 and NumPy 2.5.1 completed the
-1,000-record benchmark's exact candidate phase originally took **2.40 seconds** median over three
-repeats. The scope-aware vectorized implementation reduced the same phase to **1.22 seconds** without
-changing the candidate fingerprint (about 49%). The contract remains five seconds for the default
-benchmark. Results vary with CPU, BLAS, Python, and corpus shape; run the command on the release
-environment instead of treating this observation as a universal guarantee.
+On 2026-07-14, an Apple arm64 reference machine running Python 3.14.4 and NumPy 2.5.1 measured the
+1,000-record benchmark's exact candidate phase at **2.40 seconds** median over three repeats. The
+scope-aware vectorized implementation reduced the same phase to **1.22 seconds** without changing the
+candidate fingerprint (about 49%). The contract remains five seconds for the default benchmark.
+Results vary with CPU, BLAS, Python, and corpus shape; run the command on the release environment
+instead of treating this observation as a universal guarantee.
 
 The benchmark can also isolate an incremental active scope while retaining every closed record as
 completed-work evidence:

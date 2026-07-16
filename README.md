@@ -1,9 +1,9 @@
 # emBEADings
 
-<img src="assets/brand/embeadings-mark.svg" width="72" alt="Two bead paths converging on a shared code surface">
+<img src="https://raw.githubusercontent.com/DyrtyJax/embeadings/v0.4.2/assets/brand/embeadings-mark.svg" width="72" alt="Two bead paths converging on a shared code surface">
 
 [![CI](https://github.com/DyrtyJax/embeadings/actions/workflows/ci.yml/badge.svg)](https://github.com/DyrtyJax/embeadings/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/DyrtyJax/embeadings?include_prereleases)](https://github.com/DyrtyJax/embeadings/releases/tag/v0.4.1)
+[![Release](https://img.shields.io/github/v/release/DyrtyJax/embeadings?include_prereleases)](https://github.com/DyrtyJax/embeadings/releases/tag/v0.4.2)
 
 Find engineering work that may trip over the same code—without changing the tracker or sending issue
 text to an embedding API.
@@ -24,8 +24,8 @@ changes merge?” It provides evidence, not an automatic verdict.
 Python 3.11 or later is required. The default Beads source also requires an installed `bd` CLI.
 
 ```bash
-python -m pip install \
-  "https://github.com/DyrtyJax/embeadings/releases/download/v0.4.1/embeadings-0.4.1-py3-none-any.whl"
+pipx install embeadings
+# or: uv tool install embeadings
 
 # Check the environment without loading issue text
 embead doctor
@@ -40,17 +40,24 @@ embead collisions
 embead neighbors ISSUE_ID --include-closed
 ```
 
+For an immutable GitHub fallback, install the verified release wheel directly:
+
+```bash
+python -m pip install \
+  "https://github.com/DyrtyJax/embeadings/releases/download/v0.4.2/embeadings-0.4.2-py3-none-any.whl"
+```
+
 The first semantic command downloads the pinned
 [`minishlab/potion-base-8M`](https://huggingface.co/minishlab/potion-base-8M) model. Embedding happens
 locally. `collisions` does not load an embedding model.
 
 Release assets include a source archive and `SHA256SUMS`. See the
-[v0.4.1 release](https://github.com/DyrtyJax/embeadings/releases/tag/v0.4.1) for versioned artifacts and
+[v0.4.2 release](https://github.com/DyrtyJax/embeadings/releases/tag/v0.4.2) for versioned artifacts and
 checksums.
 
 ## What a lead looks like
 
-![Synthetic terminal example of an observed exact-file collision](assets/brand/synthetic-collision-evidence.svg)
+![Synthetic terminal example of an observed exact-file collision](https://raw.githubusercontent.com/DyrtyJax/embeadings/v0.4.2/assets/brand/synthetic-collision-evidence.svg)
 
 This shortened example is derived from the committed synthetic collision fixture:
 
@@ -68,8 +75,9 @@ This shortened example is derived from the committed synthetic collision fixture
 
 The full report also records repository provenance, revision relation, hub suppression, warnings, and
 the read-only policy. It contains pointers rather than source snippets. See
-[`examples/collisions.json`](examples/collisions.json) and the
-[example guide](examples/README.md).
+[`examples/collisions.json`](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/examples/collisions.json)
+and the
+[example guide](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/examples/README.md).
 
 ## Why trust it?
 
@@ -78,13 +86,15 @@ the read-only policy. It contains pointers rather than source snippets. See
 | Concurrent-worktree release gate | Recovered all 3 known exact-file collisions across 4 genuine active worktrees | One repository; not universal recall |
 | Dogfooding | Found 2 real association/scope defects before v0.4.0 | Demonstrates workflow value, not broad precision |
 | Ruff scale surrogate | 17/20 top-packet pairs were at least contextually useful across 8,143 public issues | Converted GitHub corpus; no native Beads graph or worktrees |
-| Release validation | 269 tests passed across Linux, macOS, Windows, Python 3.11 and 3.14; wheel/sdist checksums and provenance published | Supply-chain and test evidence, not semantic quality |
+| Release validation | Full CI passed across Linux, macOS, Windows, Python 3.11 and 3.14; wheel/sdist checksums and provenance published | Supply-chain and test evidence, not semantic quality |
 | Repeatability | Evaluation outputs were byte-stable and non-mutating | Determinism does not make a weak lead correct |
 
-Read the [dogfood release-gate story](docs/articles/dogfooding-v040-worktree-gate.md),
-[aggregate v0.4.0 worktree gate](docs/research/code-surface-v040-release-gate.md),
-[Ruff scale review](docs/research/ruff-scale-surrogate-01.md), and
-[research index](docs/research/README.md) for methods, failure patterns, and limitations.
+Read the [dogfood release-gate story](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/articles/dogfooding-v040-worktree-gate.md),
+[aggregate v0.4.0 worktree gate](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/research/code-surface-v040-release-gate.md),
+[Ruff scale review](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/research/ruff-scale-surrogate-01.md),
+and the
+[research index](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/research/README.md)
+for methods, failure patterns, and limitations.
 
 ## How it works
 
@@ -106,7 +116,7 @@ Beads or one Linear team
 code-surface analysis when genuine local Git evidence exists, and writes a complete audit report to
 external user state. Use `sweep` for experimental policy controls and `neighbors` for one-record
 inspection. The default is a reviewer-capacity budget, not corpus coverage; see the
-[review-budget decision](docs/decisions/review-budget-default.md).
+[review-budget decision](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/decisions/review-budget-default.md).
 
 `collisions` reviews `open`, `in_progress`, and `blocked` work by default. It associates Git worktrees
 when a branch contains a full Bead ID or unambiguous `bead-N` suffix. Explicitly map an otherwise
@@ -134,7 +144,7 @@ embead --source linear --linear-team ENG collisions
 
 `LINEAR_ACCESS_TOKEN` accepts an OAuth token instead; set only one credential. The CLI queries one
 selected team through Linear GraphQL and does not reuse credentials held by an MCP or agent host. See
-the [Linear adapter contract](docs/linear.md).
+the [Linear adapter contract](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/linear.md).
 
 ## Privacy and data boundary
 
@@ -147,7 +157,8 @@ the [Linear adapter contract](docs/linear.md).
 - A human or coordinator must verify every lead before changing tracker or source state.
 
 The first model download is network activity. Prepare it before loading private issues when evaluating
-under OS-level network denial. See the [safe offline evaluation guide](docs/evaluation.md).
+under OS-level network denial. See the
+[safe offline evaluation guide](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/evaluation.md).
 
 ## Good fit / poor fit
 
@@ -171,24 +182,27 @@ python scripts/validate.py
 
 The bootstrap refuses to reuse an active environment from another checkout. Validation checks the
 editable `embead` import target before formatting, lint, tests, and release checks. Read
-[`CONTRIBUTING.md`](CONTRIBUTING.md) before submitting fixtures or reports; private tracker content
+[`CONTRIBUTING.md`](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/CONTRIBUTING.md)
+before submitting fixtures or reports; private tracker content
 must never be committed.
 
 ## Agent plugin preview
 
-[`plugins/embeadings`](plugins/embeadings/README.md) packages `triage`, `collisions`, and `evaluate`
+[`plugins/embeadings`](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/plugins/embeadings/README.md)
+packages `triage`, `collisions`, and `evaluate`
 skills for local Codex and Claude Code development. It delegates to the installed CLI, forces schema-v1
 JSON, and verifies the read-only policy. It is not yet a marketplace release and grants no tracker-write
 authority.
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [CLI and product specification](docs/spec.md)
-- [Consumer and schema contract](docs/consumer-contract.md)
-- [Performance and scale evaluation](docs/performance.md)
-- [Research and evaluation ledger](docs/research/README.md)
-- [Versioned JSON Schemas](schemas/v1/) and [synthetic examples](examples/README.md)
+- [Documentation index](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/README.md)
+- [CLI and product specification](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/spec.md)
+- [Consumer and schema contract](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/consumer-contract.md)
+- [Performance and scale evaluation](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/performance.md)
+- [Research and evaluation ledger](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/research/README.md)
+- [Versioned JSON Schemas](https://github.com/DyrtyJax/embeadings/tree/v0.4.2/schemas/v1) and
+  [synthetic examples](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/examples/README.md)
 
 ## Principles
 

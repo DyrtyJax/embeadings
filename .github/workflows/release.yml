@@ -5,14 +5,11 @@ on:
     tags:
       - "v*"
 
-permissions:
-  attestations: write
-  contents: write
-  id-token: write
-
 jobs:
-  github-release:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -25,20 +22,70 @@ jobs:
       - run: SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) python -m build
       - name: Verify release artifacts
         run: python scripts/verify_release.py --expected-version "${GITHUB_REF_NAME#v}" --write-checksums
+      - name: Assemble one checksum-bound release bundle
+        run: |
+          mkdir -p release/packages
+          cp dist/*.whl dist/*.tar.gz release/packages/
+          cp dist/SHA256SUMS release/
+      - name: Preserve verified release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-release-bundle
+          path: release/
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Retrieve verified release artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-release-bundle
+          path: release
+      - name: Recheck distribution checksums
+        run: cd release/packages && sha256sum -c ../SHA256SUMS
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
-            dist/*.whl
-            dist/*.tar.gz
+            release/packages/*.whl
+            release/packages/*.tar.gz
       - name: Publish immutable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$GITHUB_REF_NAME"
-          dist/*.whl dist/*.tar.gz dist/SHA256SUMS
+          release/packages/*.whl release/packages/*.tar.gz release/SHA256SUMS
           --repo "$GITHUB_REPOSITORY"
           --title "$GITHUB_REF_NAME"
           --generate-notes
           --prerelease
           --verify-tag
+
+  pypi-publish:
+    needs:
+      - build
+      - github-release
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/embeadings
+    permissions:
+      id-token: write
+    steps:
+      - name: Retrieve verified PyPI distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-release-bundle
+          path: release
+      - name: Recheck distribution checksums
+        run: cd release/packages && sha256sum -c ../SHA256SUMS
+      - name: Publish distributions through PyPI Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: release/packages/

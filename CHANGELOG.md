@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2 — 2026-07-16
+
+Standard distribution and public proof.
+
+- Publish verified wheel and source distributions through PyPI Trusted Publishing with short-lived
+  GitHub OIDC credentials and a protected `pypi` environment.
+- Build release artifacts once, preserve checksums, and pass the exact verified distributions to
+  both the GitHub release and PyPI publishing jobs.
+- Add `pipx` and `uv tool` installation paths while retaining the immutable GitHub-wheel fallback.
+- Add a compact visual system and a bounded four-worktree dogfood story with explicit limitations.
+- Document deferred-work inclusion and retain the 20-candidate triage default while a bounded
+  corpus-aware budget remains an evaluation decision.
+
 ## 0.4.1 — 2026-07-16
 
 Privacy, packaging, and public-repository hardening.

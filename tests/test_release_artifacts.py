@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import re
 import tarfile
 import zipfile
 from pathlib import Path
@@ -92,7 +93,21 @@ def test_source_contents_require_runtime_source_and_schemas(tmp_path: Path) -> N
 
 
 def test_project_version_matches_public_package() -> None:
-    assert verify_release.project_version() == "0.4.1"
+    assert verify_release.project_version() == "0.4.2"
+
+
+def test_package_readme_uses_pypi_safe_absolute_links() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    targets = [
+        markdown_target or html_source
+        for markdown_target, html_source in re.findall(
+            r"!?\[[^]]*\]\(([^)]+)\)|<img\s+[^>]*src=\"([^\"]+)\"",
+            readme,
+        )
+    ]
+
+    assert targets
+    assert all(target.startswith(("https://", "http://", "#", "mailto:")) for target in targets)
 
 
 def test_discover_artifacts_requires_exact_pair(tmp_path: Path) -> None:

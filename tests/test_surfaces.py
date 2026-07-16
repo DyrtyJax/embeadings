@@ -36,7 +36,52 @@ def test_explicit_paths_are_conservative_and_never_copy_snippets() -> None:
         ("src/parser/dependencies.py", "parse_dependency"),
     ]
     assert {item.source_field for item in pointers} == {"description", "title"}
+    assert {item.edit_intent for item in pointers} == {"likely-edit"}
     assert all(not hasattr(item, "snippet") for item in pointers)
+
+
+def test_explicit_edit_intent_is_bounded_and_orders_without_suppression() -> None:
+    issues = [
+        IssueRecord(id="edit-a", title="Edit src/edit/core.py"),
+        IssueRecord(id="edit-b", title="Update src/edit/core.py"),
+        IssueRecord(id="mixed-a", title="Refactor src/mixed/core.py"),
+        IssueRecord(id="mixed-b", title="Review src/mixed/core.py"),
+        IssueRecord(id="unknown-a", title="src/unknown/core.py"),
+        IssueRecord(id="unknown-b", title="src/unknown/core.py"),
+        IssueRecord(id="reference-a", title="Review src/reference/core.py"),
+        IssueRecord(id="reference-b", title="Inspect src/reference/core.py"),
+    ]
+
+    analysis = analyze_code_surfaces(issues, workspace_path=None)
+
+    assert len(analysis.collisions) == 4
+    assert [collision.edit_intent for collision in analysis.collisions] == [
+        "likely-edit",
+        "mixed",
+        "unknown",
+        "reference-only",
+    ]
+    assert all(collision.intent_source_fields == ("title",) for collision in analysis.collisions)
+    assert all(collision.confidence == "explicit" for collision in analysis.collisions)
+
+
+def test_explicit_pointer_order_breaks_same_surface_intent_ties() -> None:
+    issue = IssueRecord(
+        id="task-1",
+        title="Repeated surface",
+        description=(
+            "Inspect `src/worker.py` before planning. "
+            + ("Unrelated context. " * 12)
+            + "Then update `src/worker.py` during implementation."
+        ),
+    )
+
+    pointers = extract_explicit_pointers(issue, revision="abc123")
+
+    assert [(pointer.path, pointer.edit_intent) for pointer in pointers] == [
+        ("src/worker.py", "likely-edit"),
+        ("src/worker.py", "reference-only"),
+    ]
 
 
 def test_explicit_surfaces_report_exact_collisions_and_suppress_module_only_pairs() -> None:
@@ -175,6 +220,8 @@ def test_worktree_diffs_are_observed_and_revision_bound(tmp_path: Path) -> None:
     collision = analysis.collisions[0]
     assert collision.kind == "exact-file"
     assert collision.confidence == "observed"
+    assert collision.edit_intent == "observed-edit"
+    assert collision.intent_source_fields == ()
     assert collision.shared_paths == ("src/shared/cache.py",)
     assert collision.revision_relation == "different"
 

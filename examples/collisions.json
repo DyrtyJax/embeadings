@@ -49,7 +49,8 @@
             "confidence": "observed",
             "revision": "revision-one",
             "symbol": null,
-            "source_field": null
+            "source_field": null,
+            "edit_intent": "observed-edit"
           }
         ]
       },
@@ -63,7 +64,8 @@
             "confidence": "observed",
             "revision": "revision-two",
             "symbol": null,
-            "source_field": null
+            "source_field": null,
+            "edit_intent": "observed-edit"
           }
         ]
       }
@@ -78,6 +80,8 @@
         "shared_symbols": [],
         "shared_modules": ["src/cache"],
         "evidence_sources": ["active-worktree-diff"],
+        "edit_intent": "observed-edit",
+        "intent_source_fields": [],
         "revision_relation": "different",
         "what_to_verify": "Verify whether concurrent work will modify the shared file paths before implementation or merge."
       }

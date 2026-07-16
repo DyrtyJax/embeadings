@@ -7,6 +7,8 @@ attributes.  Every builder returns values accepted by :mod:`json`.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, is_dataclass
@@ -14,6 +16,8 @@ from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from .validation import validate_artifact
 
 SCHEMA_VERSION = 1
 ADVISORY_NOTICE = (
@@ -181,7 +185,7 @@ def build_neighbors_payload(
     """Build the versioned machine payload for a nearest-neighbor query."""
 
     ordered = sorted(neighbors, key=_evidence_key)
-    return {
+    payload = {
         "schema_version": SCHEMA_VERSION,
         "report_type": "neighbors",
         "policy": {
@@ -196,6 +200,7 @@ def build_neighbors_payload(
         "issue": _record(issue),
         "neighbors": [_record(neighbor) for neighbor in ordered],
     }
+    return payload
 
 
 def build_batch_manifest(
@@ -227,7 +232,7 @@ def build_batch_manifest(
             }
         ]
     )
-    return {
+    payload = {
         "schema_version": SCHEMA_VERSION,
         "report_type": "batch",
         "run_id": str(run_id),
@@ -249,6 +254,8 @@ def build_batch_manifest(
         "anchor_metrics": _anchor_metrics(ordered_evidence),
         "review_rubric": rubric,
     }
+    validate_artifact(payload)
+    return payload
 
 
 def build_collisions_payload(
@@ -345,7 +352,133 @@ def build_sweep_payload(
         payload["duration_ms"] = _jsonable(duration_ms)
     if code_surface_analysis is not None:
         payload["code_surface_analysis"] = _jsonable(code_surface_analysis)
+    payload["analysis_fingerprint"] = _analysis_fingerprint(payload)
+    validate_artifact(payload)
     return payload
+
+
+def _analysis_fingerprint(payload: Mapping[str, Any]) -> str:
+    """Fingerprint stable analysis content while excluding runtime and cache receipts."""
+
+    stable = {
+        key: payload[key]
+        for key in (
+            "snapshot",
+            "model",
+            "parameters",
+            "candidates",
+            "capped_typed_dependencies",
+            "batches",
+            "no_signal",
+            "excluded",
+            "warnings",
+            "code_surface_analysis",
+        )
+        if key in payload
+    }
+    encoded = json.dumps(
+        _jsonable(stable),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _compact_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    issue_id = str(_field(candidate, "issue_id", default=""))
+    related_id = str(_field(candidate, "related_issue_id", default=""))
+    kind = str(_field(candidate, "kind", default="review-candidate"))
+    evidence = _field(candidate, "candidate_evidence", default={}) or {}
+    compact = {
+        "candidate_id": f"{kind}|{issue_id}|{related_id}",
+        "kind": kind,
+        "lane": str(_field(candidate, "lane", default="overlap")),
+        "issue_id": issue_id,
+        "related_issue_id": related_id,
+        "similarity": _score(candidate),
+        "evidence_basis": str(_field(evidence, "evidence_basis", default="semantic-only")),
+        "what_to_verify": str(_field(candidate, "what_to_verify", default=ADVISORY_NOTICE)),
+        "counterevidence": _jsonable(_field(candidate, "counterevidence", default=[])),
+    }
+    for field in (
+        "objective",
+        "admission_reason",
+        "structural_context",
+        "dependency_evidence",
+        "verification_anchor",
+    ):
+        value = _field(candidate, field, default=None)
+        if value is not None:
+            compact[field] = _jsonable(value)
+    return compact
+
+
+def build_triage_payload(sweep: Mapping[str, Any]) -> dict[str, Any]:
+    """Build a compact, redacted packet for agent or human triage judgment."""
+
+    if _field(sweep, "report_type") != "sweep":
+        raise ValueError("triage packets require a sweep report")
+    snapshot = _field(sweep, "snapshot", default={}) or {}
+    parameters = _field(sweep, "parameters", default={}) or {}
+    policy = _field(parameters, "candidate_policy", default={}) or {}
+    analysis = _field(sweep, "code_surface_analysis", default={}) or {}
+    lanes = _field(policy, "lanes", default={}) or {}
+    no_signal = _field(sweep, "no_signal", default={}) or {}
+    excluded = _field(sweep, "excluded", default={}) or {}
+    fingerprint = str(_field(sweep, "analysis_fingerprint", default=_analysis_fingerprint(sweep)))
+    packet = {
+        "schema_version": SCHEMA_VERSION,
+        "report_type": "triage",
+        "policy": _jsonable(_field(sweep, "policy", default={})),
+        "analysis_fingerprint": fingerprint,
+        "source_report": {
+            "report_type": "sweep",
+            "analysis_fingerprint": fingerprint,
+        },
+        "snapshot": {
+            key: _jsonable(snapshot[key])
+            for key in (
+                "workspace_id",
+                "tracker_name",
+                "tracker_version",
+                "beads_version",
+                "acquisition_source",
+                "live_issue_count",
+                "dependency_count",
+                "relation_diagnostics",
+            )
+            if key in snapshot
+        },
+        "review_budget": _jsonable(_field(policy, "review_budget", default={})),
+        "batch_policy": {
+            "max_batch_size": int(_field(parameters, "max_batch_size", default=0)),
+        },
+        "lane_summary": {
+            lane: {
+                "qualified": int(_field(metrics, "qualified", default=0)),
+                "admitted": int(_field(metrics, "admitted", default=0)),
+                "omitted": int(_field(metrics, "dropped_by_lane_cap", default=0))
+                + int(_field(metrics, "dropped_by_issue_cap", default=0))
+                + int(_field(metrics, "dropped_by_target_cap", default=0))
+                + int(_field(metrics, "dropped_by_run_cap", default=0)),
+            }
+            for lane, metrics in sorted(lanes.items())
+        },
+        "candidates": [
+            _compact_candidate(candidate)
+            for candidate in (_field(sweep, "candidates", default=[]) or [])
+        ],
+        "collisions": _jsonable(_field(analysis, "collisions", default=[]) or []),
+        "batches": _jsonable(_field(sweep, "batches", default=[]) or []),
+        "population": {
+            "no_signal": int(_field(no_signal, "count", default=0)),
+            "excluded": int(_field(excluded, "count", default=0)),
+        },
+        "warnings": _jsonable(_field(sweep, "warnings", default=[]) or []),
+    }
+    validate_artifact(packet)
+    return packet
 
 
 def _escape(value: Any) -> str:
@@ -691,6 +824,15 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
                 "",
                 "- Collision kind: " + _escape(_field(collision, "kind", default="unknown")),
                 "- Confidence: " + _escape(_field(collision, "confidence", default="unknown")),
+                "- Edit intent: " + _escape(_field(collision, "edit_intent", default="unknown")),
+                "- Intent source fields: "
+                + _escape(
+                    ", ".join(
+                        str(item)
+                        for item in _field(collision, "intent_source_fields", default=[]) or []
+                    )
+                    or "none"
+                ),
                 "- Revision relation: "
                 + _escape(_field(collision, "revision_relation", default="unavailable")),
                 "- Shared paths: "
@@ -767,6 +909,80 @@ def render_collisions_markdown(payload: Mapping[str, Any]) -> str:
             "",
         ]
     )
+    return "\n".join(lines)
+
+
+def render_triage_markdown(payload: Mapping[str, Any]) -> str:
+    """Render the compact triage packet without expanding the full audit report."""
+
+    candidates = _field(payload, "candidates", default=[]) or []
+    collisions = _field(payload, "collisions", default=[]) or []
+    lanes = _field(payload, "lane_summary", default={}) or {}
+    population = _field(payload, "population", default={}) or {}
+    warnings = _field(payload, "warnings", default=[]) or []
+    lines = [
+        "# emBEADings triage packet",
+        "",
+        f"> {READ_ONLY_NOTICE} {ADVISORY_NOTICE}",
+        "",
+        f"Analysis fingerprint: `{_escape(_field(payload, 'analysis_fingerprint'))}`",
+        "",
+        "## Queue",
+        "",
+        f"- Review candidates: {len(candidates)}",
+        f"- Code-surface leads: {len(collisions)}",
+        f"- No-signal records: {_field(population, 'no_signal', default=0)}",
+        f"- Excluded records: {_field(population, 'excluded', default=0)}",
+    ]
+    for lane in ("dependency", "echo", "overlap"):
+        metrics = _field(lanes, lane, default={}) or {}
+        lines.append(
+            f"- {lane.capitalize()}: {_field(metrics, 'admitted', default=0)} admitted / "
+            f"{_field(metrics, 'qualified', default=0)} qualified; "
+            f"{_field(metrics, 'omitted', default=0)} omitted"
+        )
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        lines.extend(f"- {_escape(warning)}" for warning in warnings)
+    lines.extend(["", "## Candidates", ""])
+    if not candidates:
+        lines.append("No semantic or structural review candidates were found.")
+    for candidate in candidates:
+        lines.extend(
+            [
+                "- `"
+                + _escape(_field(candidate, "issue_id"))
+                + "` ↔ `"
+                + _escape(_field(candidate, "related_issue_id"))
+                + "` — "
+                + _escape(_field(candidate, "lane", default="unknown"))
+                + ", similarity "
+                + f"{float(_field(candidate, 'similarity', default=0.0)):.3f}",
+                "  - Verify: "
+                + _escape(_field(candidate, "what_to_verify", default=ADVISORY_NOTICE)),
+            ]
+        )
+    lines.extend(["", "## Code-surface leads", ""])
+    if not collisions:
+        lines.append("No code-surface leads were found.")
+    for collision in collisions:
+        paths = ", ".join(_field(collision, "shared_paths", default=[]) or []) or "module only"
+        lines.extend(
+            [
+                "- `"
+                + _escape(_field(collision, "issue_id"))
+                + "` ↔ `"
+                + _escape(_field(collision, "related_issue_id"))
+                + "` — "
+                + _escape(_field(collision, "confidence", default="unknown"))
+                + ", intent "
+                + _escape(_field(collision, "edit_intent", default="unknown")),
+                f"  - Surfaces: {_escape(paths)}",
+                "  - Verify: "
+                + _escape(_field(collision, "what_to_verify", default="Coordinate the work.")),
+            ]
+        )
+    lines.append("")
     return "\n".join(lines)
 
 

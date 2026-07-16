@@ -102,7 +102,7 @@
     },
     "code-pointer": {
       "type": "object",
-      "required": ["issue_id", "path", "source", "confidence", "revision", "symbol", "source_field"],
+      "required": ["issue_id", "path", "source", "confidence", "revision", "symbol", "source_field", "edit_intent"],
       "properties": {
         "issue_id": { "type": "string", "minLength": 1 },
         "path": { "type": "string", "minLength": 1 },
@@ -110,13 +110,14 @@
         "confidence": { "enum": ["explicit", "observed"] },
         "revision": { "type": ["string", "null"] },
         "symbol": { "type": ["string", "null"] },
-        "source_field": { "type": ["string", "null"] }
+        "source_field": { "type": ["string", "null"] },
+        "edit_intent": { "enum": ["observed-edit", "likely-edit", "reference-only", "unknown"] }
       },
       "additionalProperties": false
     },
     "code-surface-collision": {
       "type": "object",
-      "required": ["issue_id", "related_issue_id", "kind", "confidence", "shared_paths", "shared_symbols", "shared_modules", "evidence_sources", "revision_relation", "what_to_verify"],
+      "required": ["issue_id", "related_issue_id", "kind", "confidence", "shared_paths", "shared_symbols", "shared_modules", "evidence_sources", "edit_intent", "intent_source_fields", "revision_relation", "what_to_verify"],
       "properties": {
         "issue_id": { "type": "string", "minLength": 1 },
         "related_issue_id": { "type": "string", "minLength": 1 },
@@ -140,6 +141,12 @@
         "evidence_sources": {
           "type": "array",
           "items": { "enum": ["explicit-reference", "active-worktree-diff"] },
+          "uniqueItems": true
+        },
+        "edit_intent": { "enum": ["observed-edit", "likely-edit", "mixed", "reference-only", "unknown"] },
+        "intent_source_fields": {
+          "type": "array",
+          "items": { "enum": ["title", "description", "acceptance_criteria", "design", "notes"] },
           "uniqueItems": true
         },
         "revision_relation": { "enum": ["same", "different", "unavailable"] },

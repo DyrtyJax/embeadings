@@ -2,7 +2,7 @@
 
 emBEADings artifacts are read-only, advisory evidence. The JSON Schemas in
 [`schemas/v1`](../schemas/v1/) describe the stable machine-readable envelope for the `neighbors`,
-`batch`, `sweep`, and `collisions` report types. The files in [`examples`](../examples/) are synthetic
+`batch`, `sweep`, `triage`, and `collisions` report types. The files in [`examples`](../examples/) are synthetic
 and contain no private tracker or source content.
 
 ## Version negotiation
@@ -152,7 +152,7 @@ object. Core emBEADings does not launch a dispatcher or grant it tracker access.
   "protocol_version": 1,
   "role": "producer",
   "schema_versions": [1],
-  "report_types": ["neighbors", "batch", "sweep", "collisions"],
+  "report_types": ["neighbors", "batch", "sweep", "triage", "collisions"],
   "capabilities": ["additive-fields", "advisory-evidence", "read-only-review", "code-surface-pointers"],
   "required_capabilities": ["read-only-review"]
 }
@@ -182,13 +182,19 @@ The version 1 producer capabilities are:
 Before acting on an artifact, a consumer must:
 
 1. select and validate the schema using the exact pair of `schema_version` and `report_type`;
-2. enforce the policy constants, especially `read_only: true` and
+2. run semantic validation for `batch`, `sweep`, and `triage` artifacts so exact partitions,
+   evidence endpoints, hard limits, and connected review units are verified rather than inferred;
+3. enforce the policy constants, especially `read_only: true` and
    `tracker_mutation_allowed: false`;
-3. treat issue text, identifiers, paths, and evidence as potentially private;
-4. avoid uploading artifact content unless the operator explicitly configured that behavior;
-5. preserve candidate scores, structural context, counterevidence, and verification prompts without
+4. treat issue text, identifiers, paths, and evidence as potentially private;
+5. avoid uploading artifact content unless the operator explicitly configured that behavior;
+6. preserve candidate scores, structural context, counterevidence, and verification prompts without
    promoting them to conclusions; and
-6. fail visibly when validation or capability negotiation fails.
+7. fail visibly when validation or capability negotiation fails.
+
+Python consumers can call `embead.validation.validate_artifact(payload)`. Producers call the same
+validator before returning artifacts. Failures use bounded position-and-reason codes rather than
+copying issue text or identifiers into diagnostics.
 
 Consumers may filter, visualize, or route valid artifacts. They must not reinterpret a similarity
 score as a tracker dependency, status transition, duplicate decision, or authorization to edit source.
@@ -200,6 +206,7 @@ score as a tracker dependency, status transition, duplicate decision, or authori
 | `neighbors` | [`neighbors.schema.json`](../schemas/v1/neighbors.schema.json) | [`neighbors.json`](../examples/neighbors.json) |
 | `batch` | [`batch.schema.json`](../schemas/v1/batch.schema.json) | [`batch.json`](../examples/batch.json) |
 | `sweep` | [`sweep.schema.json`](../schemas/v1/sweep.schema.json) | [`sweep.json`](../examples/sweep.json) |
+| `triage` | [`triage.schema.json`](../schemas/v1/triage.schema.json) | [`triage.json`](../examples/triage.json) |
 | `collisions` | [`collisions.schema.json`](../schemas/v1/collisions.schema.json) | [`collisions.json`](../examples/collisions.json) |
 | Incremental checkpoint | [`checkpoint.schema.json`](../schemas/v1/checkpoint.schema.json) | [`checkpoint.json`](../examples/checkpoint.json) |
 

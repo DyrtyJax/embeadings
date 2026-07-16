@@ -7,6 +7,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "report_type": { "const": "sweep" },
+    "analysis_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "run_id": { "type": "string", "minLength": 1 },
     "policy": { "$ref": "#/$defs/policy" },
     "snapshot": { "$ref": "#/$defs/snapshot" },

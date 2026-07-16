@@ -89,7 +89,7 @@ def test_capabilities_is_corpus_free_and_machine_readable(monkeypatch, capsys) -
         "protocol_version": 1,
         "role": "producer",
         "schema_versions": [1],
-        "report_types": ["neighbors", "batch", "sweep", "collisions"],
+        "report_types": ["neighbors", "batch", "sweep", "triage", "collisions"],
         "capabilities": [
             "additive-fields",
             "advisory-evidence",
@@ -258,6 +258,55 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert (output / "report.json").is_file()
     assert (output / "report.md").is_file()
     assert list(output.glob("batch-*.json")) == []
+
+
+def test_triage_is_opinionated_compact_and_deterministic(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    first_output = tmp_path / "triage-first"
+    second_output = tmp_path / "triage-second"
+
+    assert (
+        cli.main(
+            [
+                "--provider",
+                "hashing",
+                "triage",
+                "--review-budget",
+                "2",
+                "--output",
+                str(first_output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    first = json.loads(capsys.readouterr().out)
+    assert (
+        cli.main(
+            [
+                "--provider",
+                "hashing",
+                "triage",
+                "--review-budget",
+                "2",
+                "--output",
+                str(second_output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    second = json.loads(capsys.readouterr().out)
+
+    assert first == second
+    assert first["report_type"] == "triage"
+    assert first["review_budget"]["candidate_limit"] == 2
+    assert first["source_report"]["analysis_fingerprint"] == first["analysis_fingerprint"]
+    assert (first_output / "report.json").is_file()
+    assert (first_output / "triage.json").is_file()
+    assert json.loads((first_output / "triage.json").read_text()) == first
+    full_report = json.loads((first_output / "report.json").read_text())
+    assert full_report["analysis_fingerprint"] == first["analysis_fingerprint"]
 
 
 def test_empty_structure_sweep_skips_embeddings_and_preserves_funnel(

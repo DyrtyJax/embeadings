@@ -284,6 +284,16 @@ Providers return validated normalized vectors. Analysis must avoid renormalizing
 each comparison and must reuse pairwise scores within a run. A vectorized similarity matrix or an
 equivalent bounded score cache is preferred for populations that fit comfortably in memory.
 
+### Opinionated triage packet
+
+`triage` is the default operator-facing workflow. It applies a bounded weekly review budget, enables
+available local code-surface evidence, and writes both the complete `sweep` audit artifact and a
+smaller agent-ready `triage` packet. The packet contains admitted candidates, collision leads,
+bounded batches, conservation counts, warnings, and no arbitrary tracker body fields. Its
+`analysis_fingerprint` is derived only from stable analysis inputs and decisions, so cold and warm
+runs over the same snapshot can be compared without run IDs, timings, cache telemetry, or output
+paths changing the identity. The complete and compact artifacts must carry the same fingerprint.
+
 ### Code-surface collision evidence
 
 Code surfaces are optional corroborating evidence, not canonical tracker state and not a replacement
@@ -292,7 +302,10 @@ pointers from work-record text and observe changed paths from associated local G
 not copy source snippets, mutate a worktree, or persist inferred pointers back into Beads.
 
 Every pointer records its source (`explicit-reference` or `active-worktree-diff`), bounded confidence,
-and Git revision when available. Repository provenance comes from the invoking worktree when it shares
+finite edit intent (`observed-edit`, `likely-edit`, `reference-only`, or `unknown`), and Git revision
+when available. Intent is a local ranking signal, not an admission gate: uncertain language must not
+hide an exact-file lead. Collision records expose the contributing intent fields and rank observed or
+likely edits ahead of references when stronger evidence is otherwise equal. Repository provenance comes from the invoking worktree when it shares
 the tracker checkout's Git common directory. An invocation outside Git or in an unrelated repository
 uses an explicit warned fallback. Collision leads distinguish exact-file from shared-module evidence
 and report whether their revisions match. Automatic worktree association may use a full issue ID or
@@ -322,6 +335,12 @@ Batching operates on issues participating in review signals after structural fil
 thresholds, and candidate caps have been applied. It does not force every active issue into a semantic
 neighborhood merely because every vector has a nearest neighbor. Records without a qualifying signal
 are reported separately as `no signal`.
+
+Schema validation is necessary but not sufficient. The producer and consumer share a semantic
+artifact validator that rejects duplicate or omitted members, non-partitioning review units,
+evidence with no packaged endpoint, batches above the configured hard maximum, and disconnected
+connected-component units. Its diagnostics use bounded positions and reason codes, not tracker text
+or identifiers.
 
 Broad container records such as epics are excluded from the default review population unless selected
 explicitly. Parent/child similarity is structural context and potential counterevidence, not sufficient

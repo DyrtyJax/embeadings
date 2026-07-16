@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "report_type": "triage",
+  "policy": {
+    "read_only": true,
+    "tracker_mutation_allowed": false,
+    "advisory": true,
+    "notice": "Synthetic read-only example. Verify advisory evidence against current project state."
+  },
+  "analysis_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_report": {
+    "report_type": "sweep",
+    "analysis_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "snapshot": {
+    "workspace_id": "synthetic-workspace",
+    "tracker_name": "beads",
+    "tracker_version": "1.0.5",
+    "beads_version": "1.0.5",
+    "acquisition_source": "live-beads-cli",
+    "live_issue_count": 3,
+    "dependency_count": 0,
+    "relation_diagnostics": null
+  },
+  "review_budget": {
+    "mode": "weekly",
+    "candidate_limit": 20,
+    "admitted_candidates": 1
+  },
+  "batch_policy": { "max_batch_size": 9 },
+  "lane_summary": {
+    "dependency": { "qualified": 0, "admitted": 0, "omitted": 0 },
+    "echo": { "qualified": 1, "admitted": 1, "omitted": 0 },
+    "overlap": { "qualified": 0, "admitted": 0, "omitted": 0 }
+  },
+  "candidates": [
+    {
+      "candidate_id": "completed-work-echo|demo-1|demo-2",
+      "kind": "completed-work-echo",
+      "lane": "echo",
+      "issue_id": "demo-1",
+      "related_issue_id": "demo-2",
+      "similarity": 0.91,
+      "evidence_basis": "semantic-only",
+      "what_to_verify": "Verify whether the completed outcome changes the active scope.",
+      "counterevidence": ["no direct dependency is recorded"]
+    }
+  ],
+  "collisions": [],
+  "batches": [
+    {
+      "batch": 1,
+      "kind": "singleton-envelope",
+      "issue_ids": ["demo-1"],
+      "review_units": [{ "issue_ids": ["demo-1"] }]
+    }
+  ],
+  "population": { "no_signal": 1, "excluded": 0 },
+  "warnings": []
+}

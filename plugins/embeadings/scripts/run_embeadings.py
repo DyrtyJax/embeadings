@@ -10,8 +10,8 @@ import subprocess
 import sys
 from collections.abc import Sequence
 
-MINIMUM_VERSION = (0, 3, 0)
-SUPPORTED_REPORTS = {"sweep", "collisions"}
+MINIMUM_VERSION = (0, 4, 0)
+SUPPORTED_REPORTS = {"triage", "sweep", "collisions"}
 SUPPORTED_TRACKERS = {"beads", "linear"}
 VALUE_OPTIONS = {"--source", "--linear-team", "--provider"}
 WRITE_OPTIONS = {"--output", "--write-checkpoint"}
@@ -25,7 +25,7 @@ def fail(message: str) -> None:
 def find_cli() -> tuple[str, str]:
     executable = shutil.which("embead")
     if executable is None:
-        fail("embead was not found on PATH; install embeadings>=0.3.0 first")
+        fail("embead was not found on PATH; install embeadings>=0.4.0 first")
 
     try:
         completed = subprocess.run(
@@ -45,13 +45,13 @@ def find_cli() -> tuple[str, str]:
         rendered,
     )
     if match is None or tuple(map(int, match.groups())) < MINIMUM_VERSION:
-        fail(f"embeadings>=0.3.0 is required; found {rendered}")
+        fail(f"embeadings>=0.4.0 is required; found {rendered}")
     return executable, rendered
 
 
 def inspect_arguments(arguments: Sequence[str]) -> tuple[str, list[str]]:
     if not arguments:
-        fail("expected a sweep or collisions command")
+        fail("expected a triage, sweep, or collisions command")
 
     report_type: str | None = None
     json_requested = False
@@ -76,7 +76,7 @@ def inspect_arguments(arguments: Sequence[str]) -> tuple[str, list[str]]:
     if skip_value:
         fail("a global option is missing its value")
     if report_type is None:
-        fail("only sweep and collisions reports are supported")
+        fail("only triage, sweep, and collisions reports are supported")
 
     command_arguments = list(arguments)
     if not json_requested:

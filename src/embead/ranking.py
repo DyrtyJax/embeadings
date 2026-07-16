@@ -41,6 +41,7 @@ class CandidatePolicy:
     max_dependencies: int = 75
     max_echoes: int = 125
     max_overlaps: int = 125
+    lane_reservations: dict[str, int] | None = None
     baseline_echo_threshold: float = DEFAULT_ECHO_THRESHOLD
     baseline_overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD
 
@@ -65,6 +66,15 @@ class CandidatePolicy:
             raise ValueError("run candidate cap must be positive")
         if any(value < 0 for value in self.lane_caps.values()):
             raise ValueError("lane candidate caps cannot be negative")
+        if self.lane_reservations is not None:
+            if set(self.lane_reservations) != set(LANES):
+                raise ValueError("lane reservations must cover dependency, echo, and overlap")
+            if any(value < 0 for value in self.lane_reservations.values()):
+                raise ValueError("lane reservations cannot be negative")
+            if sum(self.lane_reservations.values()) > self.max_total:
+                raise ValueError("lane reservations cannot exceed the run candidate cap")
+            if any(self.lane_reservations[lane] > self.lane_caps[lane] for lane in LANES):
+                raise ValueError("lane reservations cannot exceed lane candidate caps")
 
     @property
     def lane_caps(self) -> dict[str, int]:
@@ -84,6 +94,9 @@ class LaneMetrics:
     dropped_by_issue_cap: int = 0
     dropped_by_dependency_issue_cap: int = 0
     dropped_by_run_cap: int = 0
+    reserved: int = 0
+    admitted_to_reservation: int = 0
+    unused_reserved: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -453,71 +466,121 @@ def _select_candidates(
             "dropped_by_issue_cap": 0,
             "dropped_by_dependency_issue_cap": 0,
             "dropped_by_run_cap": 0,
+            "reserved": 0,
+            "admitted_to_reservation": 0,
+            "unused_reserved": 0,
         }
         for lane in LANES
     }
     accepted: list[dict[str, Any]] = []
     capped_typed_dependencies: list[dict[str, str]] = []
     seen_issues_by_kind: set[tuple[str, str]] = set()
-    for candidates, protected in stages:
-        for candidate in sorted(candidates, key=_ranking_key):
-            lane = candidate["lane"]
-            values = metrics[lane]
-            values["qualified"] += 1
-            if lane_counts[lane] >= policy.lane_caps[lane]:
-                values["dropped_by_lane_cap"] += 1
-                _record_capped_dependency(capped_typed_dependencies, candidate, "lane-cap")
-                continue
-            if len(accepted) >= policy.max_total:
-                values["dropped_by_run_cap"] += 1
-                _record_capped_dependency(capped_typed_dependencies, candidate, "run-cap")
-                continue
-            left_id = candidate["issue_id"]
-            right_id = candidate["related_issue_id"]
-            if lane == "dependency":
-                if (
-                    dependency_counts[left_id] >= policy.max_dependencies_per_issue
-                    or dependency_counts[right_id] >= policy.max_dependencies_per_issue
-                ):
-                    values["dropped_by_issue_cap"] += 1
-                    values["dropped_by_dependency_issue_cap"] += 1
-                    _record_capped_dependency(
-                        capped_typed_dependencies, candidate, "dependency-per-issue-cap"
-                    )
-                    continue
-            elif (
-                semantic_counts[left_id] >= policy.max_per_issue
-                or semantic_counts[right_id] >= policy.max_per_issue
-            ):
-                values["dropped_by_issue_cap"] += 1
-                continue
-            # Keep the established one-echo-per-active-record invariant even
-            # when a sensitivity run finds another lower-scoring closed issue.
-            kind_issue = (candidate["kind"], left_id)
+    ordered_stages = tuple(
+        tuple((candidate, protected) for candidate in sorted(candidates, key=_ranking_key))
+        for candidates, protected in stages
+    )
+    for candidate, _ in (item for stage in ordered_stages for item in stage):
+        metrics[candidate["lane"]]["qualified"] += 1
+
+    processed: set[tuple[str, str, str]] = set()
+
+    def attempt(candidate: dict[str, Any], protected: bool, *, reserved: bool) -> bool:
+        lane = candidate["lane"]
+        values = metrics[lane]
+        identity = _candidate_identity(candidate)
+        if lane_counts[lane] >= policy.lane_caps[lane]:
+            values["dropped_by_lane_cap"] += 1
+            _record_capped_dependency(capped_typed_dependencies, candidate, "lane-cap")
+            processed.add(identity)
+            return False
+        if len(accepted) >= policy.max_total:
+            values["dropped_by_run_cap"] += 1
+            _record_capped_dependency(capped_typed_dependencies, candidate, "run-cap")
+            processed.add(identity)
+            return False
+        left_id = candidate["issue_id"]
+        right_id = candidate["related_issue_id"]
+        if lane == "dependency":
             if (
-                candidate["lane"] == "echo"
-                and candidate["kind"] == "completed-work-echo"
-                and kind_issue in seen_issues_by_kind
+                dependency_counts[left_id] >= policy.max_dependencies_per_issue
+                or dependency_counts[right_id] >= policy.max_dependencies_per_issue
             ):
                 values["dropped_by_issue_cap"] += 1
+                values["dropped_by_dependency_issue_cap"] += 1
+                _record_capped_dependency(
+                    capped_typed_dependencies, candidate, "dependency-per-issue-cap"
+                )
+                processed.add(identity)
+                return False
+        elif (
+            semantic_counts[left_id] >= policy.max_per_issue
+            or semantic_counts[right_id] >= policy.max_per_issue
+        ):
+            values["dropped_by_issue_cap"] += 1
+            processed.add(identity)
+            return False
+        # Keep the established one-echo-per-active-record invariant even
+        # when a sensitivity run finds another lower-scoring closed issue.
+        kind_issue = (candidate["kind"], left_id)
+        if (
+            candidate["lane"] == "echo"
+            and candidate["kind"] == "completed-work-echo"
+            and kind_issue in seen_issues_by_kind
+        ):
+            values["dropped_by_issue_cap"] += 1
+            processed.add(identity)
+            return False
+        admitted = {**candidate, "baseline_protected": protected}
+        accepted.append(admitted)
+        if lane == "dependency":
+            dependency_counts[left_id] += 1
+            dependency_counts[right_id] += 1
+        else:
+            semantic_counts[left_id] += 1
+            semantic_counts[right_id] += 1
+        lane_counts[lane] += 1
+        if candidate["lane"] == "echo":
+            seen_issues_by_kind.add(kind_issue)
+        values["admitted"] += 1
+        values["baseline_protected"] += int(protected)
+        values["admitted_to_reservation"] += int(reserved)
+        processed.add(identity)
+        return True
+
+    reservations = policy.lane_reservations or {}
+    if reservations:
+        for lane in LANES:
+            metrics[lane]["reserved"] = reservations[lane]
+
+    # A sensitivity run has two stages: the candidates qualified at the default
+    # thresholds, then only the permissive additions. Fully select each stage
+    # before offering capacity to the next one. This preserves the bounded
+    # default queue while still letting additions consume any unused reserved or
+    # flexible capacity. A normal run has one stage and retains the same
+    # reservation-before-priority behavior.
+    for ordered in ordered_stages:
+        if reservations:
+            for lane in LANES:
+                for candidate, protected in ordered:
+                    if metrics[lane]["admitted_to_reservation"] >= reservations[lane]:
+                        break
+                    if candidate["lane"] != lane or _candidate_identity(candidate) in processed:
+                        continue
+                    attempt(candidate, protected, reserved=True)
+
+        for candidate, protected in ordered:
+            if _candidate_identity(candidate) in processed:
                 continue
-            admitted = {**candidate, "baseline_protected": protected}
-            accepted.append(admitted)
-            if lane == "dependency":
-                dependency_counts[left_id] += 1
-                dependency_counts[right_id] += 1
-            else:
-                semantic_counts[left_id] += 1
-                semantic_counts[right_id] += 1
-            lane_counts[lane] += 1
-            if candidate["lane"] == "echo":
-                seen_issues_by_kind.add(kind_issue)
-            values["admitted"] += 1
-            values["baseline_protected"] += int(protected)
+            attempt(candidate, protected, reserved=False)
+
+    for lane in LANES:
+        metrics[lane]["unused_reserved"] = (
+            metrics[lane]["reserved"] - metrics[lane]["admitted_to_reservation"]
+        )
 
     lane_metrics = {lane: LaneMetrics(**values) for lane, values in metrics.items()}
     return CandidateRanking(
-        candidates=tuple(accepted),
+        candidates=tuple(sorted(accepted, key=_ranking_key)),
         qualified=sum(values.qualified for values in lane_metrics.values()),
         dropped_by_issue_cap=sum(values.dropped_by_issue_cap for values in lane_metrics.values()),
         dropped_by_run_cap=sum(values.dropped_by_run_cap for values in lane_metrics.values()),

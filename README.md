@@ -61,10 +61,13 @@ embead --source linear --linear-team ENG collisions
 and `EMBEAD_SOURCE=linear` can supply the repeated source arguments. The standalone CLI does not
 reuse credentials held by an MCP host.
 
-The Linear adapter issues GraphQL queries only. It pages the selected team's issues and the visible
-workspace relation collection, then drops relation endpoints outside the team and canonicalizes
-reciprocal or multi-typed pairs before ranking. This avoids per-issue detail requests and preserves
-the structural ranking conservation invariant. Linear's suggested branch name is not treated as an
+The Linear adapter issues GraphQL queries only. A canonical team UUID is resolved directly; a key or
+exact name uses the paginated team lookup. The adapter then pages the selected team's issues and the
+visible workspace relation collection, canonicalizes reciprocal or multi-typed pairs, and omits
+external endpoints without fetching their records. Every omission is surfaced both as a
+human-readable warning and in `snapshot.relation_diagnostics`, including direction and relation-type
+counts at the selected-team boundary. This avoids per-issue detail requests and preserves the
+structural ranking conservation invariant. Linear's suggested branch name is not treated as an
 observed edit; only real local Git worktree changes can supply observed code-surface evidence. See
 [the Linear adapter contract](docs/linear.md) for the field mapping and privacy boundary.
 
@@ -130,6 +133,9 @@ touch the same implementation boundary?” It extracts conservative repository-r
 `path::symbol` references from Beads and observes changed paths in associated local Git worktrees.
 Worktrees are associated automatically when the branch contains the full Bead ID or an unambiguous
 `bead-N` suffix; `--worktree-map ISSUE_ID=PATH` supplies an explicit association when needed.
+Explicit mappings must name an active record in the evaluated population and a registered worktree;
+an excluded epic, closed record, or record filtered out by the current status scope fails with a
+corrective error instead of silently supplying evidence.
 
 `embead collisions` does not load an embedding model. It reports exact-file leads and shared-module
 leads backed by at least one observed active-worktree pointer, together with evidence source,
@@ -142,6 +148,14 @@ Repository provenance prefers the worktree from which `embead` is invoked when i
 common directory as the tracker checkout. An invocation outside Git or from an unrelated repository
 falls back explicitly and emits a warning instead of silently attributing the analysis to that
 checkout.
+
+Observed evidence is intended to describe current implementation, not all changes since an arbitrary
+historical point. If `--base-ref` produces more than 250 eligible committed code paths for an
+associated worktree, emBEADings excludes that committed diff and emits a warning. Current tracked and
+untracked working-tree paths remain eligible. Choose a current base reference to restore committed
+change evidence; do not accept a large pointer count as proof that worktree coverage improved. This
+is a volume circuit breaker, not proof that a base reference is current; the evaluator must still
+verify the intended integration base.
 
 Explicit-only paths or modules referenced by more than five active records are treated as hub
 surfaces: they are summarized once and cannot create an all-pairs warning fan-out on their own. A
@@ -181,7 +195,7 @@ repository; malformed, future-dated, or cross-workspace checkpoints fail closed.
 update timestamp are conservatively treated as changed.
 Sweeps keep their conservative similarity thresholds while allowing a narrow, corroborated exception
 band. Typed dependencies, completed-work echoes, and possible overlaps have separate deterministic
-budgets; dependency evidence is admitted first. Use `--exception-margin`, `--reciprocal-rank`,
+budgets. Use `--exception-margin`, `--reciprocal-rank`,
 `--max-candidates-per-issue`, `--max-dependency-candidates-per-issue`, `--max-candidates`, and the
 three `--max-*-candidates` lane controls to tune that policy. Lower-threshold sensitivity runs
 protect the candidates selected by the default
@@ -190,10 +204,14 @@ Reciprocal exceptions additionally require corpus-discriminative, field-aligned 
 reports expose bounded reason categories without copying matched terms. Stricter-threshold cap
 replacements include complete deterministic causal chains, including cross-lane endpoint cascades.
 For a smaller recurring queue, `--weekly-review-budget N` (also available as `--review-budget N`)
-applies a hard total candidate budget while retaining the independent dependency allowance. Selection
-is deterministic: typed dependencies are considered first, followed by high-confidence completed-work
-echoes and then possible overlaps. Reports record the applied budget, admitted total, and compact
-per-lane omission counts. The preset composes with both incremental scope flags.
+applies a hard total candidate budget and reserves access for every differentiated lane before the
+normal dependency → echo → overlap priority pass. For budgets of three or more, approximately 60% is
+reserved for typed dependencies, 20% for completed-work echoes, and 20% for no-edge overlaps. Unused
+reservations return to the common queue; they are minimum access, not quotas. A budget of one reserves
+the slot for overlap, and a budget of two reserves one dependency and one overlap. Reports record the
+reservation, admission-to-reservation, unused, and omitted counts per lane. Code-surface collision
+leads are reported separately and do not consume the semantic candidate budget. The preset composes
+with both incremental scope flags.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
 as no-signal, and epics are excluded by default; pass `--include-epics` when broad container records
@@ -211,7 +229,9 @@ Research notes:
 - [Anonymized aggregate findings from the first private pilot](docs/research/private-pilot-01.md)
 - [Aggregate findings from the first public code-surface pilot](docs/research/code-surface-public-eval-01.md)
 - [Aggregate findings from the private code-surface release gate](docs/research/code-surface-private-pilot-02.md)
+- [Aggregate findings from the first private Linear evaluation](docs/research/linear-private-pilot-01.md)
 - [Privacy-preserving private code-surface evaluation protocol](docs/evaluation-code-surfaces.md)
+- [Privacy-preserving Linear regression protocol](docs/evaluation-linear.md)
 - [Public synthetic warm-path performance benchmark](docs/performance.md)
 - [Safe offline evaluation and readiness checks](docs/evaluation.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)

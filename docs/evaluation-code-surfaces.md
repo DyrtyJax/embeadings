@@ -20,6 +20,12 @@ titles, descriptions, repository paths, symbols, snippets, branch names, or work
 Do not rename branches, edit issues, create repository files, or copy mappings into the evaluation
 report merely to improve association coverage.
 
+Every explicit mapping must name an active issue included in the evaluated population and a registered
+worktree. A mapping to a closed issue, excluded epic, or record outside the requested status scope is
+invalid; use the active implementation record actually responsible for the worktree. Treat the
+corrective error as a setup failure, not as evidence that the issue must be reopened or tracker state
+must be changed for the evaluator.
+
 If fewer than two worktrees contain genuine active implementation changes, stop before running
 `embead collisions`. Report only the aggregate worktree inventory, non-mutation checks, and the
 blocked gate. Do not map clean, merged, administrative, or reconstructed worktrees merely to satisfy
@@ -34,6 +40,14 @@ embead collisions --json --output /private/tmp/embead-collisions-repeat.json
 
 Add the same private `--worktree-map` flags to both commands when needed. Confirm the two outputs are
 byte-identical after excluding no fields; collision reports are deterministic.
+
+Use a base that represents the current integration point. If the selected `--base-ref` yields more
+than 250 eligible committed code paths for one associated worktree, emBEADings excludes that committed
+range and warns instead of turning a stale branch history into observed ownership. Tracked and
+untracked working-tree paths remain included. Record the aggregate excluded-path count and rerun with
+a current base; do not raise the pointer count by deliberately selecting an old reference. This is a
+volume circuit breaker for pathological ranges, not staleness detection. Independently verify that
+the selected base is the intended integration point even when the diff remains below the limit.
 
 Confirm `repository_context` is `invocation-worktree` and `repository_revision` equals the output of
 `git rev-parse HEAD` in the invoking worktree. Treat a silent mismatch as a release-blocking defect. A

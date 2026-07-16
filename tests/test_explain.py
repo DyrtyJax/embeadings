@@ -39,8 +39,8 @@ def test_completed_echo_names_fields_lifecycle_and_contract() -> None:
         "entity_class": "session",
         "entity": "session",
         "source_field": "title",
-        "confidence": "high",
-        "extraction_confidence": "high",
+        "confidence": "medium",
+        "extraction_confidence": "medium",
         "confidence_scope": "anchor-extraction",
         "specificity": "category-check",
         "check_category": "entity-category",
@@ -184,19 +184,46 @@ def test_ownership_requires_evidence_in_both_records() -> None:
     assert result["verification_anchor"]["check_category"] != "ownership-boundary"
 
 
-def test_safe_active_contract_survives_different_related_wording() -> None:
+def test_unshared_active_contract_does_not_masquerade_as_pair_evidence() -> None:
     result = explain_candidate(
         issue("active", title="Limit dependency queue"),
-        issue("related", title="Avoid too many linked work items"),
+        issue(
+            "related",
+            title="Avoid too many linked work items",
+            description="Unrelated lifecycle wording",
+            acceptance_criteria="Different outcome",
+        ),
         kind="possible-overlap",
         similarity=0.86,
         structural_context="dependency",
     )
 
-    assert result["verification_anchor"]["action"] == "limit"
-    assert result["verification_anchor"]["entity"] == "dependency"
-    assert result["verification_anchor"]["confidence"] == "medium"
-    assert result["verification_anchor"]["generic_fallback"] is False
+    assert result["verification_anchor"]["action"] == "compare"
+    assert result["verification_anchor"]["entity"] == "acceptance condition"
+    assert result["verification_anchor"]["confidence"] == "low"
+    assert result["verification_anchor"]["generic_fallback"] is True
+    assert "no candidate-specific contract was extracted" in result["what_to_verify"]
+    assert "not novel semantic evidence" in result["what_to_verify"]
+
+
+def test_pair_shared_field_wins_over_left_only_higher_priority_wording() -> None:
+    result = explain_candidate(
+        issue(
+            "active",
+            title="Render report",
+            acceptance_criteria="Authenticate session",
+        ),
+        issue("related", title="Render report", acceptance_criteria="Different requirement"),
+        kind="possible-overlap",
+        similarity=0.9,
+        structural_context="none recorded",
+    )
+
+    anchor = result["verification_anchor"]
+    assert anchor["source_field"] == "title"
+    assert anchor["action"] == "render"
+    assert anchor["entity"] == "report"
+    assert anchor["generic_fallback"] is False
 
 
 def test_evaluation_shaped_fixture_materially_reduces_generic_fallbacks() -> None:
@@ -288,7 +315,7 @@ def test_generic_anchor_abstains_from_concrete_claims() -> None:
     )
 
     assert result["verification_anchor"]["specificity"] == "generic"
-    assert "generic local comparison" in result["what_to_verify"]
+    assert "no candidate-specific contract was extracted" in result["what_to_verify"]
     assert "shared contract" not in result["what_to_verify"]
 
 
@@ -356,7 +383,7 @@ def test_anonymized_corpus_shapes_preserve_reviewable_categories() -> None:
     assert sum(anchor["specificity"] != "generic" for anchor in anchors) == len(fixtures)
     assert all(anchor["check_category"] != "unspecified" for anchor in anchors)
     assert all(
-        "category-level check" in prompt or "typed artifact check" in prompt for prompt in rendered
+        "shared category only" in prompt or "pair-corroborated" in prompt for prompt in rendered
     )
 
 

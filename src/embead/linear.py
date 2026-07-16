@@ -16,8 +16,9 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Final, TypeAlias
+from uuid import UUID
 
-from .models import DependencyLink, IssueRecord, WorkspaceSnapshot
+from .models import DependencyLink, IssueRecord, RelationDiagnostics, WorkspaceSnapshot
 from .trackers import TrackerError
 
 LINEAR_GRAPHQL_ENDPOINT: Final[str] = "https://api.linear.app/graphql"
@@ -42,6 +43,12 @@ query EmbeadLinearTeams($first: Int!, $after: String) {
     nodes { id key name }
     pageInfo { hasNextPage endCursor }
   }
+}
+"""
+
+_TEAM_BY_ID_QUERY = """
+query EmbeadLinearTeamById($id: String!) {
+  team(id: $id) { id key name }
 }
 """
 
@@ -185,6 +192,15 @@ class LinearAdapter:
         self._team = team.strip()
         self._transport = transport or _transport_from_environment()
         self._page_size = page_size
+        self._relation_diagnostics: RelationDiagnostics | None = None
+
+    @property
+    def relation_diagnostics(self) -> RelationDiagnostics:
+        """Return relation-funnel diagnostics after :meth:`load` completes."""
+
+        if self._relation_diagnostics is None:
+            raise LinearError("Linear relation diagnostics are available only after load")
+        return self._relation_diagnostics
 
     def _query(self, query: str, variables: Mapping[str, Any]) -> Mapping[str, Any]:
         if not query.lstrip().startswith("query "):
@@ -235,6 +251,16 @@ class LinearAdapter:
         if not isinstance(organization, Mapping):
             raise LinearError("Linear response contains no organization")
         organization_id = _required_string(organization, "id", subject="organization")
+        team_uuid = _canonical_uuid(self._team)
+        if team_uuid is not None:
+            payload = self._query(_TEAM_BY_ID_QUERY, {"id": team_uuid})
+            team = payload.get("team")
+            if not isinstance(team, Mapping):
+                raise LinearError("Linear response contains no team for the requested ID")
+            resolved_id = _required_string(team, "id", subject="team")
+            if resolved_id.casefold() != team_uuid:
+                raise LinearError("Linear team ID lookup returned a different team")
+            return organization_id, team
         teams = self._paginate(_TEAMS_QUERY, "teams")
         needle = self._team.casefold()
         matches = [
@@ -257,7 +283,7 @@ class LinearAdapter:
         raw_issues = self._paginate(_ISSUES_QUERY, "issues", {"teamId": team_id})
         base_records, truncated_labels = _parse_issues(raw_issues)
         raw_relations = self._paginate(_RELATIONS_QUERY, "issueRelations")
-        links_by_source, outside_count, collapsed_count = _canonical_relations(
+        links_by_source, relation_diagnostics = _canonical_relations(
             raw_relations,
             frozenset(record.id for record in base_records),
         )
@@ -272,19 +298,21 @@ class LinearAdapter:
         relationship_types = Counter(
             link.relationship_type for record in records for link in record.dependency_links
         )
+        if tuple(sorted(relationship_types.items())) != relation_diagnostics.retained_type_counts:
+            raise LinearError("Linear relation accounting did not conserve retained types")
+        self._relation_diagnostics = relation_diagnostics
         warnings: list[str] = []
         if truncated_labels:
             warnings.append(
                 "Linear labels exceeded the per-issue safety bound on one or more records."
             )
-        if outside_count:
+        if relation_diagnostics.omitted_relation_count:
+            warnings.append(_external_relation_warning(relation_diagnostics))
+        if relation_diagnostics.collapsed_relation_count:
             warnings.append(
-                f"Linear omitted {outside_count} relation(s) with endpoints outside the "
-                "selected team."
-            )
-        if collapsed_count:
-            warnings.append(
-                f"Linear canonicalized {collapsed_count} redundant relation edge(s) by issue pair."
+                "Linear canonicalized "
+                f"{relation_diagnostics.collapsed_relation_count} redundant relation edge(s) "
+                "by issue pair."
             )
         identity = hashlib.sha256(f"linear:{organization_id}:{team_id}".encode()).hexdigest()
         snapshot = WorkspaceSnapshot(
@@ -296,6 +324,7 @@ class LinearAdapter:
             acquisition_source="linear-graphql-api",
             live_issue_count=len(records),
             source_warnings=tuple(warnings),
+            relation_diagnostics=relation_diagnostics,
             tracker_name="linear",
             tracker_version=LINEAR_TRACKER_VERSION,
         )
@@ -307,6 +336,18 @@ def _required_string(value: Mapping[str, Any], key: str, *, subject: str) -> str
     if not isinstance(candidate, str) or not candidate.strip():
         raise LinearError(f"Linear {subject} contains no valid {key}")
     return candidate.strip()
+
+
+def _canonical_uuid(value: str) -> str | None:
+    """Return a canonical UUID selector without treating keys/names as IDs."""
+
+    candidate = value.strip().casefold()
+    try:
+        parsed = UUID(candidate)
+    except ValueError:
+        return None
+    canonical = str(parsed)
+    return canonical if candidate == canonical else None
 
 
 def _parse_issues(raw_issues: Sequence[Mapping[str, Any]]) -> tuple[tuple[IssueRecord, ...], int]:
@@ -381,10 +422,13 @@ def _status_from_state(value: str) -> str:
 
 def _canonical_relations(
     raw_relations: Sequence[Mapping[str, Any]], issue_ids: frozenset[str]
-) -> tuple[dict[str, tuple[DependencyLink, ...]], int, int]:
+) -> tuple[dict[str, tuple[DependencyLink, ...]], RelationDiagnostics]:
     selected: dict[tuple[str, str], tuple[int, str, str, str]] = {}
-    outside_count = 0
     collapsed_count = 0
+    omitted_types: Counter[str] = Counter()
+    outbound_boundary_types: Counter[str] = Counter()
+    inbound_boundary_types: Counter[str] = Counter()
+    unrelated_external_types: Counter[str] = Counter()
     for raw in raw_relations:
         source_value = raw.get("issue")
         target_value = raw.get("relatedIssue")
@@ -398,8 +442,16 @@ def _canonical_relations(
         relationship_type = _RELATION_TYPES.get(raw_type)
         if relationship_type is None:
             raise LinearError("Linear issue relation contains an unsupported type")
-        if source not in issue_ids or target not in issue_ids:
-            outside_count += 1
+        source_selected = source in issue_ids
+        target_selected = target in issue_ids
+        if not source_selected or not target_selected:
+            omitted_types[relationship_type] += 1
+            if source_selected:
+                outbound_boundary_types[relationship_type] += 1
+            elif target_selected:
+                inbound_boundary_types[relationship_type] += 1
+            else:
+                unrelated_external_types[relationship_type] += 1
             continue
         if relationship_type in _SYMMETRIC_RELATIONS and target < source:
             source, target = target, source
@@ -421,4 +473,45 @@ def _canonical_relations(
                 key=lambda link: (link.target_id, link.relationship_type, link.source_id),
             )
         )
-    return result, outside_count, collapsed_count
+    retained_types = Counter(candidate[3] for candidate in selected.values())
+    boundary_count = sum(outbound_boundary_types.values()) + sum(inbound_boundary_types.values())
+    omitted_count = sum(omitted_types.values())
+    diagnostics = RelationDiagnostics(
+        raw_relation_count=len(raw_relations),
+        retained_relation_count=len(selected),
+        retained_type_counts=tuple(sorted(retained_types.items())),
+        collapsed_relation_count=collapsed_count,
+        omitted_relation_count=omitted_count,
+        omitted_type_counts=tuple(sorted(omitted_types.items())),
+        boundary_relation_count=boundary_count,
+        outbound_boundary_type_counts=tuple(sorted(outbound_boundary_types.items())),
+        inbound_boundary_type_counts=tuple(sorted(inbound_boundary_types.items())),
+        unrelated_external_relation_count=sum(unrelated_external_types.values()),
+        unrelated_external_type_counts=tuple(sorted(unrelated_external_types.items())),
+    )
+    if diagnostics.raw_relation_count != (
+        diagnostics.retained_relation_count
+        + diagnostics.collapsed_relation_count
+        + diagnostics.omitted_relation_count
+    ):
+        raise LinearError("Linear relation accounting did not conserve the raw relation count")
+    return result, diagnostics
+
+
+def _external_relation_warning(diagnostics: RelationDiagnostics) -> str:
+    omitted_types = _format_type_counts(diagnostics.omitted_type_counts)
+    outbound_types = _format_type_counts(diagnostics.outbound_boundary_type_counts)
+    inbound_types = _format_type_counts(diagnostics.inbound_boundary_type_counts)
+    unrelated_types = _format_type_counts(diagnostics.unrelated_external_type_counts)
+    return (
+        f"Linear omitted {diagnostics.omitted_relation_count} workspace relation(s) outside "
+        f"the selected team: {diagnostics.boundary_relation_count} cross the team boundary "
+        f"(selected-to-external: {outbound_types}; external-to-selected: {inbound_types}) and "
+        f"{diagnostics.unrelated_external_relation_count} have neither endpoint in the team "
+        f"({unrelated_types}); omitted types: {omitted_types}. External endpoint records are "
+        "not fetched."
+    )
+
+
+def _format_type_counts(counts: tuple[tuple[str, int], ...]) -> str:
+    return ", ".join(f"{kind}={count}" for kind, count in counts) or "none"

@@ -78,6 +78,13 @@ def test_neighbors_markdown_uses_generic_tracker_metadata() -> None:
             "beads_version": None,
             "tracker_name": "linear",
             "tracker_version": "graphql-current",
+            "relation_diagnostics": {
+                "raw_relation_count": 502,
+                "retained_relation_count": 400,
+                "collapsed_relation_count": 0,
+                "omitted_relation_count": 102,
+                "boundary_relation_count": 102,
+            },
         },
         model=MODEL,
         cache=CACHE,
@@ -86,6 +93,7 @@ def test_neighbors_markdown_uses_generic_tracker_metadata() -> None:
     markdown = render_neighbors_markdown(payload)
 
     assert "(linear `graphql-current`)" in markdown
+    assert "raw=502, retained=400, collapsed=0, omitted=102, team-boundary=102" in markdown
     assert "Beads `None`" not in markdown
 
 

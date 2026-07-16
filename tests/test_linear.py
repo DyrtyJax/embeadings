@@ -10,6 +10,8 @@ from embead.analysis import SimilarityIndex
 from embead.linear import LinearAdapter, LinearError, _HTTPTransport, _transport_from_environment
 from embead.ranking import CandidatePolicy, rank_candidates
 
+TEAM_UUID = "123e4567-e89b-12d3-a456-426614174000"
+
 
 def _issue(
     identifier: str,
@@ -46,6 +48,9 @@ class FakeTransport:
         cursor = values.get("after")
         if "EmbeadLinearContext" in query:
             return {"organization": {"id": "org-1"}}
+        if "EmbeadLinearTeamById" in query:
+            assert values == {"id": TEAM_UUID}
+            return {"team": {"id": TEAM_UUID, "key": "ENG", "name": "Engineering"}}
         if "EmbeadLinearTeams" in query:
             if cursor is None:
                 return {
@@ -56,12 +61,12 @@ class FakeTransport:
                 }
             return {
                 "teams": {
-                    "nodes": [{"id": "team-1", "key": "ENG", "name": "Engineering"}],
+                    "nodes": [{"id": TEAM_UUID, "key": "ENG", "name": "Engineering"}],
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                 }
             }
         if "EmbeadLinearIssues" in query:
-            assert values["teamId"] == "team-1"
+            assert values["teamId"] == TEAM_UUID
             if cursor is None:
                 return {
                     "issues": {
@@ -95,6 +100,8 @@ class FakeTransport:
                     "nodes": [
                         _relation("ENG-3", "ENG-1", "related"),
                         _relation("ENG-1", "OPS-9", "related"),
+                        _relation("OPS-10", "ENG-2", "blocks"),
+                        _relation("OPS-10", "OPS-11", "similar"),
                     ],
                     "pageInfo": {"hasNextPage": False, "endCursor": None},
                 }
@@ -113,8 +120,11 @@ def _relation(source: str, target: str, kind: str) -> dict[str, Any]:
 
 def test_linear_adapter_pages_maps_and_canonicalizes_relations() -> None:
     transport = FakeTransport()
+    adapter = LinearAdapter(team="eng", transport=transport, page_size=2)
 
-    snapshot, records = LinearAdapter(team="eng", transport=transport, page_size=2).load()
+    with pytest.raises(LinearError, match="only after load"):
+        _ = adapter.relation_diagnostics
+    snapshot, records = adapter.load()
 
     assert snapshot.tracker_name == "linear"
     assert snapshot.tracker_version == "graphql-current"
@@ -122,10 +132,33 @@ def test_linear_adapter_pages_maps_and_canonicalizes_relations() -> None:
     assert snapshot.live_issue_count == 3
     assert snapshot.dependency_count == 2
     assert snapshot.dependency_type_counts == (("blocks", 1), ("relates-to", 1))
+    assert snapshot.relation_diagnostics == adapter.relation_diagnostics
+    assert snapshot.relation_diagnostics.omitted_relation_count == 3
     assert snapshot.source_warnings == (
-        "Linear omitted 1 relation(s) with endpoints outside the selected team.",
+        "Linear omitted 3 workspace relation(s) outside the selected team: 2 cross the team "
+        "boundary (selected-to-external: relates-to=1; external-to-selected: blocks=1) and "
+        "1 have neither endpoint in the team (similar-to=1); omitted types: blocks=1, "
+        "relates-to=1, similar-to=1. External endpoint records are not fetched.",
         "Linear canonicalized 2 redundant relation edge(s) by issue pair.",
     )
+    assert adapter.relation_diagnostics.raw_relation_count == 7
+    assert adapter.relation_diagnostics.retained_relation_count == 2
+    assert adapter.relation_diagnostics.retained_type_counts == (
+        ("blocks", 1),
+        ("relates-to", 1),
+    )
+    assert adapter.relation_diagnostics.collapsed_relation_count == 2
+    assert adapter.relation_diagnostics.omitted_relation_count == 3
+    assert adapter.relation_diagnostics.omitted_type_counts == (
+        ("blocks", 1),
+        ("relates-to", 1),
+        ("similar-to", 1),
+    )
+    assert adapter.relation_diagnostics.boundary_relation_count == 2
+    assert adapter.relation_diagnostics.outbound_boundary_type_counts == (("relates-to", 1),)
+    assert adapter.relation_diagnostics.inbound_boundary_type_counts == (("blocks", 1),)
+    assert adapter.relation_diagnostics.unrelated_external_relation_count == 1
+    assert adapter.relation_diagnostics.unrelated_external_type_counts == (("similar-to", 1),)
     by_id = {record.id: record for record in records}
     assert by_id["ENG-1"].status == "closed"
     assert by_id["ENG-1"].labels == ("Backend",)
@@ -158,6 +191,16 @@ def test_linear_adapter_pages_maps_and_canonicalizes_relations() -> None:
 def test_linear_adapter_resolves_exact_team_name() -> None:
     snapshot, _ = LinearAdapter(team="Engineering", transport=FakeTransport(), page_size=2).load()
     assert snapshot.tracker_name == "linear"
+
+
+def test_linear_adapter_resolves_exact_team_uuid_without_listing_teams() -> None:
+    transport = FakeTransport()
+
+    snapshot, _ = LinearAdapter(team=TEAM_UUID.upper(), transport=transport, page_size=2).load()
+
+    assert snapshot.tracker_name == "linear"
+    assert sum("EmbeadLinearTeamById" in query for query, _ in transport.calls) == 1
+    assert sum("EmbeadLinearTeams" in query for query, _ in transport.calls) == 0
 
 
 def test_linear_adapter_rejects_non_advancing_pagination() -> None:

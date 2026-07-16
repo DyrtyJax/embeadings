@@ -372,6 +372,13 @@ def test_sweep_rejects_invalid_candidate_volume_controls(monkeypatch, tmp_path, 
     assert "run candidate cap must be positive" in capsys.readouterr().err
 
 
+def test_review_lane_reservations_respect_explicit_lane_caps() -> None:
+    assert cli._review_lane_reservations(
+        20,
+        {"dependency": 3, "echo": 2, "overlap": 0},
+    ) == {"dependency": 3, "echo": 2, "overlap": 0}
+
+
 def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
     monkeypatch, tmp_path, capsys
 ) -> None:
@@ -389,6 +396,11 @@ def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
         assert kwargs["eligible_issue_ids"] == {"changed"}
         assert kwargs["max_candidates"] == 2
         assert kwargs["max_dependency_candidates_per_issue"] == 7
+        assert kwargs["lane_reservations"] == {
+            "dependency": 1,
+            "echo": 0,
+            "overlap": 1,
+        }
         return CandidateRanking(
             candidates=(
                 {
@@ -410,9 +422,19 @@ def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
             dropped_by_issue_cap=0,
             dropped_by_run_cap=1,
             lanes={
-                "dependency": LaneMetrics(qualified=1, admitted=1),
+                "dependency": LaneMetrics(
+                    qualified=1,
+                    admitted=1,
+                    reserved=1,
+                    admitted_to_reservation=1,
+                ),
                 "echo": LaneMetrics(qualified=1, admitted=1),
-                "overlap": LaneMetrics(qualified=1, dropped_by_run_cap=1),
+                "overlap": LaneMetrics(
+                    qualified=1,
+                    dropped_by_run_cap=1,
+                    reserved=1,
+                    unused_reserved=1,
+                ),
             },
         )
 
@@ -451,6 +473,14 @@ def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
         "mode": "weekly",
         "omitted_by_lane": {"dependency": 0, "echo": 0, "overlap": 1},
         "omitted_candidates": 1,
+        "code_surface_scope": "outside-semantic-candidate-limit",
+        "lane_capacity": {
+            "dependency": {"admitted_to_reservation": 1, "reserved": 1, "unused": 0},
+            "echo": {"admitted_to_reservation": 0, "reserved": 0, "unused": 0},
+            "overlap": {"admitted_to_reservation": 0, "reserved": 1, "unused": 1},
+        },
+        "reservation_order": ["dependency", "echo", "overlap"],
+        "selection_policy": "reserved-lane-access-then-priority-reflow",
         "priority_order": [
             "typed-dependency",
             "high-confidence-completed-work-echo",
@@ -460,6 +490,8 @@ def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
     markdown = (tmp_path / "weekly" / "report.md").read_text()
     assert "Mode: weekly" in markdown
     assert "Omitted by lane: dependency=0, echo=0, overlap=1" in markdown
+    assert "Dependency: 1 reserved; 1 admitted to reservation; 0 unused" in markdown
+    assert "Code-surface leads: separately prioritized outside" in markdown
 
 
 def test_ranked_candidates_keep_structural_admission_and_specific_explanation() -> None:

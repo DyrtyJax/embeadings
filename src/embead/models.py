@@ -22,6 +22,23 @@ class DependencyLink:
 
 
 @dataclass(frozen=True, slots=True)
+class RelationDiagnostics:
+    """Conserved accounting for tracker relations retained or omitted at a scope boundary."""
+
+    raw_relation_count: int
+    retained_relation_count: int
+    retained_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    collapsed_relation_count: int = 0
+    omitted_relation_count: int = 0
+    omitted_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    boundary_relation_count: int = 0
+    outbound_boundary_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    inbound_boundary_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    unrelated_external_relation_count: int = 0
+    unrelated_external_type_counts: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True, slots=True)
 class IssueRecord:
     """The tracker fields used by semantic and structural analysis."""
 
@@ -57,6 +74,7 @@ class WorkspaceSnapshot:
     export_source_digest: str | None = None
     source_divergence_reasons: tuple[str, ...] = field(default_factory=tuple)
     source_warnings: tuple[str, ...] = field(default_factory=tuple)
+    relation_diagnostics: RelationDiagnostics | None = None
     tracker_name: str = "beads"
     tracker_version: str = ""
 

@@ -387,6 +387,7 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     export_count = _field(snapshot, "export_issue_count", default=None)
     divergence_reasons = _field(snapshot, "source_divergence_reasons", default=[]) or []
     warnings = _field(snapshot, "source_warnings", default=[]) or []
+    relation_diagnostics = _field(snapshot, "relation_diagnostics", default={}) or {}
     lines = [
         f"- Workspace snapshot: `{_escape(workspace)}` "
         f"({_escape(tracker_name)} `{_escape(tracker_version)}`)",
@@ -400,6 +401,15 @@ def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
         lines.append(
             "- Source divergence categories: "
             + ", ".join(f"`{_escape(reason)}`" for reason in divergence_reasons)
+        )
+    if relation_diagnostics:
+        lines.append(
+            "- Source relation accounting: "
+            f"raw={_field(relation_diagnostics, 'raw_relation_count', default=0)}, "
+            f"retained={_field(relation_diagnostics, 'retained_relation_count', default=0)}, "
+            f"collapsed={_field(relation_diagnostics, 'collapsed_relation_count', default=0)}, "
+            f"omitted={_field(relation_diagnostics, 'omitted_relation_count', default=0)}, "
+            f"team-boundary={_field(relation_diagnostics, 'boundary_relation_count', default=0)}"
         )
     lines.extend(f"- Source warning: {_escape(warning)}" for warning in warnings)
     return lines
@@ -796,6 +806,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     if review_budget:
         priority = " → ".join(_field(review_budget, "priority_order", default=[]) or [])
         omitted_by_lane = _field(review_budget, "omitted_by_lane", default={}) or {}
+        lane_capacity = _field(review_budget, "lane_capacity", default={}) or {}
         lines.extend(
             [
                 "## Review budget",
@@ -807,7 +818,9 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 + str(_field(review_budget, "admitted_candidates", default=len(candidates))),
                 "- Omitted by total budget: "
                 + str(_field(review_budget, "omitted_candidates", default=0)),
-                f"- Priority: {_escape(priority or 'not recorded')}",
+                "- Selection: reserved lane access, then unused-capacity reflow",
+                f"- Reflow priority: {_escape(priority or 'not recorded')}",
+                "- Code-surface leads: separately prioritized outside the semantic candidate limit",
                 "- Omitted by lane: "
                 + ", ".join(
                     f"{lane}={_field(omitted_by_lane, lane, default=0)}"
@@ -816,6 +829,18 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 "",
             ]
         )
+        if lane_capacity:
+            lines.extend(["### Reserved lane capacity", ""])
+            for lane in ("dependency", "echo", "overlap"):
+                capacity = _field(lane_capacity, lane, default={}) or {}
+                lines.append(
+                    f"- {lane.capitalize()}: "
+                    f"{_field(capacity, 'reserved', default=0)} reserved; "
+                    f"{_field(capacity, 'admitted_to_reservation', default=0)} admitted to "
+                    "reservation; "
+                    f"{_field(capacity, 'unused', default=0)} unused"
+                )
+            lines.append("")
     lines.extend(["## Candidate lanes", ""])
     if lane_metrics:
         for lane in ("dependency", "echo", "overlap"):

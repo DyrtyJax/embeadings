@@ -51,6 +51,21 @@ embead sweep --objective overlap --objective echo --semantic-view fields
 embead sweep --objective structure
 ```
 
+### Development in Git worktrees
+
+Every checkout must own its virtual environment. From a new clone or worktree, run:
+
+```bash
+python3 scripts/worktree_env.py
+. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python scripts/validate.py
+```
+
+The bootstrap refuses to reuse an active virtual environment from another checkout. Validation also
+checks the editable `embead` import target before running tests, so a shared environment cannot
+silently execute code from a sibling worktree. CI and release environments may use immutable wheel
+installs instead of an editable checkout.
+
 ### Use a Linear team
 
 Create a personal API key in Linear's Security & access settings, keep it out of shell history, and

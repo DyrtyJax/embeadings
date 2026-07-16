@@ -239,6 +239,56 @@ def test_parent_child_is_counterevidence_not_an_exception() -> None:
     assert above["admission_reason"] == "semantic-threshold"
     assert "parent/child scope" in above["counterevidence"]
 
+    explicit_overlap = rank_candidates(
+        below,
+        below,
+        Scores({("A", "B"): 0.85}),
+        policy(objectives=frozenset({"overlap"})),
+    )
+    assert explicit_overlap.candidates == ()
+
+
+def test_echo_target_cap_backfills_with_next_qualified_completed_record() -> None:
+    active = [issue(identifier) for identifier in "ABCD"]
+    closed = [issue(identifier, status="closed") for identifier in "XYZ"]
+    scores = Scores(
+        {
+            ("A", "X"): 0.99,
+            ("A", "Y"): 0.81,
+            ("B", "X"): 0.98,
+            ("B", "Y"): 0.82,
+            ("C", "X"): 0.97,
+            ("C", "Y"): 0.96,
+            ("D", "Z"): 0.95,
+        }
+    )
+
+    result = rank_candidates(
+        active,
+        [*active, *closed],
+        scores,
+        policy(
+            objectives=frozenset({"echo"}),
+            max_echoes_per_target=2,
+            max_per_issue=10,
+            max_total=4,
+        ),
+    )
+
+    assert [
+        (candidate["issue_id"], candidate["related_issue_id"]) for candidate in result.candidates
+    ] == [("A", "X"), ("B", "X"), ("C", "Y"), ("D", "Z")]
+    assert result.dropped_by_echo_target_cap == 1
+    assert result.lanes["echo"].dropped_by_target_cap == 1
+    assert result.echo_target_hubs == (
+        {
+            "related_issue_id": "X",
+            "qualified": 3,
+            "admitted": 2,
+            "omitted_by_target_cap": 1,
+        },
+    )
+
 
 def test_reciprocal_neighbor_rank_admits_exception() -> None:
     issues = [
@@ -321,6 +371,8 @@ def test_policy_rejects_unbounded_or_invalid_controls() -> None:
     for bad_policy in (
         policy(max_total=0),
         policy(max_per_issue=0),
+        policy(max_echoes_per_target=0),
+        policy(max_echo_alternatives_per_active=0),
         policy(reciprocal_rank=-1),
         policy(exception_margin=-0.1),
         policy(max_dependencies=-1),

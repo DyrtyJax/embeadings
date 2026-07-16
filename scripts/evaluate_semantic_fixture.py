@@ -20,7 +20,7 @@ def _parser() -> argparse.ArgumentParser:
         "fixture",
         nargs="?",
         type=Path,
-        default=Path("tests/fixtures/semantic-hard-negatives-v1.json"),
+        default=Path("tests/fixtures/semantic-hard-negatives-v2.json"),
     )
     parser.add_argument("--provider", choices=("hashing", "model2vec"), default="hashing")
     return parser

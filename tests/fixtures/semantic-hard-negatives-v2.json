@@ -1,5 +1,5 @@
 {
-  "fixture_version": 1,
+  "fixture_version": 2,
   "issues": [
     {
       "id": "syn-arg-build",
@@ -57,6 +57,49 @@
       "description": "Edit docs/release-runbook.md to document rollback verification.",
       "acceptance_criteria": "The runbook contains the new rollback procedure.",
       "status": "open"
+    },
+    {
+      "id": "syn-impact-program",
+      "title": "Coordinate community impact reporting",
+      "description": "Track the broad delivery plan for community impact reporting work.",
+      "acceptance_criteria": "Child work covers each approved impact measure.",
+      "status": "open"
+    },
+    {
+      "id": "syn-impact-metrics",
+      "title": "Add pallet diversion impact metrics",
+      "description": "Calculate pallet diversion totals in the community impact report.",
+      "acceptance_criteria": "The report displays monthly diverted-pallet totals.",
+      "parent_id": "syn-impact-program",
+      "status": "open"
+    },
+    {
+      "id": "syn-rollout-api",
+      "title": "Add staged rollout guards to API mutations",
+      "description": "Gate mutation traffic by rollout cohort and record rejected transitions.",
+      "acceptance_criteria": "Disabled cohorts cannot execute guarded mutations.",
+      "status": "open"
+    },
+    {
+      "id": "syn-rollout-comms",
+      "title": "Draft rollout stakeholder communications",
+      "description": "Prepare the announcement schedule and stakeholder contact list.",
+      "acceptance_criteria": "Owners approve the communication calendar.",
+      "status": "open"
+    },
+    {
+      "id": "syn-rollout-accessibility",
+      "title": "Audit rollout accessibility checklist",
+      "description": "Review keyboard and screen-reader checks before the staged launch.",
+      "acceptance_criteria": "Every accessibility check has an owner and result.",
+      "status": "open"
+    },
+    {
+      "id": "syn-rollout-closed",
+      "title": "Complete rollout framework",
+      "description": "Established the shared staged-rollout process and launch checklist.",
+      "acceptance_criteria": "Teams can plan and execute a staged rollout.",
+      "status": "closed"
     }
   ],
   "judgments": [
@@ -101,6 +144,34 @@
       "objective": "collision",
       "rating": 1,
       "reason": "reference-versus-edit-intent"
+    },
+    {
+      "left": "syn-impact-program",
+      "right": "syn-impact-metrics",
+      "objective": "overlap",
+      "rating": 0,
+      "reason": "direct-parent-child-known-structure"
+    },
+    {
+      "left": "syn-rollout-api",
+      "right": "syn-rollout-closed",
+      "objective": "echo",
+      "rating": 1,
+      "reason": "generic-completed-context"
+    },
+    {
+      "left": "syn-rollout-comms",
+      "right": "syn-rollout-closed",
+      "objective": "echo",
+      "rating": 0,
+      "reason": "repeated-closed-target-hub"
+    },
+    {
+      "left": "syn-rollout-accessibility",
+      "right": "syn-rollout-closed",
+      "objective": "echo",
+      "rating": 0,
+      "reason": "repeated-closed-target-hub"
     }
   ]
 }

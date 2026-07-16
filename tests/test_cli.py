@@ -227,6 +227,8 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema_version"] == 1
     assert payload["parameters"]["candidate_policy"]["max_per_issue"] == 3
+    assert payload["parameters"]["candidate_policy"]["max_echoes_per_target"] == 2
+    assert payload["parameters"]["candidate_policy"]["max_echo_alternatives_per_active"] == 3
     assert payload["parameters"]["candidate_policy"]["max_dependencies_per_issue"] == 3
     assert payload["parameters"]["candidate_policy"]["max_total"] == 250
     assert payload["parameters"]["candidate_policy"]["lane_caps"] == {
@@ -413,6 +415,14 @@ def test_sweep_rejects_invalid_candidate_volume_controls(monkeypatch, tmp_path, 
 
     assert "run candidate cap must be positive" in capsys.readouterr().err
 
+    assert cli.main(["sweep", "--max-echoes-per-target", "0", "--json"]) == 2
+
+    assert "completed-target echo cap must be positive" in capsys.readouterr().err
+
+    assert cli.main(["sweep", "--max-echo-alternatives-per-active", "0", "--json"]) == 2
+
+    assert "per-active echo alternative cap must be positive" in capsys.readouterr().err
+
 
 def test_review_lane_reservations_respect_explicit_lane_caps() -> None:
     assert cli._review_lane_reservations(
@@ -438,6 +448,8 @@ def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
         assert kwargs["eligible_issue_ids"] == {"changed"}
         assert kwargs["max_candidates"] == 2
         assert kwargs["max_dependency_candidates_per_issue"] == 7
+        assert kwargs["max_echoes_per_target"] == 1
+        assert kwargs["max_echo_alternatives_per_active"] == 2
         assert kwargs["lane_reservations"] == {
             "dependency": 1,
             "echo": 0,
@@ -495,6 +507,10 @@ def test_weekly_budget_composes_with_incremental_scope_and_dependency_allowance(
                 "2",
                 "--max-dependency-candidates-per-issue",
                 "7",
+                "--max-echoes-per-target",
+                "1",
+                "--max-echo-alternatives-per-active",
+                "2",
                 "--changed-since",
                 "2026-07-10T00:00:00Z",
                 "--output",

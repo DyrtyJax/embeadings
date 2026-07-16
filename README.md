@@ -221,8 +221,8 @@ with both incremental scope flags.
 
 ### Experimental objective and field-aware retrieval
 
-The default sweep retains the stable v0.3 behavior. Passing one or more `--objective` flags enables
-the retrieve–verify evaluation contract:
+Omitting `--objective` retains the legacy lane semantics. Passing one or more `--objective` flags
+enables the retrieve–verify evaluation contract:
 
 - `overlap` searches active work for semantic scope overlap;
 - `echo` searches active work against completed work;
@@ -231,7 +231,17 @@ the retrieve–verify evaluation contract:
 
 When `structure` is omitted, a typed dependency may annotate an overlap or echo but cannot take the
 dependency lane or admit a below-threshold pair. This prevents known graph edges from consuming a
-novel-discovery budget. `--semantic-view fields` is also experimental: it retains the whole-record
+novel-discovery budget. Explicit `overlap` reviews also exclude direct parent/child pairs: the known
+hierarchy remains tracker context, but does not consume a semantic-discovery slot.
+
+Completed-work echoes admit at most two candidates pointing to the same closed record by default.
+Use `--max-echoes-per-target` to tune that deterministic diversity cap. When a target reaches the
+cap, the selector considers the next qualified completed record for the active issue; JSON and
+Markdown report the repeated target, qualified/admitted counts, and omissions without including
+issue text. At most three qualified fallback echoes are retained per active issue by default; tune
+that bounded pool with `--max-echo-alternatives-per-active`.
+
+`--semantic-view fields` is experimental: it retains the whole-record
 vector and adds separate title, description, acceptance-criteria, and design vectors. Notes remain in
 the whole-record representation but are excluded from field-local retrieval. Candidate JSON and
 Markdown record the selected objective, every contributing channel, its pair score, both directional
@@ -247,7 +257,8 @@ python scripts/evaluate_semantic_fixture.py --provider model2vec
 ```
 
 The fixture contains sanitized same-token/different-intent, shared-subsystem, completed-invariant,
-and reference-versus-edit cases. Generic embedding benchmarks are insufficient release evidence.
+reference-versus-edit, direct-hierarchy, and repeated-closed-target hub cases. Generic embedding
+benchmarks are insufficient release evidence.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
 as no-signal, and epics are excluded by default; pass `--include-epics` when broad container records
@@ -272,6 +283,7 @@ Research notes:
 - [Safe offline evaluation and readiness checks](docs/evaluation.md)
 - [Retrieve–verify research synthesis](docs/research/retrieve-verify-context-2026.md)
 - [First retrieve–verify public regression](docs/research/retrieve-verify-public-regression-01.md)
+- [Second retrieve–verify private regression](docs/research/retrieve-verify-private-regression-02.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)
 - [Version 1 JSON Schemas](schemas/v1/) and [synthetic examples](examples/)
 

@@ -783,6 +783,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     incremental_scope = _field(filters, "incremental_scope", default={}) or {}
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
     dependency_funnel = _field(candidate_policy, "dependency_funnel", default={}) or {}
+    echo_target_hubs = _field(candidate_policy, "echo_target_hubs", default=[]) or []
     review_budget = _field(candidate_policy, "review_budget", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
@@ -878,7 +879,10 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 f"- {lane.capitalize()}: {_field(metrics, 'admitted', default=0)} admitted / "
                 f"{_field(metrics, 'qualified', default=0)} qualified; "
                 f"{_field(metrics, 'dropped_by_lane_cap', default=0)} dropped by lane budget; "
-                f"{_field(metrics, 'dropped_by_issue_cap', default=0)} dropped by per-issue budget"
+                f"{_field(metrics, 'dropped_by_issue_cap', default=0)} dropped by per-issue "
+                "budget; "
+                f"{_field(metrics, 'dropped_by_target_cap', default=0)} dropped by echo-target "
+                "diversity"
             )
         dependency_metrics = _field(lane_metrics, "dependency", default={}) or {}
         lines.append(
@@ -891,6 +895,15 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         )
     else:
         lines.append("Lane metrics were not recorded by this producer.")
+    if echo_target_hubs:
+        lines.extend(["", "### Repeated completed targets", ""])
+        for hub in echo_target_hubs:
+            lines.append(
+                f"- `{_escape(_field(hub, 'related_issue_id', default='unknown'))}`: "
+                f"{_field(hub, 'qualified', default=0)} qualified; "
+                f"{_field(hub, 'admitted', default=0)} admitted; "
+                f"{_field(hub, 'omitted_by_target_cap', default=0)} omitted by diversity cap"
+            )
     lines.extend(["", "## Typed dependency funnel", ""])
     if dependency_funnel:
         total = _field(dependency_funnel, "total_non_parent_typed", default=0)

@@ -144,6 +144,10 @@ Explicit mappings must name an active record in the evaluated population and a r
 an excluded epic, closed record, or record filtered out by the current status scope fails with a
 corrective error instead of silently supplying evidence.
 
+Default collision review covers `open`, `in_progress`, and `blocked` work because those records may
+participate in current implementation. Deferred work remains available explicitly with
+`--status deferred`, but it is not treated as concurrent work merely because it is non-closed.
+
 `embead collisions` does not load an embedding model. It reports exact-file leads and shared-module
 leads backed by at least one observed active-worktree pointer, together with evidence source,
 confidence, and revision relation. Explicit-only shared-module pairs are counted but omitted from the

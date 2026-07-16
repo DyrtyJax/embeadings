@@ -9,6 +9,17 @@ description = "Read-only semantic neighborhoods and coordination review for work
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [{ name = "Jackson Cantrell" }]
+keywords = ["beads", "linear", "semantic-search", "triage", "developer-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
   "filelock>=3.16,<4",
   "huggingface-hub>=1.0,<2",
@@ -30,6 +41,12 @@ benchmark = [
 
 [project.scripts]
 embead = "embead.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/DyrtyJax/embeadings"
+Documentation = "https://github.com/DyrtyJax/embeadings#readme"
+Issues = "https://github.com/DyrtyJax/embeadings/issues"
+Repository = "https://github.com/DyrtyJax/embeadings.git"
 
 [tool.hatch.version]
 path = "src/embead/_version.py"

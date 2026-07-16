@@ -19,7 +19,8 @@ dependency graph.
 Python 3.11 or later is required. The default Beads source also requires an installed `bd` CLI.
 
 ```bash
-python -m pip install -e .
+python -m pip install \
+  "https://github.com/DyrtyJax/embeadings/releases/download/v0.4.0/embeadings-0.4.0-py3-none-any.whl"
 embead doctor
 embead triage
 embead neighbors ISSUE_ID --include-closed
@@ -50,6 +51,9 @@ embead sweep --objective overlap --objective echo --semantic-view fields
 # Audit typed tracker relationships without spending the semantic novelty budget
 embead sweep --objective structure
 ```
+
+This is a pinned technical-preview install. Release assets include a source archive and
+`SHA256SUMS`. Contributors working from a clone can instead use `python -m pip install -e ".[dev]"`.
 
 ### Use a Linear team
 

@@ -1,0 +1,38 @@
+{
+  "name": "embeadings",
+  "version": "0.3.0",
+  "description": "Deterministic, read-only coordination triage for Beads and Linear work trackers.",
+  "author": {
+    "name": "DyrtyJax",
+    "url": "https://github.com/DyrtyJax"
+  },
+  "homepage": "https://github.com/DyrtyJax/embeadings",
+  "repository": "https://github.com/DyrtyJax/embeadings",
+  "license": "MIT",
+  "keywords": [
+    "coordination",
+    "beads",
+    "linear",
+    "triage",
+    "code-collisions"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "emBEADings",
+    "shortDescription": "Review tracker coordination signals locally.",
+    "longDescription": "Run bounded semantic triage and code-surface collision reviews through the installed embead CLI, then apply agent judgment to its deterministic evidence.",
+    "developerName": "DyrtyJax",
+    "category": "Productivity",
+    "capabilities": [
+      "Read-only tracker analysis",
+      "Local semantic triage",
+      "Code-surface coordination"
+    ],
+    "websiteURL": "https://github.com/DyrtyJax/embeadings",
+    "defaultPrompt": [
+      "Triage this tracker for coordination risks.",
+      "Find active work that may touch the same code.",
+      "Evaluate emBEADings against my own review."
+    ]
+  }
+}

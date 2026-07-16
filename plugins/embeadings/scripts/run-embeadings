@@ -1,0 +1,5 @@
+#!/bin/sh
+# POSIX convenience shim. Skills invoke the Python launcher directly on every host.
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec python3 "$SCRIPT_DIR/run_embeadings.py" "$@"

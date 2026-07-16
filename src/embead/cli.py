@@ -15,9 +15,11 @@ from typing import Any
 
 from platformdirs import user_cache_path, user_state_path
 
+from ._version import __version__
 from .analysis import SimilarityIndex, nearest_neighbors, package_candidate_batches
 from .beads import BeadsAdapter
 from .cache import VectorCache
+from .doctor import diagnose
 from .explain import explain_candidate
 from .incremental import (
     IncrementalScope,
@@ -49,6 +51,12 @@ REVIEW_RUBRIC = (
     "Record counterevidence when similar wording reflects different scope.",
     "Do not implement changes or mutate the tracker during this review.",
 )
+PRODUCER_CAPABILITIES = (
+    "additive-fields",
+    "advisory-evidence",
+    "read-only-review",
+    "code-surface-pointers",
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -57,7 +65,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Find related tracker work without changing your tracker.",
         epilog="Read-only • Issue text is embedded locally by default.",
     )
-    parser.add_argument("--version", action="version", version="embead 0.3.0")
+    parser.add_argument("--version", action="version", version=f"embead {__version__}")
     parser.add_argument(
         "--source",
         choices=("beads", "linear"),
@@ -123,7 +131,7 @@ def _parser() -> argparse.ArgumentParser:
 
     readiness = subparsers.add_parser(
         "readiness",
-        help="Prepare the local embedding model without reading Beads issues",
+        help="Prepare the local embedding model without reading tracker issues",
     )
     readiness.add_argument(
         "--offline",
@@ -131,6 +139,25 @@ def _parser() -> argparse.ArgumentParser:
         help="Require model artifacts to already exist in the configured local cache",
     )
     readiness.add_argument("--json", action="store_true", dest="as_json")
+
+    capabilities = subparsers.add_parser(
+        "capabilities",
+        help=(
+            "Describe the report contract and producer capabilities without reading tracker issues"
+        ),
+    )
+    capabilities.add_argument("--json", action="store_true", dest="as_json")
+
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Inspect source, Git, model, and cache readiness without changing state",
+    )
+    doctor.add_argument(
+        "--offline",
+        action="store_true",
+        help="Require pinned model artifacts to already exist in the local cache",
+    )
+    doctor.add_argument("--json", action="store_true", dest="as_json")
 
     collisions = subparsers.add_parser(
         "collisions",
@@ -347,6 +374,52 @@ def _readiness(args: argparse.Namespace) -> int:
             "Corpus loaded: no\n"
         )
     return 0
+
+
+def _capabilities(args: argparse.Namespace) -> int:
+    payload = {
+        "document_type": "embeadings-capabilities",
+        "protocol_version": 1,
+        "role": "producer",
+        "schema_versions": [1],
+        "report_types": ["neighbors", "batch", "sweep", "collisions"],
+        "capabilities": list(PRODUCER_CAPABILITIES),
+        "required_capabilities": ["read-only-review"],
+    }
+    if args.as_json:
+        sys.stdout.write(_json_text(payload))
+    else:
+        sys.stdout.write(
+            "emBEADings producer capabilities\n"
+            "Protocol: 1\n"
+            "Schemas: 1\n"
+            f"Reports: {', '.join(payload['report_types'])}\n"
+            f"Capabilities: {', '.join(payload['capabilities'])}\n"
+            "Required: read-only-review\n"
+        )
+    return 0
+
+
+def _doctor(args: argparse.Namespace) -> int:
+    payload = diagnose(
+        source=args.source,
+        linear_team=args.linear_team,
+        provider=_provider(args.provider),
+        offline=args.offline,
+    )
+    if args.as_json:
+        sys.stdout.write(_json_text(payload))
+    else:
+        sys.stdout.write(
+            f"emBEADings doctor: {payload['status']}\n"
+            f"Source: {payload['source']['status']} — {payload['source']['detail']}\n"
+            f"Repository: {payload['repository']['status']} — "
+            f"{payload['repository']['detail']}\n"
+            f"Embedding: {payload['embedding']['status']} — "
+            f"{payload['embedding']['detail']}\n"
+            f"Cache: {payload['cache']['status']} — {payload['cache']['detail']}\n"
+        )
+    return 2 if payload["status"] == "blocked" else 0
 
 
 def _surface_analysis(
@@ -826,6 +899,10 @@ def main(argv: list[str] | None = None) -> int:
             return _neighbors(args)
         if args.command == "readiness":
             return _readiness(args)
+        if args.command == "capabilities":
+            return _capabilities(args)
+        if args.command == "doctor":
+            return _doctor(args)
         if args.command == "collisions":
             return _collisions(args)
         return _sweep(args)

@@ -1,7 +1,9 @@
 import json
 from argparse import Namespace
 
-from embead import cli
+import pytest
+
+from embead import __version__, cli
 from embead.models import IssueRecord, WorkspaceSnapshot
 from embead.provider import HashingProvider
 from embead.ranking import CandidateRanking, LaneMetrics
@@ -71,6 +73,49 @@ def test_readiness_offline_sets_huggingface_policy(monkeypatch, capsys) -> None:
 
     assert cli.os.environ["HF_HUB_OFFLINE"] == "1"
     assert json.loads(capsys.readouterr().out)["network_policy"] == "offline"
+
+
+def test_capabilities_is_corpus_free_and_machine_readable(monkeypatch, capsys) -> None:
+    class FailingAdapter:
+        def load(self):
+            raise AssertionError("capabilities must not load tracker records")
+
+    monkeypatch.setattr(cli, "BeadsAdapter", FailingAdapter)
+
+    assert cli.main(["capabilities", "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "document_type": "embeadings-capabilities",
+        "protocol_version": 1,
+        "role": "producer",
+        "schema_versions": [1],
+        "report_types": ["neighbors", "batch", "sweep", "collisions"],
+        "capabilities": [
+            "additive-fields",
+            "advisory-evidence",
+            "read-only-review",
+            "code-surface-pointers",
+        ],
+        "required_capabilities": ["read-only-review"],
+    }
+
+
+def test_cli_version_uses_package_version(capsys) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["--version"])
+
+    assert raised.value.code == 0
+    assert capsys.readouterr().out == f"embead {__version__}\n"
+
+
+def test_readiness_help_is_tracker_neutral(capsys) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["--help"])
+
+    assert raised.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "without reading tracker issues" in help_text
+    assert "without reading Beads issues" not in help_text
 
 
 def test_neighbors_json_stdout_is_machine_readable(monkeypatch, tmp_path, capsys) -> None:

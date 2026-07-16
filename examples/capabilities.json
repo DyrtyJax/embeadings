@@ -1,7 +1,7 @@
 {
   "document_type": "embeadings-capabilities",
   "protocol_version": 1,
-  "role": "consumer",
+  "role": "producer",
   "schema_versions": [1],
   "report_types": ["neighbors", "batch", "sweep", "collisions"],
   "capabilities": ["additive-fields", "advisory-evidence", "read-only-review", "code-surface-pointers"],

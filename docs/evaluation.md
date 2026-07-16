@@ -1,6 +1,19 @@
 # Safe offline evaluation
 
-Use the public readiness command before loading any Beads records:
+Start with the corpus-free environment diagnostic:
+
+```console
+embead doctor --json
+embead doctor --offline --json
+```
+
+`doctor` checks tracker configuration, invocation-worktree Git metadata, pinned model artifacts,
+and external vector-cache presence without loading issue records or contacting Linear. It exits `0`
+when the environment is ready or needs only non-blocking attention, and `2` when a required source,
+credential, team, or offline model artifact is missing. Failed checks still emit a complete JSON
+diagnostic. Credential values and the selected Linear team are never included in that output.
+
+Use the readiness command when the evaluation needs to fetch or load the pinned embedding model:
 
 ```console
 HF_HOME=/external/model-cache embead readiness --json

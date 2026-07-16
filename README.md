@@ -20,6 +20,7 @@ Python 3.11 or later is required. The default Beads source also requires an inst
 
 ```bash
 python -m pip install -e .
+embead doctor
 embead neighbors ISSUE_ID --include-closed
 embead sweep --size 9
 
@@ -75,6 +76,29 @@ repository by default.
 
 For a lightweight deterministic smoke test without a model download, set
 `EMBEAD_PROVIDER=hashing`. That provider is intended for tests, not semantic-quality evaluation.
+
+## Agent plugin preview
+
+The repository includes a thin dual-host plugin under
+[`plugins/embeadings`](plugins/embeadings/README.md) for Codex and Claude Code. It packages shared
+`triage`, `collisions`, and `evaluate` skills around the installed `embead` CLI; it does not contain
+a second ranking engine or grant tracker-write authority.
+
+For local Claude Code development:
+
+```bash
+claude --plugin-dir ./plugins/embeadings
+```
+
+The Codex and Claude manifests live separately while sharing the same skills and guarded CLI
+launcher. The cross-platform Python launcher requires emBEADings 0.3.0 or newer, forces schema-v1
+JSON, rejects explicit report/checkpoint paths, and verifies the report's read-only policy. Semantic
+sweeps may still use the external platform cache and run-state directories described above; they do
+not write into the analyzed repository by default.
+
+This is a local plugin foundation, not yet a marketplace release. Marketplace metadata, a public
+package tag, and observed-to-observed collision validation remain gated on the corresponding Beads
+work and private evaluation.
 
 ## Intended workflow
 
@@ -138,13 +162,15 @@ retrieval, AST symbols, Git-history inference, and MCP integration belong behind
 evidence-provider interface only if they measurably improve collision recall without producing an
 impractical queue.
 
-## Proposed commands
+## Commands
 
 ```bash
 embead neighbors <issue-id>
 embead batch [--size 9]
 embead sweep [--size 9]
 embead collisions [--worktree-map ISSUE_ID=PATH]
+embead doctor [--offline]
+embead capabilities [--json]
 ```
 
 Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.

@@ -12,6 +12,9 @@ def test_validation_contract_starts_with_format_check_and_runs_every_check(monke
     def record(command, *, cwd, check):
         calls.append((command, cwd, check))
 
+    monkeypatch.setitem(
+        namespace["main"].__globals__, "validate_checkout", lambda *_arguments: None
+    )
     monkeypatch.setattr(namespace["subprocess"], "run", record)
     namespace["main"]()
 

@@ -54,7 +54,8 @@ Keep all output and platform cache/state directories outside the evaluated repos
 - actionable precision at a fixed review budget;
 - same-token/different-intent and broad-hub rejection;
 - direct parent/child exclusion from explicit overlap discovery;
-- repeated completed-target omissions and deterministic replacement membership;
+- conserved completed-target omissions, deterministic backfill receipts, and the resulting
+  coverage/relevance trade-off;
 - abstention/no-signal quality;
 - per-objective and per-channel candidate counts;
 - candidate-set churn and deterministic ordering;

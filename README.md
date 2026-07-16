@@ -237,9 +237,12 @@ hierarchy remains tracker context, but does not consume a semantic-discovery slo
 Completed-work echoes admit at most two candidates pointing to the same closed record by default.
 Use `--max-echoes-per-target` to tune that deterministic diversity cap. When a target reaches the
 cap, the selector considers the next qualified completed record for the active issue; JSON and
-Markdown report the repeated target, qualified/admitted counts, and omissions without including
-issue text. At most three qualified fallback echoes are retained per active issue by default; tune
-that bounded pool with `--max-echo-alternatives-per-active`.
+Markdown enforce `qualified = admitted + omitted` for each repeated target and itemize omissions by
+target, active-record, per-issue, lane, and run limits. When a target-cap omission is followed by an
+admitted fallback, `echo_backfills` records both candidate IDs and scores without issue text. A
+backfill increases completed-target coverage; it is not a claim that the fallback is more relevant.
+At most three qualified fallback echoes are retained per active issue by default; tune that bounded
+pool with `--max-echo-alternatives-per-active`.
 
 `--semantic-view fields` is experimental: it retains the whole-record
 vector and adds separate title, description, acceptance-criteria, and design vectors. Notes remain in
@@ -284,6 +287,7 @@ Research notes:
 - [Retrieve–verify research synthesis](docs/research/retrieve-verify-context-2026.md)
 - [First retrieve–verify public regression](docs/research/retrieve-verify-public-regression-01.md)
 - [Second retrieve–verify private regression](docs/research/retrieve-verify-private-regression-02.md)
+- [Third retrieve–verify private regression](docs/research/retrieve-verify-private-regression-03.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)
 - [Version 1 JSON Schemas](schemas/v1/) and [synthetic examples](examples/)
 

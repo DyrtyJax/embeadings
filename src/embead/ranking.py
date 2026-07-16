@@ -150,6 +150,7 @@ class CandidateRanking:
     dropped_by_echo_target_cap: int = 0
     capped_typed_dependencies: tuple[dict[str, str], ...] = ()
     echo_target_hubs: tuple[dict[str, Any], ...] = ()
+    echo_backfills: tuple[dict[str, Any], ...] = ()
     reciprocal_diagnostics: dict[str, Any] | None = None
     cap_replacements: tuple[dict[str, Any], ...] = ()
     dependency_funnel: DependencyFunnel | None = None
@@ -515,8 +516,10 @@ def _select_candidates(
     accepted: list[dict[str, Any]] = []
     capped_typed_dependencies: list[dict[str, str]] = []
     echo_target_counts: dict[str, int] = defaultdict(int)
-    echo_target_omissions: dict[str, int] = defaultdict(int)
     echo_target_qualified: dict[str, int] = defaultdict(int)
+    echo_target_omissions: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    pending_echo_backfills: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    echo_backfills: list[dict[str, Any]] = []
     seen_issues_by_kind: set[tuple[str, str]] = set()
     ordered_stages = tuple(
         tuple((candidate, protected) for candidate in sorted(candidates, key=_ranking_key))
@@ -529,29 +532,47 @@ def _select_candidates(
 
     processed: set[tuple[str, str, str]] = set()
 
+    def is_semantic_echo(candidate: dict[str, Any]) -> bool:
+        return candidate["lane"] == "echo" and candidate["kind"] == "completed-work-echo"
+
+    def record_echo_omission(candidate: dict[str, Any], reason: str) -> None:
+        if is_semantic_echo(candidate):
+            echo_target_omissions[candidate["related_issue_id"]][reason] += 1
+
     def attempt(candidate: dict[str, Any], protected: bool, *, reserved: bool) -> bool:
         lane = candidate["lane"]
         values = metrics[lane]
         identity = _candidate_identity(candidate)
         if lane_counts[lane] >= policy.lane_caps[lane]:
             values["dropped_by_lane_cap"] += 1
+            record_echo_omission(candidate, "lane-cap")
             _record_capped_dependency(capped_typed_dependencies, candidate, "lane-cap")
             processed.add(identity)
             return False
         if len(accepted) >= policy.max_total:
             values["dropped_by_run_cap"] += 1
+            record_echo_omission(candidate, "run-cap")
             _record_capped_dependency(capped_typed_dependencies, candidate, "run-cap")
             processed.add(identity)
             return False
         left_id = candidate["issue_id"]
         right_id = candidate["related_issue_id"]
+        kind_issue = (candidate["kind"], left_id)
+        # Enforce the active-side invariant before target diversity so a
+        # lower-ranked alternative for an already admitted active record is
+        # attributed to the actual governing limit.
+        if is_semantic_echo(candidate) and kind_issue in seen_issues_by_kind:
+            values["dropped_by_issue_cap"] += 1
+            record_echo_omission(candidate, "one-echo-per-active")
+            processed.add(identity)
+            return False
         if (
-            lane == "echo"
-            and candidate["kind"] == "completed-work-echo"
+            is_semantic_echo(candidate)
             and echo_target_counts[right_id] >= policy.max_echoes_per_target
         ):
             values["dropped_by_target_cap"] += 1
-            echo_target_omissions[right_id] += 1
+            record_echo_omission(candidate, "completed-target-cap")
+            pending_echo_backfills[left_id].append(candidate)
             processed.add(identity)
             return False
         if lane == "dependency":
@@ -571,17 +592,7 @@ def _select_candidates(
             or semantic_counts[right_id] >= policy.max_per_issue
         ):
             values["dropped_by_issue_cap"] += 1
-            processed.add(identity)
-            return False
-        # Keep the established one-echo-per-active-record invariant even
-        # when a sensitivity run finds another lower-scoring closed issue.
-        kind_issue = (candidate["kind"], left_id)
-        if (
-            candidate["lane"] == "echo"
-            and candidate["kind"] == "completed-work-echo"
-            and kind_issue in seen_issues_by_kind
-        ):
-            values["dropped_by_issue_cap"] += 1
+            record_echo_omission(candidate, "per-issue-cap")
             processed.add(identity)
             return False
         admitted = {**candidate, "baseline_protected": protected}
@@ -596,6 +607,24 @@ def _select_candidates(
         if candidate["lane"] == "echo":
             seen_issues_by_kind.add(kind_issue)
             echo_target_counts[right_id] += 1
+            if omitted := pending_echo_backfills.pop(left_id, []):
+                echo_backfills.append(
+                    {
+                        "issue_id": left_id,
+                        "admitted_candidate_id": _candidate_id(candidate),
+                        "admitted_related_issue_id": right_id,
+                        "admitted_similarity": candidate["similarity"],
+                        "omitted_candidates": [
+                            {
+                                "candidate_id": _candidate_id(item),
+                                "related_issue_id": item["related_issue_id"],
+                                "similarity": item["similarity"],
+                                "reason": "completed-target-cap",
+                            }
+                            for item in omitted
+                        ],
+                    }
+                )
         values["admitted"] += 1
         values["baseline_protected"] += int(protected)
         values["admitted_to_reservation"] += int(reserved)
@@ -634,16 +663,33 @@ def _select_candidates(
         )
 
     lane_metrics = {lane: LaneMetrics(**values) for lane, values in metrics.items()}
-    echo_target_hubs = tuple(
-        {
-            "related_issue_id": target_id,
-            "qualified": echo_target_qualified[target_id],
-            "admitted": echo_target_counts[target_id],
-            "omitted_by_target_cap": omitted,
-        }
-        for target_id, omitted in sorted(echo_target_omissions.items())
-        if omitted
+    echo_target_hubs = []
+    omission_reasons = (
+        "completed-target-cap",
+        "one-echo-per-active",
+        "per-issue-cap",
+        "lane-cap",
+        "run-cap",
     )
+    for target_id, reason_counts in sorted(echo_target_omissions.items()):
+        if not reason_counts["completed-target-cap"]:
+            continue
+        omissions = {reason: reason_counts[reason] for reason in omission_reasons}
+        omitted = sum(omissions.values())
+        qualified = echo_target_qualified[target_id]
+        admitted = echo_target_counts[target_id]
+        if qualified != admitted + omitted:
+            raise AssertionError("echo target audit funnel does not conserve")
+        echo_target_hubs.append(
+            {
+                "related_issue_id": target_id,
+                "qualified": qualified,
+                "admitted": admitted,
+                "omitted": omitted,
+                "omitted_by_target_cap": omissions["completed-target-cap"],
+                "omissions_by_reason": omissions,
+            }
+        )
     return CandidateRanking(
         candidates=tuple(sorted(accepted, key=_ranking_key)),
         qualified=sum(values.qualified for values in lane_metrics.values()),
@@ -659,7 +705,8 @@ def _select_candidates(
             values.dropped_by_target_cap for values in lane_metrics.values()
         ),
         capped_typed_dependencies=tuple(capped_typed_dependencies),
-        echo_target_hubs=echo_target_hubs,
+        echo_target_hubs=tuple(echo_target_hubs),
+        echo_backfills=tuple(sorted(echo_backfills, key=lambda item: item["issue_id"])),
     )
 
 

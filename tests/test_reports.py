@@ -247,7 +247,31 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
                     "related_issue_id": "bd-4",
                     "qualified": 3,
                     "admitted": 2,
+                    "omitted": 1,
                     "omitted_by_target_cap": 1,
+                    "omissions_by_reason": {
+                        "completed-target-cap": 1,
+                        "one-echo-per-active": 0,
+                        "per-issue-cap": 0,
+                        "lane-cap": 0,
+                        "run-cap": 0,
+                    },
+                }
+            ],
+            "echo_backfills": [
+                {
+                    "issue_id": "bd-3",
+                    "admitted_candidate_id": "completed-work-echo|bd-3|bd-5",
+                    "admitted_related_issue_id": "bd-5",
+                    "admitted_similarity": 0.84,
+                    "omitted_candidates": [
+                        {
+                            "candidate_id": "completed-work-echo|bd-3|bd-4",
+                            "related_issue_id": "bd-4",
+                            "similarity": 0.86,
+                            "reason": "completed-target-cap",
+                        }
+                    ],
                 }
             ],
             "lanes": {
@@ -295,7 +319,11 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "Admission conservation: 2 = 1 + 1 + 0 + 0" in markdown
     assert "Baseline candidates protected in sensitivity mode: 1" in markdown
     assert "Repeated completed targets" in markdown
-    assert "`bd-4`: 3 qualified; 2 admitted; 1 omitted by diversity cap" in markdown
+    assert "`bd-4`: 3 qualified = 2 admitted + 1 omitted" in markdown
+    assert "Completed-target backfills" in markdown
+    assert "increase target coverage" in markdown
+    assert r"completed-work-echo\|bd-3\|bd-5" in markdown
+    assert r"completed-work-echo\|bd-3\|bd-4" in markdown
     assert "Admitted by substantive local evidence: 1" in markdown
     assert "Omitted without discriminative local evidence: 2" in markdown
     assert "qualification-removed" in markdown

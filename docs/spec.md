@@ -250,6 +250,13 @@ governing cap, displaced candidate IDs, and a nonempty causal chain from removed
 through each consumed or freed endpoint, echo, lane, or run slot. This makes cross-lane and cascading
 bounded-queue replacements distinguishable from new semantic qualifications without exposing text.
 
+Completed-work echo diversification has its own conserved audit funnel for every target affected by
+the completed-target cap. Each `echo_target_hubs` entry satisfies `qualified = admitted + omitted`
+and attributes every omission to exactly one governing reason: completed-target cap, one echo per
+active record, general per-issue cap, echo lane cap, or run cap. `echo_backfills` links a target-cap
+omission to a later admitted fallback for the same active record using candidate IDs and scores only.
+This receipt proves a coverage substitution, not a relevance or actionability improvement.
+
 ### Evidence-specific explanations
 
 Every candidate explains the evidence that caused it to surface. Explanations should identify the

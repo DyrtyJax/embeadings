@@ -285,9 +285,74 @@ def test_echo_target_cap_backfills_with_next_qualified_completed_record() -> Non
             "related_issue_id": "X",
             "qualified": 3,
             "admitted": 2,
+            "omitted": 1,
             "omitted_by_target_cap": 1,
+            "omissions_by_reason": {
+                "completed-target-cap": 1,
+                "one-echo-per-active": 0,
+                "per-issue-cap": 0,
+                "lane-cap": 0,
+                "run-cap": 0,
+            },
         },
     )
+    assert result.echo_backfills == (
+        {
+            "issue_id": "C",
+            "admitted_candidate_id": "completed-work-echo|C|Y",
+            "admitted_related_issue_id": "Y",
+            "admitted_similarity": 0.96,
+            "omitted_candidates": [
+                {
+                    "candidate_id": "completed-work-echo|C|X",
+                    "related_issue_id": "X",
+                    "similarity": 0.97,
+                    "reason": "completed-target-cap",
+                }
+            ],
+        },
+    )
+
+
+def test_echo_target_hub_itemizes_non_target_residuals_and_conserves() -> None:
+    active = [issue(identifier) for identifier in "ABCD"]
+    closed = [issue(identifier, status="closed") for identifier in "XY"]
+    scores = Scores(
+        {
+            ("A", "Y"): 0.99,
+            ("A", "X"): 0.98,
+            ("B", "X"): 0.97,
+            ("C", "X"): 0.96,
+            ("D", "X"): 0.95,
+            ("D", "Y"): 0.94,
+        }
+    )
+
+    result = rank_candidates(
+        active,
+        [*active, *closed],
+        scores,
+        policy(
+            objectives=frozenset({"echo"}),
+            max_echoes_per_target=2,
+            max_echo_alternatives_per_active=2,
+            max_per_issue=10,
+            max_total=10,
+        ),
+    )
+
+    hub = result.echo_target_hubs[0]
+    assert hub["related_issue_id"] == "X"
+    assert hub["qualified"] == hub["admitted"] + hub["omitted"]
+    assert hub["qualified"] == 4
+    assert hub["admitted"] == 2
+    assert hub["omissions_by_reason"] == {
+        "completed-target-cap": 1,
+        "one-echo-per-active": 1,
+        "per-issue-cap": 0,
+        "lane-cap": 0,
+        "run-cap": 0,
+    }
 
 
 def test_reciprocal_neighbor_rank_admits_exception() -> None:

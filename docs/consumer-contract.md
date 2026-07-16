@@ -78,6 +78,13 @@ threshold change alters a bounded winner. Its nonempty `causal_chain` follows th
 qualification and each bounded resource transition to the admitted candidate; consumers should
 render that chain instead of presenting the candidate as newly semantically qualified.
 
+`echo_target_hubs` is a separately conserved completed-target funnel. Consumers may reconcile each
+entry with `qualified = admitted + omitted` and render `omissions_by_reason`; they must not treat
+`omitted_by_target_cap` as the total omitted count. `echo_backfills` identifies the lower-ranked
+candidate admitted for an active record after one or more completed-target-cap omissions. Consumers
+should describe these as coverage substitutions and must not claim that a fallback is more relevant
+or actionable without reviewer evidence.
+
 When `review_budget.mode` is `weekly`, `review_budget.lane_capacity` records each lane's `reserved`,
 `admitted_to_reservation`, and `unused` capacity. These are access reservations, not required quotas;
 total admissions remain in the corresponding lane metrics. Consumers must not describe the queue as

@@ -134,6 +134,11 @@ Builds deterministic, bounded semantic neighborhoods from a candidate population
 filters are applied before embeddings. `triage` writes the full sweep audit to external run state
 and returns a smaller agent-ready packet carrying the same stable analysis fingerprint.
 
+By default, semantic triage includes `open`, `in_progress`, `blocked`, and `deferred` review
+primaries; repeat `--status` to narrow that scope. Deferred work remains included so stale or
+already-completed echoes can surface during tracker hygiene. This differs intentionally from
+`collisions`, whose default population is limited to work that may be concurrent now.
+
 ### `collisions`
 
 ```bash

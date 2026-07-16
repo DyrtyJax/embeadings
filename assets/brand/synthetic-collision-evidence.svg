@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic emBEADings collision report</title>
+  <desc id="desc">A terminal-style panel showing a read-only exact-file collision lead between two synthetic work items.</desc>
+  <rect width="1200" height="640" rx="18" fill="#0b1220"/>
+  <rect x="1" y="1" width="1198" height="638" rx="17" fill="none" stroke="#334155" stroke-width="2"/>
+  <path d="M0 74h1200" stroke="#334155" stroke-width="2"/>
+  <circle cx="34" cy="37" r="7" fill="#fb7185"/>
+  <circle cx="60" cy="37" r="7" fill="#fbbf24"/>
+  <circle cx="86" cy="37" r="7" fill="#34d399"/>
+  <text x="1160" y="44" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" text-anchor="end">SYNTHETIC EXAMPLE · NO PRIVATE DATA</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22">
+    <text x="34" y="121" fill="#64748b">$</text>
+    <text x="56" y="121" fill="#e2e8f0">embead collisions</text>
+    <text x="34" y="169" fill="#f8fafc" font-size="26" font-weight="700">emBEADings code-surface collision review</text>
+    <text x="34" y="207" fill="#a7f3d0" font-size="17" letter-spacing="1.2">READ ONLY</text>
+    <text x="158" y="207" fill="#64748b" font-size="17">·</text>
+    <text x="181" y="207" fill="#fde68a" font-size="17" letter-spacing="1.2">ADVISORY</text>
+
+    <rect x="34" y="240" width="1132" height="265" rx="12" fill="#111c30" stroke="#334155"/>
+    <text x="64" y="287" fill="#93c5fd" font-size="23" font-weight="700">demo-1</text>
+    <text x="163" y="287" fill="#64748b">↔</text>
+    <text x="197" y="287" fill="#a7f3d0" font-size="23" font-weight="700">demo-2</text>
+    <text x="64" y="337" fill="#94a3b8">kind</text>
+    <text x="244" y="337" fill="#e2e8f0">exact-file</text>
+    <text x="64" y="379" fill="#94a3b8">confidence</text>
+    <text x="244" y="379" fill="#fbbf24">observed in both worktrees</text>
+    <text x="64" y="421" fill="#94a3b8">shared path</text>
+    <text x="244" y="421" fill="#f8fafc">src/cache/index.py</text>
+    <text x="64" y="463" fill="#94a3b8">revision</text>
+    <text x="244" y="463" fill="#e2e8f0">different</text>
+
+    <text x="34" y="553" fill="#fde68a" font-size="17" font-weight="700" letter-spacing="1.1">VERIFY</text>
+    <text x="130" y="553" fill="#e2e8f0" font-size="19">Will both tasks modify this file before implementation or merge?</text>
+    <text x="34" y="598" fill="#64748b" font-size="16">Pointers, not snippets · shared paths are evidence, not proof of conflicting intent.</text>
+  </g>
+</svg>

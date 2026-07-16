@@ -431,6 +431,43 @@ def test_collisions_is_corpus_read_only_and_does_not_load_embedding_provider(
     assert json.loads(output.read_text()) == payload
 
 
+def test_collisions_excludes_deferred_by_default_but_keeps_it_opt_in(monkeypatch, capsys) -> None:
+    snapshot = WorkspaceSnapshot("workspace-test", "1.0.5", "/tmp/demo/.beads")
+    issues = (
+        IssueRecord("open", "Current", status="open"),
+        IssueRecord("deferred", "Later", status="deferred"),
+    )
+    populations: list[list[str]] = []
+    monkeypatch.setattr(cli, "_load_source", lambda _args: (snapshot, issues))
+    monkeypatch.setattr(
+        cli,
+        "_surface_analysis",
+        lambda _args, _snapshot, population: (
+            populations.append([issue.id for issue in population]) or {"collisions": []}
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_collisions_payload",
+        lambda _analysis, *, snapshot, filters: {
+            "schema_version": 1,
+            "report_type": "collisions",
+            "snapshot": snapshot,
+            "filters": filters,
+        },
+    )
+
+    assert cli.main(["collisions", "--json"]) == 0
+    default = json.loads(capsys.readouterr().out)
+    assert populations[-1] == ["open"]
+    assert default["filters"]["status"] == ["blocked", "in_progress", "open"]
+
+    assert cli.main(["collisions", "--status", "deferred", "--json"]) == 0
+    explicit = json.loads(capsys.readouterr().out)
+    assert populations[-1] == ["deferred"]
+    assert explicit["filters"]["status"] == ["deferred"]
+
+
 def test_surface_analysis_passes_the_invoking_worktree(monkeypatch, tmp_path) -> None:
     invoking = tmp_path / "current-worktree"
     invoking.mkdir()

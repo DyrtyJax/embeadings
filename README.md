@@ -53,7 +53,22 @@ embead sweep --objective structure
 ```
 
 This is a pinned technical-preview install. Release assets include a source archive and
-`SHA256SUMS`. Contributors working from a clone can instead use `python -m pip install -e ".[dev]"`.
+`SHA256SUMS`. Contributors working from a clone should use the isolated environment below.
+
+### Development in Git worktrees
+
+Every checkout must own its virtual environment. From a new clone or worktree, run:
+
+```bash
+python3 scripts/worktree_env.py
+. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python scripts/validate.py
+```
+
+The bootstrap refuses to reuse an active virtual environment from another checkout. Validation also
+checks the editable `embead` import target before running tests, so a shared environment cannot
+silently execute code from a sibling worktree. CI and release environments may use immutable wheel
+installs instead of an editable checkout.
 
 ### Use a Linear team
 
@@ -147,6 +162,10 @@ Worktrees are associated automatically when the branch contains the full Bead ID
 Explicit mappings must name an active record in the evaluated population and a registered worktree;
 an excluded epic, closed record, or record filtered out by the current status scope fails with a
 corrective error instead of silently supplying evidence.
+
+Default collision review covers `open`, `in_progress`, and `blocked` work because those records may
+participate in current implementation. Deferred work remains available explicitly with
+`--status deferred`, but it is not treated as concurrent work merely because it is non-closed.
 
 `embead collisions` does not load an embedding model. It reports exact-file leads and shared-module
 leads backed by at least one observed active-worktree pointer, together with evidence source,

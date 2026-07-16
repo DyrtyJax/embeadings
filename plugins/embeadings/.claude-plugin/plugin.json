@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "embeadings",
+  "version": "0.3.0",
+  "description": "Deterministic, read-only coordination triage for Beads and Linear work trackers.",
+  "author": {
+    "name": "DyrtyJax",
+    "url": "https://github.com/DyrtyJax"
+  },
+  "homepage": "https://github.com/DyrtyJax/embeadings",
+  "repository": "https://github.com/DyrtyJax/embeadings",
+  "license": "MIT",
+  "keywords": [
+    "coordination",
+    "beads",
+    "linear",
+    "triage",
+    "code-collisions"
+  ]
+}

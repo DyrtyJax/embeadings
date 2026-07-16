@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/capabilities.schema.json",
-  "title": "emBEADings consumer capability document, protocol version 1",
+  "title": "emBEADings capability document, protocol version 1",
   "type": "object",
   "required": ["document_type", "protocol_version", "role", "schema_versions", "report_types", "capabilities"],
   "properties": {

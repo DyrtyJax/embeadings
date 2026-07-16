@@ -112,6 +112,10 @@ version 1 shape is defined by
 [`capabilities.schema.json`](../schemas/v1/capabilities.schema.json) and demonstrated by the
 [synthetic example](../examples/capabilities.json).
 
+Run `embead capabilities --json` to emit the producer document without loading tracker records,
+initializing caches, or preparing the embedding model. Consumers create the same shape with
+`role: "consumer"` and their own supported report types and requirements.
+
 The handshake is transport-neutral: it may be a file, subprocess message, HTTP response, or in-memory
 object. Core emBEADings does not launch a dispatcher or grant it tracker access.
 
@@ -119,7 +123,7 @@ object. Core emBEADings does not launch a dispatcher or grant it tracker access.
 {
   "document_type": "embeadings-capabilities",
   "protocol_version": 1,
-  "role": "consumer",
+  "role": "producer",
   "schema_versions": [1],
   "report_types": ["neighbors", "batch", "sweep", "collisions"],
   "capabilities": ["additive-fields", "advisory-evidence", "read-only-review", "code-surface-pointers"],

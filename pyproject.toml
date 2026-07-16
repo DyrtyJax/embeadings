@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "embeadings"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Read-only semantic neighborhoods and coordination review for work trackers"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,9 @@ benchmark = [
 
 [project.scripts]
 embead = "embead.cli:main"
+
+[tool.hatch.version]
+path = "src/embead/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/embead"]

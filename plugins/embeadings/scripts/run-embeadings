@@ -1,0 +1,120 @@
+#!/bin/sh
+# Read-only plugin boundary for the installed embead CLI.
+set -eu
+
+fail() {
+  printf 'embeadings plugin: %s\n' "$*" >&2
+  exit 2
+}
+
+find_dependencies() {
+  EMBEAD_BIN=$(command -v embead 2>/dev/null || true)
+  [ -n "$EMBEAD_BIN" ] || fail "embead was not found on PATH; install embeadings>=0.3.0 first"
+
+  PYTHON_BIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+  [ -n "$PYTHON_BIN" ] || fail "Python was not found on PATH"
+
+  EMBEAD_VERSION=$("$EMBEAD_BIN" --version 2>/dev/null) || fail "embead --version failed"
+  EMBEAD_VERSION=$EMBEAD_VERSION "$PYTHON_BIN" -c '
+import os
+import re
+import sys
+
+text = os.environ["EMBEAD_VERSION"]
+match = re.fullmatch(r"embead (\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?", text)
+if match is None or tuple(map(int, match.groups())) < (0, 3, 0):
+    print("embeadings plugin: embeadings>=0.3.0 is required; found " + text, file=sys.stderr)
+    raise SystemExit(2)
+' || exit $?
+}
+
+find_dependencies
+
+if [ "${1:-}" = "check" ]; then
+  [ "$#" -eq 1 ] || fail "check does not accept arguments"
+  EMBEAD_VERSION=$EMBEAD_VERSION "$PYTHON_BIN" -c '
+import json
+import os
+
+print(json.dumps({
+    "cli": os.environ["EMBEAD_VERSION"],
+    "json_schema_version": 1,
+    "status": "ready",
+}, sort_keys=True))
+'
+  exit 0
+fi
+
+[ "$#" -gt 0 ] || fail "expected a sweep or collisions command"
+
+report_type=
+json_requested=false
+skip_value=false
+for argument in "$@"; do
+  if [ "$skip_value" = true ]; then
+    skip_value=false
+    continue
+  fi
+  case "$argument" in
+    --source|--linear-team|--provider)
+      skip_value=true
+      ;;
+    --source=*|--linear-team=*|--provider=*)
+      ;;
+    --output|--output=*|--write-checkpoint|--write-checkpoint=*)
+      fail "file-writing options are disabled at the plugin boundary"
+      ;;
+    --json)
+      json_requested=true
+      ;;
+    sweep|collisions)
+      if [ -z "$report_type" ]; then
+        report_type=$argument
+      fi
+      ;;
+  esac
+done
+
+[ "$skip_value" = false ] || fail "a global option is missing its value"
+[ -n "$report_type" ] || fail "only sweep and collisions reports are supported"
+
+if [ "$json_requested" = true ]; then
+  payload=$("$EMBEAD_BIN" "$@")
+else
+  payload=$("$EMBEAD_BIN" "$@" --json)
+fi
+
+printf '%s\n' "$payload" | EMBEAD_EXPECTED_REPORT=$report_type "$PYTHON_BIN" -c '
+import json
+import os
+import sys
+
+raw = sys.stdin.read()
+try:
+    report = json.loads(raw)
+except json.JSONDecodeError as exc:
+    print(f"embeadings plugin: CLI returned invalid JSON: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+
+expected = os.environ["EMBEAD_EXPECTED_REPORT"]
+if report.get("schema_version") != 1 or report.get("report_type") != expected:
+    print("embeadings plugin: CLI returned an unsupported report contract", file=sys.stderr)
+    raise SystemExit(2)
+
+policy = report.get("policy")
+if not isinstance(policy, dict) or policy.get("read_only") is not True:
+    print("embeadings plugin: report did not assert read-only policy", file=sys.stderr)
+    raise SystemExit(2)
+if policy.get("tracker_mutation_allowed") is not False:
+    print("embeadings plugin: report did not prohibit tracker mutation", file=sys.stderr)
+    raise SystemExit(2)
+
+snapshot = report.get("snapshot")
+if not isinstance(snapshot, dict) or snapshot.get("tracker_name") not in {"beads", "linear"}:
+    print("embeadings plugin: report has unsupported tracker metadata", file=sys.stderr)
+    raise SystemExit(2)
+
+sys.stdout.write(raw)
+if raw and not raw.endswith("\n"):
+    sys.stdout.write("\n")
+'

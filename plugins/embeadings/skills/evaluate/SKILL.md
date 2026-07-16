@@ -10,7 +10,7 @@ evaluation report.
 
 ## Blind comparison
 
-1. Run `<plugin-root>/scripts/run-embeadings check` from the plugin root in this skill's installed
+1. Run `python <plugin-root>/scripts/run_embeadings.py check` from the plugin root in this skill's installed
    path and record the CLI version.
 2. Before executing a report, independently identify likely duplicate work, missing sequencing, and
    code-edit conflicts from the context available to you. Record that baseline privately.

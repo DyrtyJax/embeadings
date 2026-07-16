@@ -8,9 +8,10 @@ adds the same three read-only skills to Codex and Claude Code:
 - `evaluate`: compare deterministic output with an agent's blind baseline.
 
 The plugin does not contain a second analysis engine and does not mutate Beads, Linear, Git, or
-source files. `scripts/run-embeadings` discovers `embead` on `PATH`, requires emBEADings 0.3.0 or
+source files. `python scripts/run_embeadings.py` discovers `embead` on `PATH`, requires emBEADings 0.3.0 or
 newer, forces JSON output, rejects report/checkpoint file writes, and verifies the schema-v1
-read-only contract before returning a report to the agent.
+read-only contract before returning a report to the agent. It is the canonical launcher on Windows,
+macOS, and Linux. `scripts/run-embeadings` is only a POSIX convenience shim.
 
 ## Prerequisites
 
@@ -22,7 +23,7 @@ For local development from the repository:
 
 ```sh
 python -m pip install -e .
-plugins/embeadings/scripts/run-embeadings check
+python plugins/embeadings/scripts/run_embeadings.py check
 ```
 
 Keep API credentials in the environment. The standalone CLI cannot reuse OAuth credentials stored

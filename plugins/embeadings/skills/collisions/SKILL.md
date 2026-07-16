@@ -10,7 +10,7 @@ state while using it.
 
 ## Run from the right repository
 
-1. Run `<plugin-root>/scripts/run-embeadings check` using the plugin root in this skill's installed
+1. Run `python <plugin-root>/scripts/run_embeadings.py check` using the plugin root in this skill's installed
    path.
 2. Change to the implementation repository being coordinated. Repository provenance and worktree
    observation derive from the invocation repository, so running from the emBEADings checkout is not
@@ -19,11 +19,10 @@ state while using it.
 
 ```sh
 # Beads
-<plugin-root>/scripts/run-embeadings collisions
+python <plugin-root>/scripts/run_embeadings.py collisions
 
-# Linear
-<plugin-root>/scripts/run-embeadings \
-  --source linear --linear-team "$LINEAR_TEAM" collisions
+# Linear; replace TEAM with the selected team ID, key, or exact name
+python <plugin-root>/scripts/run_embeadings.py --source linear --linear-team TEAM collisions
 ```
 
 Use `--worktree-map ISSUE_ID=PATH` only for a registered worktree containing genuine active

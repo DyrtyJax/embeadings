@@ -14,6 +14,7 @@ from embead import __version__
 ROOT = Path(__file__).parents[1]
 PLUGIN = ROOT / "plugins" / "embeadings"
 WRAPPER = PLUGIN / "scripts" / "run-embeadings"
+LAUNCHER = PLUGIN / "scripts" / "run_embeadings.py"
 
 
 def _manifest(host: str) -> dict[str, object]:
@@ -42,12 +43,10 @@ def _stub_environment(
 ) -> tuple[dict[str, str], Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "python3").symlink_to(sys.executable)
-
     arguments_path = tmp_path / "arguments.json"
     if install_cli:
-        stub = bin_dir / "embead"
-        stub.write_text(
+        stub_program = bin_dir / "embead_stub.py"
+        stub_program.write_text(
             """#!/usr/bin/env python3
 import json
 import os
@@ -62,14 +61,20 @@ with open(os.environ["EMBEAD_STUB_ARGUMENTS"], "w", encoding="utf-8") as stream:
 sys.stdout.write(os.environ["EMBEAD_STUB_PAYLOAD"])
 """
         )
-        stub.chmod(0o755)
+        if os.name == "nt":
+            stub = bin_dir / "embead.cmd"
+            stub.write_text(f'@"{sys.executable}" "{stub_program}" %*\n')
+        else:
+            stub = bin_dir / "embead"
+            stub.write_text(stub_program.read_text())
+            stub.chmod(0o755)
 
     if payload is None:
         payload = _report()
     rendered_payload = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
     environment = {
         **os.environ,
-        "PATH": str(bin_dir),
+        "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
         "EMBEAD_STUB_ARGUMENTS": str(arguments_path),
         "EMBEAD_STUB_PAYLOAD": rendered_payload,
         "EMBEAD_STUB_VERSION": f"embead {version}",
@@ -91,7 +96,7 @@ def _run_wrapper(
         install_cli=install_cli,
     )
     completed = subprocess.run(
-        [str(WRAPPER), *arguments],
+        [sys.executable, str(LAUNCHER), *arguments],
         check=False,
         capture_output=True,
         env=environment,
@@ -111,7 +116,22 @@ def test_plugin_manifests_match_package_identity_and_version() -> None:
     assert hatch["version"]["path"] == "src/embead/_version.py"
     assert codex["version"] == claude["version"] == __version__
     assert codex["description"] == claude["description"]
-    assert WRAPPER.stat().st_mode & 0o111
+    assert LAUNCHER.is_file()
+    if os.name != "nt":
+        assert WRAPPER.stat().st_mode & 0o111
+
+
+def test_launcher_check_reports_cross_platform_contract(tmp_path: Path) -> None:
+    completed, arguments_path = _run_wrapper(tmp_path, "check")
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {
+        "cli": "embead 0.3.0",
+        "json_schema_version": 1,
+        "status": "ready",
+    }
+    assert completed.stderr == ""
+    assert not arguments_path.exists()
 
 
 def test_wrapper_reports_missing_cli_without_running_tracker(tmp_path: Path) -> None:

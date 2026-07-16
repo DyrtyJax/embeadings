@@ -91,10 +91,10 @@ claude --plugin-dir ./plugins/embeadings
 ```
 
 The Codex and Claude manifests live separately while sharing the same skills and guarded CLI
-wrapper. The wrapper requires emBEADings 0.3.0 or newer, forces schema-v1 JSON, rejects explicit
-report/checkpoint paths, and verifies the report's read-only policy. Semantic sweeps may still use
-the external platform cache and run-state directories described above; they do not write into the
-analyzed repository by default.
+launcher. The cross-platform Python launcher requires emBEADings 0.3.0 or newer, forces schema-v1
+JSON, rejects explicit report/checkpoint paths, and verifies the report's read-only policy. Semantic
+sweeps may still use the external platform cache and run-state directories described above; they do
+not write into the analyzed repository by default.
 
 This is a local plugin foundation, not yet a marketplace release. Marketplace metadata, a public
 package tag, and observed-to-observed collision validation remain gated on the corresponding Beads

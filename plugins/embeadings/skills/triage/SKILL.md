@@ -10,7 +10,7 @@ source files, dependencies, or issue state while this skill is active.
 
 ## Prepare
 
-1. Run the plugin's `scripts/run-embeadings check` from the plugin root shown in this skill's
+1. Run `python <plugin-root>/scripts/run_embeadings.py check` from the plugin root shown in this skill's
    installed path. If it fails, report the dependency error exactly and stop.
 2. Work from the repository whose Git context should be evaluated.
 3. Use Beads by default. Use Linear only when the user selected it or `EMBEAD_SOURCE=linear` is
@@ -24,16 +24,16 @@ source files, dependencies, or issue state while this skill is active.
 For Beads, run:
 
 ```sh
-<plugin-root>/scripts/run-embeadings sweep --weekly-review-budget 20
+python <plugin-root>/scripts/run_embeadings.py sweep --weekly-review-budget 20
 ```
 
 For Linear, run:
 
 ```sh
-<plugin-root>/scripts/run-embeadings \
-  --source linear --linear-team "$LINEAR_TEAM" \
-  sweep --weekly-review-budget 20
+python <plugin-root>/scripts/run_embeadings.py --source linear --linear-team TEAM sweep --weekly-review-budget 20
 ```
+
+Replace `TEAM` with the selected team ID, key, or exact name.
 
 Add `--code-surfaces` only when the current repository is the implementation repository whose paths
 should corroborate the tracker. Pass only options the user requested or that are necessary to select

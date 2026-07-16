@@ -369,6 +369,107 @@ def test_observed_to_explicit_exact_path_bypasses_hub_guard(tmp_path: Path) -> N
     assert analysis.pairs_omitted_by_hub_guard == 0
 
 
+def test_pathological_base_diff_is_excluded_but_working_changes_remain(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    worktree = tmp_path / "worktree-1"
+    root.mkdir()
+    worktree.mkdir()
+    historical_paths = "".join(f"src/history/file-{index}.py\0" for index in range(251))
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        responses = {
+            ("rev-parse", "--is-inside-work-tree"): "true\n",
+            ("rev-parse", "HEAD"): "root-head\n",
+            ("rev-parse", "--verify", "origin/main"): "base-head\n",
+            ("rev-parse", "origin/main"): "base-head\n",
+        }
+        if command in responses:
+            return completed(responses[command])
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(
+                f"worktree {root}\nHEAD root-head\nbranch refs/heads/main\n\n"
+                f"worktree {worktree}\nHEAD work-head\nbranch refs/heads/codex/bead-1\n"
+            )
+        if command == (
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMRD",
+            "-z",
+            "origin/main...HEAD",
+        ):
+            return completed(historical_paths)
+        if command == ("diff", "--name-only", "--diff-filter=ACMRD", "-z", "HEAD"):
+            return completed("src/live/tracked.py\0")
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed("src/live/untracked.py\0")
+        raise AssertionError((cwd, arguments))
+
+    analysis = analyze_code_surfaces(
+        [IssueRecord(id="proj.1", title="Active implementation")],
+        workspace_path=root,
+        runner=runner,
+    )
+
+    assert analysis.base_reference == "origin/main"
+    assert analysis.base_revision == "base-head"
+    assert analysis.pointer_count == 2
+    assert analysis.source_counts == {"active-worktree-diff": 2}
+    assert [pointer["path"] for pointer in analysis.surfaces[0]["pointers"]] == [
+        "src/live/tracked.py",
+        "src/live/untracked.py",
+    ]
+    assert analysis.warnings == (
+        "Observed committed diff for issue proj.1 was excluded: base reference 'origin/main' "
+        "produced 251 eligible code-surface paths, above the safety limit of 250. Tracked and "
+        "untracked working-tree changes remain included; choose a current --base-ref to restore "
+        "committed-change evidence.",
+    )
+
+
+def test_failed_base_diff_is_diagnostic_and_working_changes_remain(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    worktree = tmp_path / "worktree-1"
+    root.mkdir()
+    worktree.mkdir()
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        responses = {
+            ("rev-parse", "--is-inside-work-tree"): "true\n",
+            ("rev-parse", "HEAD"): "root-head\n",
+            ("rev-parse", "--verify", "origin/main"): "base-head\n",
+            ("rev-parse", "origin/main"): "base-head\n",
+        }
+        if command in responses:
+            return completed(responses[command])
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(
+                f"worktree {root}\nHEAD root-head\nbranch refs/heads/main\n\n"
+                f"worktree {worktree}\nHEAD work-head\nbranch refs/heads/codex/bead-1\n"
+            )
+        if command[-1:] == ("origin/main...HEAD",):
+            return completed(returncode=128)
+        if command == ("diff", "--name-only", "--diff-filter=ACMRD", "-z", "HEAD"):
+            return completed("src/live/tracked.py\0")
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed()
+        raise AssertionError((cwd, arguments))
+
+    analysis = analyze_code_surfaces(
+        [IssueRecord(id="proj.1", title="Active implementation")],
+        workspace_path=root,
+        runner=runner,
+    )
+
+    assert analysis.pointer_count == 1
+    assert analysis.warnings == (
+        "Observed committed diff for issue proj.1 could not be computed from base reference "
+        "'origin/main'. Tracked and untracked working-tree changes remain included; verify "
+        "--base-ref for committed-change evidence.",
+    )
+
+
 def test_explicit_mapping_validates_issue_and_registered_worktree(tmp_path: Path) -> None:
     mappings = parse_worktree_mappings([f"proj.1={tmp_path}"])
     assert mappings == {"proj.1": tmp_path.resolve()}
@@ -377,3 +478,41 @@ def test_explicit_mapping_validates_issue_and_registered_worktree(tmp_path: Path
         parse_worktree_mappings(["proj.1"])
     with pytest.raises(ValueError, match="duplicate"):
         parse_worktree_mappings([f"proj.1={tmp_path}", f"proj.1={tmp_path}"])
+
+
+def test_mapping_outside_population_explains_active_filter_requirements(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    worktree = tmp_path / "worktree-1"
+    root.mkdir()
+    worktree.mkdir()
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        responses = {
+            ("rev-parse", "--is-inside-work-tree"): "true\n",
+            ("rev-parse", "HEAD"): "root-head\n",
+            ("rev-parse", "--verify", "origin/main"): "base-head\n",
+            ("rev-parse", "origin/main"): "base-head\n",
+        }
+        if command in responses:
+            return completed(responses[command])
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(
+                f"worktree {root}\nHEAD root-head\nbranch refs/heads/main\n\n"
+                f"worktree {worktree}\nHEAD work-head\nbranch refs/heads/bead-closed\n"
+            )
+        raise AssertionError((cwd, arguments))
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"issue outside the evaluated population: proj.closed; mappings require an active "
+            r"included issue \(check --status and --include-epics"
+        ),
+    ):
+        analyze_code_surfaces(
+            [IssueRecord(id="proj.active", title="Included")],
+            workspace_path=root,
+            worktree_mappings={"proj.closed": worktree},
+            runner=runner,
+        )

@@ -287,6 +287,14 @@ def test_policy_rejects_unbounded_or_invalid_controls() -> None:
         policy(exception_margin=-0.1),
         policy(max_dependencies=-1),
         policy(max_dependencies_per_issue=-1),
+        policy(
+            max_total=2,
+            lane_reservations={"dependency": 1, "echo": 1, "overlap": 1},
+        ),
+        policy(
+            max_overlaps=0,
+            lane_reservations={"dependency": 0, "echo": 0, "overlap": 1},
+        ),
     ):
         try:
             rank_candidates(issues, issues, Scores({}), bad_policy)
@@ -332,6 +340,89 @@ def test_high_confidence_echo_is_admitted_before_overlap_under_total_budget() ->
     assert result.candidates[0]["admission_reason"] == "semantic-threshold"
     assert result.lanes["echo"].admitted == 1
     assert result.lanes["overlap"].dropped_by_run_cap == 1
+
+
+def test_review_lane_reservations_prevent_dependency_budget_starvation() -> None:
+    dependency_issues = []
+    score_values = {}
+    for index in range(20):
+        left = f"dependency-{index}-left"
+        right = f"dependency-{index}-right"
+        dependency_issues.extend([issue(left, dependencies=(right,)), issue(right)])
+        score_values[(left, right)] = 0.9
+    semantic_issues = [issue("echo-active"), issue("overlap-left"), issue("overlap-right")]
+    completed = issue("echo-completed", status="closed")
+    score_values[("echo-active", "echo-completed")] = 0.95
+    score_values[("overlap-left", "overlap-right")] = 0.94
+    active = [*dependency_issues, *semantic_issues]
+
+    result = rank_candidates(
+        active,
+        [*active, completed],
+        Scores(score_values),
+        policy(
+            max_total=20,
+            max_dependencies=75,
+            max_echoes=125,
+            max_overlaps=125,
+            lane_reservations={"dependency": 12, "echo": 4, "overlap": 4},
+        ),
+    )
+
+    assert [item["lane"] for item in result.candidates].count("dependency") == 18
+    assert [item["lane"] for item in result.candidates].count("echo") == 1
+    assert [item["lane"] for item in result.candidates].count("overlap") == 1
+    assert result.lanes["dependency"].admitted_to_reservation == 12
+    assert result.lanes["echo"].unused_reserved == 3
+    assert result.lanes["overlap"].unused_reserved == 3
+    assert result.lanes["dependency"].dropped_by_run_cap == 2
+
+
+def test_review_lane_reservations_do_not_displace_sensitivity_baseline() -> None:
+    active = []
+    score_values = {}
+    for index in range(20):
+        left = f"baseline-overlap-{index}-left"
+        right = f"baseline-overlap-{index}-right"
+        active.extend([issue(left), issue(right)])
+        score_values[(left, right)] = 0.90
+    for index in range(12):
+        left = f"sensitivity-dependency-{index}-left"
+        right = f"sensitivity-dependency-{index}-right"
+        active.extend([issue(left, dependencies=(right,)), issue(right)])
+        score_values[(left, right)] = 0.69
+
+    reservations = {"dependency": 12, "echo": 4, "overlap": 4}
+    default = rank_candidates(
+        active,
+        active,
+        Scores(score_values),
+        policy(max_total=20, lane_reservations=reservations),
+    )
+    sensitivity = rank_candidates(
+        active,
+        active,
+        Scores(score_values),
+        policy(
+            overlap_threshold=0.65,
+            max_total=20,
+            lane_reservations=reservations,
+        ),
+    )
+
+    default_ids = {
+        (item["kind"], item["issue_id"], item["related_issue_id"]) for item in default.candidates
+    }
+    sensitivity_ids = {
+        (item["kind"], item["issue_id"], item["related_issue_id"])
+        for item in sensitivity.candidates
+    }
+    assert default_ids <= sensitivity_ids
+    assert [item["lane"] for item in sensitivity.candidates].count("overlap") == 20
+    assert sensitivity.baseline_protected == 20
+    assert sensitivity.lanes["dependency"].admitted == 0
+    assert sensitivity.lanes["dependency"].unused_reserved == 12
+    assert sensitivity.lanes["dependency"].dropped_by_run_cap == 12
 
 
 def test_lane_budgets_are_independent_and_report_drops() -> None:

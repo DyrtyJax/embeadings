@@ -221,7 +221,7 @@ def _normalized_match(tokens: frozenset[str], vocabulary: dict[str, set[str]]) -
 def _normalized_match_in_text(
     value: str, eligible: frozenset[str], vocabulary: dict[str, set[str]]
 ) -> str | None:
-    """Prefer the first shared safe concept in field order (usually the title verb)."""
+    """Return the first safe normalized concept that is also pair-corroborated."""
 
     for token in re.findall(r"[a-z0-9]+", value.casefold()):
         if token not in eligible:
@@ -289,92 +289,90 @@ def _verification_anchor(
 ) -> dict[str, Any]:
     left_tokens = _all_tokens(left)
     right_tokens = _all_tokens(right)
-    shared = left_tokens & right_tokens
     # Acceptance conditions are the most useful contract source, followed by title and design.
-    # Extraction is anchored in the active (left) record. Pairwise overlap still controls evidence
-    # and confidence, but does not erase a useful safe action just because the related record uses a
-    # synonym or describes a different lifecycle phase.
+    # Extraction is anchored in one same-field, pair-corroborated safe category. Left-only wording
+    # may choose the abstention source field but can never become a specific claim.
     eligible_fields = [
         label
         for label in ("acceptance criteria", "title", "design", "description", "notes")
         if getattr(left, next(attribute for field, attribute in _FIELDS if field == label))
     ]
-    shared_by_field: dict[str, frozenset[str]] = {}
     left_by_field: dict[str, frozenset[str]] = {}
+    shared_by_field: dict[str, frozenset[str]] = {}
     for label in eligible_fields:
         attribute = next(attribute for field_label, attribute in _FIELDS if field_label == label)
         left_by_field[label] = _tokens(getattr(left, attribute))
-        shared_by_field[label] = _tokens(getattr(left, attribute)) & _tokens(
-            getattr(right, attribute)
-        )
+        shared_by_field[label] = left_by_field[label] & _tokens(getattr(right, attribute))
     source_field = next(
         (
             label
             for label in eligible_fields
-            if _normalized_match(left_by_field[label], _ACTION_ALIASES)
-            and _normalized_match(left_by_field[label], _ENTITY_ALIASES)
+            if _normalized_match(shared_by_field[label], _ACTION_ALIASES)
+            and _normalized_match(shared_by_field[label], _ENTITY_ALIASES)
         ),
-        eligible_fields[0] if eligible_fields else "whole-record semantics",
+        next(
+            (
+                label
+                for label in eligible_fields
+                if _normalized_match(left_by_field[label], _ACTION_ALIASES)
+                and _normalized_match(left_by_field[label], _ENTITY_ALIASES)
+            ),
+            eligible_fields[0] if eligible_fields else "whole-record semantics",
+        ),
     )
+    category, category_corroborated = _category(left_tokens, right_tokens, kind=kind, fields=fields)
+    source_shared = shared_by_field.get(source_field, frozenset())
     source_attribute = next(
         (attribute for label, attribute in _FIELDS if label == source_field), None
     )
-    source_shared = frozenset()
-    if source_attribute:
-        source_shared = shared_by_field[source_field]
-
-    category, category_corroborated = _category(left_tokens, right_tokens, kind=kind, fields=fields)
     source_text = getattr(left, source_attribute) if source_attribute else ""
-    source_tokens = left_by_field.get(source_field, frozenset())
-    operation = _normalized_match_in_text(source_text, source_tokens, _ACTION_ALIASES) or (
-        _normalized_match(shared, _ACTION_ALIASES)
-    )
-    entity = _normalized_match_in_text(source_text, source_tokens, _ENTITY_ALIASES) or (
-        _normalized_match(shared, _ENTITY_ALIASES)
-    )
-    generic_fallback = operation is None or entity is None
-    operation = operation or "compare"
-    entity = entity or "acceptance condition"
-    source_specific = bool(source_tokens) and (
-        _normalized_match(source_tokens, _ACTION_ALIASES) is not None
-        and _normalized_match(source_tokens, _ENTITY_ALIASES) is not None
-    )
-    pair_corroborated = (
-        _normalized_match(source_shared, _ACTION_ALIASES) is not None
-        and _normalized_match(source_shared, _ENTITY_ALIASES) is not None
-    )
-    confidence = (
-        "high"
-        if source_specific and pair_corroborated and category_corroborated
-        else "medium"
-        if not generic_fallback
-        else "low"
-    )
-    typed_check = _typed_check(
+    operation = _normalized_match_in_text(source_text, source_shared, _ACTION_ALIASES)
+    entity = _normalized_match_in_text(source_text, source_shared, _ENTITY_ALIASES)
+    pair_corroborated = operation is not None and entity is not None
+    left_check = _typed_check(
         left,
         ownership_corroborated=category == "transferred ownership" and category_corroborated,
     )
-    check_category, check_source_field = (
-        typed_check
-        if typed_check is not None
-        else ("entity-category", source_field)
-        if not generic_fallback
-        else ("unspecified", "whole-record semantics")
+    right_check = _typed_check(
+        right,
+        ownership_corroborated=category == "transferred ownership" and category_corroborated,
+    )
+    shared_check = (
+        left_check
+        if left_check is not None
+        and right_check is not None
+        and left_check[0] == right_check[0]
+        and pair_corroborated
+        else None
     )
     specificity = (
-        "generic"
-        if generic_fallback
-        else "concrete-check"
-        if typed_check is not None
+        "concrete-check"
+        if shared_check is not None
         else "category-check"
+        if pair_corroborated
+        else "generic"
+    )
+    check_category, check_source_field = (
+        shared_check
+        if shared_check is not None
+        else ("entity-category", source_field)
+        if pair_corroborated
+        else ("unspecified", "whole-record semantics")
+    )
+    confidence = (
+        "high"
+        if shared_check is not None and category_corroborated
+        else "medium"
+        if pair_corroborated
+        else "low"
     )
     return {
         "category": category,
         "outcome_or_invariant": category,
-        "operation": operation,
-        "action": operation,
-        "entity_class": entity,
-        "entity": entity,
+        "operation": operation or "compare",
+        "action": operation or "compare",
+        "entity_class": entity or "acceptance condition",
+        "entity": entity or "acceptance condition",
         "source_field": source_field,
         "confidence": confidence,
         "extraction_confidence": confidence,
@@ -382,7 +380,7 @@ def _verification_anchor(
         "specificity": specificity,
         "check_category": check_category,
         "check_source_field": check_source_field,
-        "generic_fallback": generic_fallback,
+        "generic_fallback": not pair_corroborated,
     }
 
 
@@ -408,28 +406,40 @@ def explain_candidate(
     )
 
     if anchor["specificity"] == "generic":
-        anchor_text = "a generic local comparison; inspect the recorded acceptance conditions"
+        anchor_text = (
+            "no candidate-specific contract was extracted; inspect the recorded acceptance "
+            "conditions directly"
+        )
     elif anchor["specificity"] == "concrete-check":
         anchor_text = (
-            f"{anchor['category']} — typed {anchor['check_category']} check: {anchor['operation']} "
-            f"{anchor['entity_class']} (type derived from {anchor['check_source_field']})"
+            f"{anchor['category']} — pair-corroborated {anchor['check_category']} category: "
+            f"{anchor['operation']} {anchor['entity_class']} (both records support this "
+            f"finite-vocabulary category; inspect {anchor['check_source_field']} for the actual "
+            "contract)"
         )
     else:
         anchor_text = (
-            f"category-level check — {anchor['operation']} {anchor['entity_class']} "
-            f"(derived from {anchor['source_field']}; no concrete local check was extracted)"
+            f"shared category only — {anchor['operation']} {anchor['entity_class']} "
+            "(no candidate-specific fact, invariant, test, or contract was extracted)"
         )
+    structure_note = (
+        f" The tracker already records {structural_context}; treat that edge as existing context, "
+        "not novel semantic evidence."
+        if structural_context != "none recorded"
+        else ""
+    )
     if kind == "completed-work-echo":
         verify = (
             f"Use this privacy-safe review anchor: {anchor_text}. Inspect whether verified "
             f"completion evidence for closed issue {right.id} changes the remaining scope of "
             f"active issue {left.id}; semantic similarity alone does not establish that it does."
+            f"{structure_note}"
         )
     else:
         verify = (
             f"Use this privacy-safe review anchor: {anchor_text}. Compare the recorded acceptance "
             f"conditions of {left.id} and {right.id}; similarity alone does not establish a "
-            "shared contract or outcome."
+            f"shared contract or outcome.{structure_note}"
         )
     return {
         "pattern": pattern,

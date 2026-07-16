@@ -207,8 +207,8 @@ Candidate volume must be bounded through a deterministic per-issue cap or equiva
 Lowering a global threshold without a volume control is not an acceptable substitute for ranking.
 The synchronous CLI defaults to a `0.08` exception margin, reciprocal rank `5`, three candidates per
 issue, and 250 candidates per run. Candidates are assigned to typed-dependency, completed-work echo,
-and overlap lanes with independent budgets. Typed dependencies are admitted before semantic lanes;
-within the overlap lane, reciprocal exceptions rank behind stronger semantic signals.
+and overlap lanes with independent budgets. Standard runs admit typed dependencies before semantic
+lanes; within the overlap lane, reciprocal exceptions rank behind stronger semantic signals.
 Direct parent/child structure is reported as counterevidence and does not enable a below-threshold
 exception on its own.
 
@@ -221,11 +221,16 @@ a narrow sparse-record fallback. Frequency is derived deterministically from the
 Reports expose only bounded evidence categories and counts, never matched terms or source text.
 
 For recurring maintenance, `--weekly-review-budget N` is an opinionated hard total budget layered on
-the existing lane and per-issue allowances. It selects typed dependencies first, high-confidence
-completed-work echoes second, and possible overlaps third. The budget is applied after incremental
-eligibility filtering, so unchanged records remain context without consuming the queue. Sweep reports
-record the effective limit, admitted total, deterministic priority policy, and compact per-lane counts
-for candidates omitted by the total budget.
+the existing lane and per-issue allowances. Before the standard dependency-first pass, it reserves
+capacity for each evidence lane so a relation-rich tracker cannot consume the entire review queue.
+For budgets of three or more, the target split is approximately 60% dependency, 20% completed-work
+echo, and 20% possible overlap. A one-candidate queue reserves overlap; a two-candidate queue reserves
+one dependency and one overlap. A reservation is minimum access, not a quota: capacity unused because
+a lane lacks admissible candidates returns to the standard dependency → echo → overlap pass. The
+budget is applied after incremental eligibility filtering, so unchanged records remain context
+without consuming the queue. Sweep reports record the effective limit plus reserved,
+admitted-to-reservation, unused, and omitted counts by lane. Code-surface collisions remain separate
+evidence and do not consume this candidate budget.
 
 Every sweep also emits a privacy-safe typed-dependency funnel. It counts non-parent typed edges,
 edges inactive for the selected review scope (including closed-only structure), edges below the

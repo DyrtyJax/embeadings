@@ -203,8 +203,8 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
         metavar="CANDIDATES",
         help=(
-            "Bound a weekly queue to this many candidates, selecting typed dependencies "
-            "before high-confidence completed-work echoes and possible overlaps"
+            "Bound a weekly semantic queue with reserved access for dependency, echo, and "
+            "overlap lanes; unused capacity reflows in dependency-to-echo-to-overlap order"
         ),
     )
     parser.add_argument(
@@ -534,6 +534,7 @@ def _candidate_evidence(
     max_dependency_candidates: int = 75,
     max_echo_candidates: int = 125,
     max_overlap_candidates: int = 125,
+    lane_reservations: dict[str, int] | None = None,
     eligible_issue_ids: frozenset[str] | None = None,
 ) -> CandidateRanking:
     ranking = rank_candidates(
@@ -551,6 +552,7 @@ def _candidate_evidence(
             max_dependencies=max_dependency_candidates,
             max_echoes=max_echo_candidates,
             max_overlaps=max_overlap_candidates,
+            lane_reservations=lane_reservations,
         ),
         eligible_issue_ids=eligible_issue_ids,
     )
@@ -587,6 +589,28 @@ def _candidate_evidence(
     )
 
 
+def _review_lane_reservations(limit: int, lane_caps: dict[str, int]) -> dict[str, int]:
+    """Reserve a structural majority while guaranteeing semantic lane access.
+
+    The reservations are minimum access, not quotas. Any unused capacity is
+    returned to the normal dependency -> echo -> overlap priority pass.
+    """
+
+    if limit == 1:
+        requested = {"dependency": 0, "echo": 0, "overlap": 1}
+    elif limit == 2:
+        requested = {"dependency": 1, "echo": 0, "overlap": 1}
+    else:
+        echo = max(1, limit // 5)
+        overlap = max(1, limit // 5)
+        requested = {
+            "dependency": limit - echo - overlap,
+            "echo": echo,
+            "overlap": overlap,
+        }
+    return {lane: min(requested[lane], lane_caps[lane]) for lane in requested}
+
+
 def _sweep(args: argparse.Namespace) -> int:
     if args.size < 1:
         raise ValueError("--size must be positive")
@@ -596,6 +620,16 @@ def _sweep(args: argparse.Namespace) -> int:
         else args.max_candidates
         if args.max_candidates is not None
         else 250
+    )
+    lane_caps = {
+        "dependency": args.max_dependency_candidates,
+        "echo": args.max_echo_candidates,
+        "overlap": args.max_overlap_candidates,
+    }
+    lane_reservations = (
+        _review_lane_reservations(max_candidates, lane_caps)
+        if args.weekly_review_budget is not None
+        else None
     )
     policy = CandidatePolicy(
         echo_threshold=args.echo_threshold,
@@ -608,6 +642,7 @@ def _sweep(args: argparse.Namespace) -> int:
         max_dependencies=args.max_dependency_candidates,
         max_echoes=args.max_echo_candidates,
         max_overlaps=args.max_overlap_candidates,
+        lane_reservations=lane_reservations,
     )
     policy.validate()
     started = time.monotonic()
@@ -679,6 +714,7 @@ def _sweep(args: argparse.Namespace) -> int:
         max_dependency_candidates=args.max_dependency_candidates,
         max_echo_candidates=args.max_echo_candidates,
         max_overlap_candidates=args.max_overlap_candidates,
+        lane_reservations=lane_reservations,
         eligible_issue_ids=active_scope_ids,
     )
     candidates = list(ranking.candidates)
@@ -804,6 +840,8 @@ def _sweep(args: argparse.Namespace) -> int:
         "candidate_limit": max_candidates,
         "admitted_candidates": len(candidates),
         "omitted_candidates": ranking.dropped_by_run_cap,
+        "selection_policy": "reserved-lane-access-then-priority-reflow",
+        "reservation_order": ["dependency", "echo", "overlap"],
         "priority_order": [
             "typed-dependency",
             "high-confidence-completed-work-echo",
@@ -812,6 +850,16 @@ def _sweep(args: argparse.Namespace) -> int:
         "omitted_by_lane": {
             lane: metrics.dropped_by_run_cap for lane, metrics in (ranking.lanes or {}).items()
         },
+        "lane_capacity": {
+            lane: {
+                "reserved": metrics.reserved,
+                "admitted_to_reservation": metrics.admitted_to_reservation,
+                "unused": metrics.unused_reserved,
+            }
+            for lane, metrics in (ranking.lanes or {}).items()
+            if lane_reservations is not None
+        },
+        "code_surface_scope": "outside-semantic-candidate-limit",
     }
     payload = build_sweep_payload(
         run_id,
@@ -836,11 +884,7 @@ def _sweep(args: argparse.Namespace) -> int:
             "max_dependencies_per_issue": args.max_dependency_candidates_per_issue,
             "max_total": max_candidates,
             "review_budget": review_budget,
-            "lane_caps": {
-                "dependency": args.max_dependency_candidates,
-                "echo": args.max_echo_candidates,
-                "overlap": args.max_overlap_candidates,
-            },
+            "lane_caps": lane_caps,
             "qualified": ranking.qualified,
             "baseline_protected": ranking.baseline_protected,
             "reciprocal_diagnostics": ranking.reciprocal_diagnostics,

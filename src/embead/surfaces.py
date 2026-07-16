@@ -93,6 +93,12 @@ _ROOT_PATH_RE = re.compile(
     r"(?:(?P<separator>::|#)(?P<symbol>[A-Za-z_][A-Za-z0-9_.-]*))?`"
 )
 
+# A worktree is evidence of current implementation, not an unbounded history report.  A valid but
+# stale base can otherwise turn most of a repository into "observed" evidence and create a
+# quadratic collision queue.  Working-tree and untracked paths are deliberately not subject to
+# this historical-diff guard.
+_MAX_COMMITTED_DIFF_PATHS = 250
+
 
 @dataclass(frozen=True, slots=True)
 class CodePointer:
@@ -154,6 +160,14 @@ class _Worktree:
     path: Path
     head: str | None
     branch: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ChangedPaths:
+    paths: tuple[str, ...]
+    base_diff_count: int = 0
+    base_diff_excluded: bool = False
+    base_diff_failed: bool = False
 
 
 def extract_explicit_pointers(issue: Any, *, revision: str | None) -> tuple[CodePointer, ...]:
@@ -245,7 +259,22 @@ def analyze_code_surfaces(
             worktree_mappings or {},
         )
         for issue_id, worktree in sorted(associations.items()):
-            for changed_path in _changed_paths(worktree, effective_base, runner):
+            changed_paths = _changed_paths(worktree, effective_base, runner)
+            if changed_paths.base_diff_excluded:
+                warnings.append(
+                    f"Observed committed diff for issue {issue_id} was excluded: base reference "
+                    f"'{effective_base}' produced {changed_paths.base_diff_count} eligible "
+                    f"code-surface paths, above the safety limit of {_MAX_COMMITTED_DIFF_PATHS}. "
+                    "Tracked and untracked working-tree changes remain included; choose a current "
+                    "--base-ref to restore committed-change evidence."
+                )
+            elif changed_paths.base_diff_failed:
+                warnings.append(
+                    f"Observed committed diff for issue {issue_id} could not be computed from base "
+                    f"reference '{effective_base}'. Tracked and untracked working-tree changes "
+                    "remain included; verify --base-ref for committed-change evidence."
+                )
+            for changed_path in changed_paths.paths:
                 normalized = _normalize_git_path(changed_path)
                 if normalized is None:
                     continue
@@ -638,7 +667,11 @@ def _associate_worktrees(
     associations: dict[str, _Worktree] = {}
     for issue_id, raw_path in explicit.items():
         if issue_id not in issue_ids:
-            raise ValueError(f"worktree mapping references unknown issue: {issue_id}")
+            raise ValueError(
+                f"worktree mapping references issue outside the evaluated population: {issue_id}; "
+                "mappings require an active included issue (check --status and --include-epics, "
+                "or map a currently active issue)"
+            )
         path = Path(raw_path).resolve()
         if path not in by_path:
             raise ValueError(f"mapped path is not a registered Git worktree: {path}")
@@ -676,22 +709,50 @@ def _numeric_suffix(issue_id: str) -> str | None:
 
 def _changed_paths(
     worktree: _Worktree, base_reference: str | None, runner: GitRunner
-) -> tuple[str, ...]:
+) -> _ChangedPaths:
     paths: set[str] = set()
-    commands = [
+    base_diff_count = 0
+    base_diff_excluded = False
+    base_diff_failed = False
+    if base_reference:
+        base_result = runner(
+            worktree.path,
+            [
+                "diff",
+                "--name-only",
+                "--diff-filter=ACMRD",
+                "-z",
+                f"{base_reference}...HEAD",
+            ],
+        )
+        if base_result.returncode != 0:
+            base_diff_failed = True
+        else:
+            base_paths = {
+                value
+                for value in base_result.stdout.split("\0")
+                if value and _normalize_git_path(value) is not None
+            }
+            base_diff_count = len(base_paths)
+            if base_diff_count > _MAX_COMMITTED_DIFF_PATHS:
+                base_diff_excluded = True
+            else:
+                paths.update(base_paths)
+
+    working_commands = [
         ["diff", "--name-only", "--diff-filter=ACMRD", "-z", "HEAD"],
         ["ls-files", "--others", "--exclude-standard", "-z"],
     ]
-    if base_reference:
-        commands.insert(
-            0,
-            ["diff", "--name-only", "--diff-filter=ACMRD", "-z", f"{base_reference}...HEAD"],
-        )
-    for command in commands:
+    for command in working_commands:
         result = runner(worktree.path, command)
         if result.returncode == 0:
             paths.update(value for value in result.stdout.split("\0") if value)
-    return tuple(sorted(paths))
+    return _ChangedPaths(
+        paths=tuple(sorted(paths)),
+        base_diff_count=base_diff_count,
+        base_diff_excluded=base_diff_excluded,
+        base_diff_failed=base_diff_failed,
+    )
 
 
 def _pointer_key(pointer: CodePointer) -> tuple[str, str, str, str, str]:

@@ -78,6 +78,12 @@ threshold change alters a bounded winner. Its nonempty `causal_chain` follows th
 qualification and each bounded resource transition to the admitted candidate; consumers should
 render that chain instead of presenting the candidate as newly semantically qualified.
 
+When `review_budget.mode` is `weekly`, `review_budget.lane_capacity` records each lane's `reserved`,
+`admitted_to_reservation`, and `unused` capacity. These are access reservations, not required quotas;
+total admissions remain in the corresponding lane metrics. Consumers must not describe the queue as
+semantic when the admitted candidates all belong to the dependency lane, and must render code-surface
+collisions separately because they do not consume this budget.
+
 `dependency_funnel` distinguishes a corpus with no typed structure from one whose typed edges are
 closed-only, below the qualification floor, or eligible but capped. Its fields are mutually
 exclusive aggregate counts and satisfy two producer-checked conservation equations. Consumers can
@@ -99,6 +105,12 @@ rounded to whole seconds, matching the supported Beads 1.0.x JSONL-to-Dolt times
 Different live/export digests produce a non-content warning even when record counts match.
 `source_divergence_reasons` supplies only controlled metadata categories such as `status`,
 `dependency_structure`, or `record_count`; it never identifies records or includes issue text.
+
+Linear snapshots may include additive `relation_diagnostics`. It conserves the workspace relation
+query into retained, collapsed, and omitted counts, then divides omitted relations into outbound
+team-boundary, inbound team-boundary, and neither-endpoint-selected buckets with bounded type counts.
+The selected-team warning is the human-readable counterpart. Consumers must not infer that omitted
+external issues were analyzed: v1 deliberately does not fetch those endpoint records.
 
 Code-surface analysis may include additive `repository_context` and
 `pairs_omitted_by_module_guard` fields. The former distinguishes invoking-worktree provenance from a

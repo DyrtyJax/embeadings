@@ -28,7 +28,8 @@
         "beads_version": { "type": ["string", "null"], "minLength": 1 },
         "tracker_name": { "enum": ["beads", "linear"] },
         "tracker_version": { "type": "string", "minLength": 1 },
-        "workspace_path": { "type": ["string", "null"] }
+        "workspace_path": { "type": ["string", "null"] },
+        "relation_diagnostics": { "type": ["object", "null"] }
       },
       "additionalProperties": true
     },

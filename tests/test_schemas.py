@@ -192,6 +192,12 @@ def test_version_one_accepts_generic_linear_snapshot(name: str) -> None:
         "workspace_path": None,
         "tracker_name": "linear",
         "tracker_version": "graphql-current",
+        "relation_diagnostics": {
+            "raw_relation_count": 7,
+            "retained_relation_count": 2,
+            "omitted_relation_count": 3,
+            "boundary_relation_count": 2,
+        },
     }
 
     Draft202012Validator(_load(SCHEMAS, f"{name}.schema.json")).validate(payload)

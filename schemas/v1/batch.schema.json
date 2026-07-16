@@ -58,6 +58,7 @@
         "tracker_name": { "enum": ["beads", "linear"] },
         "tracker_version": { "type": "string", "minLength": 1 },
         "workspace_path": { "type": ["string", "null"] },
+        "relation_diagnostics": { "type": ["object", "null"] },
         "source_revision": { "type": ["string", "null"] },
         "source_divergence_reasons": {
           "type": "array",

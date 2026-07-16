@@ -72,9 +72,12 @@ sys.stdout.write(os.environ["EMBEAD_STUB_PAYLOAD"])
     if payload is None:
         payload = _report()
     rendered_payload = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
+    path = str(bin_dir)
+    if install_cli:
+        path += os.pathsep + os.environ.get("PATH", "")
     environment = {
         **os.environ,
-        "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+        "PATH": path,
         "EMBEAD_STUB_ARGUMENTS": str(arguments_path),
         "EMBEAD_STUB_PAYLOAD": rendered_payload,
         "EMBEAD_STUB_VERSION": f"embead {version}",

@@ -60,6 +60,7 @@ from .surfaces import analyze_code_surfaces, parse_worktree_mappings
 from .trackers import TrackerAdapter, TrackerError
 
 ACTIVE_STATUSES = {"open", "in_progress", "blocked", "deferred"}
+COLLISION_STATUSES = {"open", "in_progress", "blocked"}
 REVIEW_RUBRIC = (
     "Verify each candidate against current source, documentation, and shipped behavior.",
     "Record counterevidence when similar wording reflects different scope.",
@@ -230,7 +231,10 @@ def _parser() -> argparse.ArgumentParser:
     collisions.add_argument(
         "--status",
         action="append",
-        help="Include a stored status (repeatable; defaults to all active work)",
+        help=(
+            "Include a stored status (repeatable; defaults to concurrent open, in_progress, "
+            "and blocked work; deferred is opt-in)"
+        ),
     )
     collisions.add_argument("--include-epics", action="store_true")
     _ephemeral_argument(collisions)
@@ -694,7 +698,7 @@ def _surface_analysis(
 
 def _collisions(args: argparse.Namespace) -> int:
     snapshot, issues = _load_source(args)
-    statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
+    statuses = {status.casefold() for status in (args.status or COLLISION_STATUSES)}
     population = [
         issue
         for issue in issues

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">emBEADings social preview</title>
+  <desc id="desc">Local, read-only coordination review for Beads and Linear.</desc>
+  <rect width="1280" height="640" fill="#0b1220"/>
+  <circle cx="1115" cy="96" r="260" fill="#172033" opacity=".72"/>
+  <circle cx="1180" cy="610" r="330" fill="#111c30" opacity=".9"/>
+
+  <g transform="translate(82 78)">
+    <rect width="92" height="92" rx="21" fill="#111c30" stroke="#334155" stroke-width="2"/>
+    <g fill="none" stroke="#64748b" stroke-linecap="round" stroke-width="4">
+      <path d="M17 24 43 46"/>
+      <path d="M17 68 43 46"/>
+      <path d="M49 46h26"/>
+    </g>
+    <circle cx="17" cy="24" r="7" fill="#60a5fa"/>
+    <circle cx="17" cy="68" r="7" fill="#34d399"/>
+    <circle cx="75" cy="46" r="7" fill="#e2e8f0"/>
+    <rect x="37" y="37" width="18" height="18" rx="5" fill="#fbbf24"/>
+    <path d="m43 43-2.5 3 2.5 3M49 43l2.5 3-2.5 3" fill="none" stroke="#0b1220" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+  </g>
+
+  <text x="198" y="147" fill="#f8fafc" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="63" font-weight="720" letter-spacing="-2">emBEADings</text>
+  <text x="82" y="260" fill="#e2e8f0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="42" font-weight="580" letter-spacing="-.7">Catch related and colliding work</text>
+  <text x="82" y="315" fill="#e2e8f0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="42" font-weight="580" letter-spacing="-.7">before parallel agents step on each other.</text>
+
+  <g transform="translate(82 399)" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="650" letter-spacing="1.7">
+    <rect width="167" height="43" rx="21.5" fill="#172033" stroke="#334155"/>
+    <text x="22" y="28" fill="#93c5fd">LOCAL-FIRST</text>
+    <rect x="181" width="144" height="43" rx="21.5" fill="#172033" stroke="#334155"/>
+    <text x="203" y="28" fill="#a7f3d0">READ-ONLY</text>
+    <rect x="339" width="190" height="43" rx="21.5" fill="#172033" stroke="#334155"/>
+    <text x="361" y="28" fill="#fde68a">DETERMINISTIC</text>
+  </g>
+
+  <text x="82" y="536" fill="#94a3b8" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="24">Coordination review for Beads + Linear</text>
+  <text x="82" y="579" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">github.com/DyrtyJax/embeadings</text>
+
+  <g transform="translate(856 203)">
+    <g fill="none" stroke="#475569" stroke-linecap="round" stroke-width="7">
+      <path d="M0 22 170 140"/>
+      <path d="M0 258 170 140"/>
+      <path d="M192 140h160"/>
+    </g>
+    <circle cx="0" cy="22" r="20" fill="#60a5fa"/>
+    <circle cx="0" cy="258" r="20" fill="#34d399"/>
+    <circle cx="352" cy="140" r="20" fill="#e2e8f0"/>
+    <rect x="146" y="116" width="48" height="48" rx="12" fill="#fbbf24"/>
+    <path d="m162 130-9 10 9 10M178 130l9 10-9 10" fill="none" stroke="#0b1220" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+    <text x="-22" y="-18" fill="#93c5fd" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">work A</text>
+    <text x="-22" y="304" fill="#a7f3d0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">work B</text>
+    <text x="120" y="201" fill="#fde68a" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">shared surface</text>
+  </g>
+</svg>

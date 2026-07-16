@@ -40,7 +40,13 @@ owner has approved.
 - [Product and technical specification](spec.md)
 - [Ecosystem sweep](ecosystem-sweep.md)
 - [Embedding and storage decision](decisions/embedding-storage-alternatives.md)
+- [Review-budget default decision](decisions/review-budget-default.md)
 - [Research and evaluation ledger](research/README.md)
 
 Older research reports preserve the evidence available at the time. Prefer the index's status and
 newest decision report when an early pilot and current behavior differ.
+
+## Project stories
+
+- [The release gate stopped the release twice](articles/dogfooding-v040-worktree-gate.md) — a candid
+  account of the v0.4.0 four-worktree dogfood gate and the two defects it exposed.

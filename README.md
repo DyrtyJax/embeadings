@@ -1,5 +1,7 @@
 # emBEADings
 
+<img src="assets/brand/embeadings-mark.svg" width="72" alt="Two bead paths converging on a shared code surface">
+
 [![CI](https://github.com/DyrtyJax/embeadings/actions/workflows/ci.yml/badge.svg)](https://github.com/DyrtyJax/embeadings/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/DyrtyJax/embeadings?include_prereleases)](https://github.com/DyrtyJax/embeadings/releases/tag/v0.4.1)
 
@@ -48,6 +50,8 @@ checksums.
 
 ## What a lead looks like
 
+![Synthetic terminal example of an observed exact-file collision](assets/brand/synthetic-collision-evidence.svg)
+
 This shortened example is derived from the committed synthetic collision fixture:
 
 ```json
@@ -77,7 +81,8 @@ the read-only policy. It contains pointers rather than source snippets. See
 | Release validation | 269 tests passed across Linux, macOS, Windows, Python 3.11 and 3.14; wheel/sdist checksums and provenance published | Supply-chain and test evidence, not semantic quality |
 | Repeatability | Evaluation outputs were byte-stable and non-mutating | Determinism does not make a weak lead correct |
 
-Read the [v0.4.0 worktree gate](docs/research/code-surface-v040-release-gate.md),
+Read the [dogfood release-gate story](docs/articles/dogfooding-v040-worktree-gate.md),
+[aggregate v0.4.0 worktree gate](docs/research/code-surface-v040-release-gate.md),
 [Ruff scale review](docs/research/ruff-scale-surrogate-01.md), and
 [research index](docs/research/README.md) for methods, failure patterns, and limitations.
 
@@ -100,7 +105,8 @@ Beads or one Linear team
 `triage` is the opinionated front door. It admits at most 20 semantic candidates by default, includes
 code-surface analysis when genuine local Git evidence exists, and writes a complete audit report to
 external user state. Use `sweep` for experimental policy controls and `neighbors` for one-record
-inspection.
+inspection. The default is a reviewer-capacity budget, not corpus coverage; see the
+[review-budget decision](docs/decisions/review-budget-default.md).
 
 `collisions` reviews `open`, `in_progress`, and `blocked` work by default. It associates Git worktrees
 when a branch contains a full Bead ID or unambiguous `bead-N` suffix. Explicitly map an otherwise

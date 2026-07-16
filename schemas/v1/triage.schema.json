@@ -128,6 +128,8 @@
         "evidence_sources": { "type": "array", "items": { "enum": ["explicit-reference", "active-worktree-diff"] }, "uniqueItems": true },
         "edit_intent": { "enum": ["observed-edit", "likely-edit", "mixed", "reference-only", "unknown"] },
         "intent_source_fields": { "type": "array", "items": { "enum": ["title", "description", "acceptance_criteria", "design", "notes"] }, "uniqueItems": true },
+        "context_kind": { "enum": ["observed-worktree", "prose", "mixed", "code-fence-only"] },
+        "path_presence": { "enum": ["all-existing", "mixed", "all-missing", "unavailable"] },
         "revision_relation": { "enum": ["same", "different", "unavailable"] },
         "what_to_verify": { "type": "string", "minLength": 1 }
       },

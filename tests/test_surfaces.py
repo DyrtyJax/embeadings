@@ -40,6 +40,37 @@ def test_explicit_paths_are_conservative_and_never_copy_snippets() -> None:
     assert all(not hasattr(item, "snippet") for item in pointers)
 
 
+def test_explicit_pointers_ignore_templates_and_bound_reproduction_context(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repo"
+    existing = repository / "src" / "worker.py"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("", encoding="utf-8")
+    issue = IssueRecord(
+        id="proj-1",
+        title="Update `src/worker.py`",
+        description=(
+            "<!-- Run ruff path/to/template.py --fix. -->\n"
+            "Reproduction:\n```sh\nruff examples/example.py --fix\n```"
+        ),
+    )
+
+    pointers = extract_explicit_pointers(
+        issue,
+        revision="abc123",
+        repository_path=repository,
+    )
+
+    assert [pointer.path for pointer in pointers] == ["examples/example.py", "src/worker.py"]
+    by_path = {pointer.path: pointer for pointer in pointers}
+    assert by_path["src/worker.py"].context_kind == "prose"
+    assert by_path["src/worker.py"].path_presence == "existing"
+    assert by_path["examples/example.py"].context_kind == "code-fence"
+    assert by_path["examples/example.py"].path_presence == "missing"
+    assert all(pointer.path != "path/to/template.py" for pointer in pointers)
+
+
 def test_explicit_edit_intent_is_bounded_and_orders_without_suppression() -> None:
     issues = [
         IssueRecord(id="edit-a", title="Edit src/edit/core.py"),
@@ -84,6 +115,64 @@ def test_explicit_pointer_order_breaks_same_surface_intent_ties() -> None:
     ]
 
 
+def test_collision_order_prefers_grounded_prose_without_suppressing_references(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repo"
+    existing = repository / "src" / "existing.py"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("", encoding="utf-8")
+
+    def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        command = tuple(arguments)
+        if command == ("rev-parse", "--is-inside-work-tree"):
+            return completed("true\n")
+        if command == ("rev-parse", "HEAD"):
+            return completed("head\n")
+        if command == ("rev-parse", "--verify", "origin/main"):
+            return completed("base\n")
+        if command == ("rev-parse", "origin/main"):
+            return completed("base\n")
+        if command == ("worktree", "list", "--porcelain"):
+            return completed(f"worktree {repository}\nHEAD head\nbranch refs/heads/main\n")
+        if command[:2] == ("diff", "--name-only"):
+            return completed()
+        if command == ("ls-files", "--others", "--exclude-standard", "-z"):
+            return completed()
+        raise AssertionError((cwd, arguments))
+
+    issues = [
+        IssueRecord(id="existing-a", title="src/existing.py"),
+        IssueRecord(id="existing-b", title="src/existing.py"),
+        IssueRecord(id="missing-a", title="src/missing.py"),
+        IssueRecord(id="missing-b", title="src/missing.py"),
+        IssueRecord(
+            id="fenced-a", title="Reproduction", description="```\nexamples/example.py\n```"
+        ),
+        IssueRecord(
+            id="fenced-b", title="Reproduction", description="```\nexamples/example.py\n```"
+        ),
+    ]
+
+    analysis = analyze_code_surfaces(issues, workspace_path=repository, runner=runner)
+
+    assert [collision.shared_paths for collision in analysis.collisions] == [
+        ("src/existing.py",),
+        ("src/missing.py",),
+        ("examples/example.py",),
+    ]
+    assert [collision.context_kind for collision in analysis.collisions] == [
+        "prose",
+        "prose",
+        "code-fence-only",
+    ]
+    assert [collision.path_presence for collision in analysis.collisions] == [
+        "all-existing",
+        "all-missing",
+        "all-missing",
+    ]
+
+
 def test_explicit_surfaces_report_exact_collisions_and_suppress_module_only_pairs() -> None:
     issues = [
         IssueRecord(id="proj-1", title="Edit src/parser/dependencies.py"),
@@ -102,6 +191,8 @@ def test_explicit_surfaces_report_exact_collisions_and_suppress_module_only_pair
     exact = analysis.collisions[0]
     assert exact.shared_paths == ("src/parser/dependencies.py",)
     assert exact.confidence == "explicit"
+    assert exact.context_kind == "prose"
+    assert exact.path_presence == "unavailable"
     assert exact.revision_relation == "unavailable"
     assert analysis.warnings == (
         "No Git repository was available; only explicit code references were analyzed.",
@@ -222,6 +313,8 @@ def test_worktree_diffs_are_observed_and_revision_bound(tmp_path: Path) -> None:
     assert collision.confidence == "observed"
     assert collision.edit_intent == "observed-edit"
     assert collision.intent_source_fields == ()
+    assert collision.context_kind == "observed-worktree"
+    assert collision.path_presence == "all-missing"
     assert collision.shared_paths == ("src/shared/cache.py",)
     assert collision.revision_relation == "different"
 
@@ -288,6 +381,9 @@ def test_invoking_worktree_controls_revision_provenance(tmp_path: Path) -> None:
     owner.mkdir()
     invoking.mkdir()
     common.mkdir()
+    implementation_path = invoking / "src" / "parser" / "core.py"
+    implementation_path.parent.mkdir(parents=True)
+    implementation_path.write_text("", encoding="utf-8")
 
     def runner(cwd: Path, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
         command = tuple(arguments)

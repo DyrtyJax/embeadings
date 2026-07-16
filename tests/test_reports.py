@@ -447,3 +447,22 @@ def test_triage_packet_is_compact_deterministic_and_traceable() -> None:
     assert "embeADings" not in markdown
     assert "emBEADings triage packet" in markdown
     assert "Verify the completed outcome" in markdown
+
+
+def test_triage_packet_promotes_code_surface_grounding_warnings() -> None:
+    sweep = build_sweep_payload(
+        "run-grounding",
+        [],
+        [],
+        snapshot=SNAPSHOT,
+        model=MODEL,
+        target_batch_size=9,
+        code_surface_analysis={
+            "collisions": [],
+            "warnings": ["No explicit code pointers resolved in the selected repository."],
+        },
+    )
+
+    packet = build_triage_payload(sweep)
+
+    assert packet["warnings"] == ["No explicit code pointers resolved in the selected repository."]

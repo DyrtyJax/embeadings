@@ -83,6 +83,8 @@ _DIRECTORY_ROOTS = _GENERIC_ROOTS | frozenset(
     {".github", "backend", "cmd", "frontend", "internal", "pkg", "scripts", "services"}
 )
 _URL_RE = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_FENCE_RE = re.compile(r"(?m)^[ \t]*(?:```|~~~)")
 _PATH_RE = re.compile(
     r"(?<![\w:/.-])"
     r"(?P<path>(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+(?:\.[A-Za-z0-9]+|/))"
@@ -119,6 +121,8 @@ class CodePointer:
     symbol: str | None = None
     source_field: str | None = None
     edit_intent: str = "unknown"
+    context_kind: str = "prose"
+    path_presence: str = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +137,8 @@ class CodeSurfaceCollision:
     evidence_sources: tuple[str, ...]
     edit_intent: str
     intent_source_fields: tuple[str, ...]
+    context_kind: str
+    path_presence: str
     revision_relation: str
     what_to_verify: str
 
@@ -152,6 +158,8 @@ class CodeSurfaceAnalysis:
     worktrees_discovered: int
     worktrees_associated: int
     source_counts: dict[str, int]
+    context_counts: dict[str, int]
+    path_presence_counts: dict[str, int]
     hub_surface_limit: int
     hub_surfaces: tuple[dict[str, Any], ...]
     pairs_omitted_by_hub_guard: int
@@ -182,7 +190,12 @@ class _ChangedPaths:
     base_diff_failed: bool = False
 
 
-def extract_explicit_pointers(issue: Any, *, revision: str | None) -> tuple[CodePointer, ...]:
+def extract_explicit_pointers(
+    issue: Any,
+    *,
+    revision: str | None,
+    repository_path: str | Path | None = None,
+) -> tuple[CodePointer, ...]:
     """Extract conservative repository-relative path and optional symbol references."""
 
     issue_id = str(getattr(issue, "id", ""))
@@ -194,8 +207,9 @@ def extract_explicit_pointers(issue: Any, *, revision: str | None) -> tuple[Code
         ("notes", getattr(issue, "notes", "")),
     )
     pointers: set[CodePointer] = set()
+    repository = Path(repository_path).resolve() if repository_path is not None else None
     for field, raw in fields:
-        text = _URL_RE.sub(" ", str(raw or ""))
+        text = _mask_html_comments(_URL_RE.sub(" ", str(raw or "")))
         for match in (*_PATH_RE.finditer(text), *_ROOT_PATH_RE.finditer(text)):
             normalized = _normalize_path(match.group("path"))
             if normalized is None:
@@ -210,6 +224,8 @@ def extract_explicit_pointers(issue: Any, *, revision: str | None) -> tuple[Code
                     revision=revision,
                     source_field=field,
                     edit_intent=_explicit_edit_intent(text, match.start(), match.end()),
+                    context_kind=_explicit_context_kind(text, match.start()),
+                    path_presence=_path_presence(repository, normalized),
                 )
             )
     return tuple(sorted(pointers, key=_pointer_key))
@@ -262,7 +278,13 @@ def analyze_code_surfaces(
 
     pointers: list[CodePointer] = []
     for issue in ordered_issues:
-        pointers.extend(extract_explicit_pointers(issue, revision=revision))
+        pointers.extend(
+            extract_explicit_pointers(
+                issue,
+                revision=revision,
+                repository_path=repo if repository_available else None,
+            )
+        )
 
     if repository_available and repo is not None:
         worktrees = _list_worktrees(repo, runner)
@@ -299,6 +321,8 @@ def analyze_code_surfaces(
                         confidence="observed",
                         revision=worktree.head,
                         edit_intent="observed-edit",
+                        context_kind="observed-worktree",
+                        path_presence=_path_presence(worktree.path, normalized),
                     )
                 )
 
@@ -317,6 +341,17 @@ def analyze_code_surfaces(
     observed_ids = {
         pointer.issue_id for pointer in pointers if pointer.source == "active-worktree-diff"
     }
+    explicit_pointers = [pointer for pointer in pointers if pointer.source == "explicit-reference"]
+    if (
+        repository_available
+        and explicit_pointers
+        and all(pointer.path_presence == "missing" for pointer in explicit_pointers)
+    ):
+        warnings.append(
+            "No explicit code pointers resolved in the selected repository; verify that the "
+            "tracker is attached to its implementation checkout before treating explicit-only "
+            "leads as edit collisions."
+        )
     surfaces = tuple(
         {
             "issue_id": issue_id,
@@ -338,6 +373,10 @@ def analyze_code_surfaces(
         worktrees_discovered=len(worktrees),
         worktrees_associated=len(associations),
         source_counts=dict(sorted(Counter(pointer.source for pointer in pointers).items())),
+        context_counts=dict(sorted(Counter(pointer.context_kind for pointer in pointers).items())),
+        path_presence_counts=dict(
+            sorted(Counter(pointer.path_presence for pointer in pointers).items())
+        ),
         hub_surface_limit=hub_surface_limit,
         hub_surfaces=hub_surfaces,
         pairs_omitted_by_hub_guard=hub_omissions,
@@ -401,6 +440,23 @@ def _module_for(path: str) -> str | None:
     return "/".join(directories[:2])
 
 
+def _mask_html_comments(text: str) -> str:
+    """Remove issue-template prose while preserving offsets for bounded context checks."""
+
+    return _HTML_COMMENT_RE.sub(lambda match: " " * len(match.group()), text)
+
+
+def _explicit_context_kind(text: str, position: int) -> str:
+    fences_before = sum(match.start() < position for match in _FENCE_RE.finditer(text))
+    return "code-fence" if fences_before % 2 else "prose"
+
+
+def _path_presence(repository: Path | None, path: str) -> str:
+    if repository is None:
+        return "unavailable"
+    return "existing" if (repository / path.rstrip("/")).exists() else "missing"
+
+
 def _explicit_edit_intent(text: str, start: int, end: int) -> str:
     """Classify bounded local wording without retaining the surrounding text."""
 
@@ -423,6 +479,29 @@ def _collision_edit_intent(pointers: Sequence[CodePointer]) -> str:
     if "reference-only" in intents:
         return "reference-only"
     return "unknown"
+
+
+def _collision_context_kind(pointers: Sequence[CodePointer]) -> str:
+    contexts = {pointer.context_kind for pointer in pointers}
+    if "observed-worktree" in contexts:
+        return "observed-worktree"
+    if contexts == {"code-fence"}:
+        return "code-fence-only"
+    if "code-fence" in contexts and "prose" in contexts:
+        return "mixed"
+    return "prose"
+
+
+def _collision_path_presence(pointers: Sequence[CodePointer]) -> str:
+    presence = {pointer.path_presence for pointer in pointers}
+    available = presence - {"unavailable"}
+    if not available:
+        return "unavailable"
+    if available == {"existing"} and "unavailable" not in presence:
+        return "all-existing"
+    if available == {"missing"} and "unavailable" not in presence:
+        return "all-missing"
+    return "mixed"
 
 
 def _collisions(
@@ -553,6 +632,8 @@ def _collisions(
             )
             revisions = {pointer.revision for pointer in (*left, *right) if pointer.revision}
             edit_intent = _collision_edit_intent((*contributing_left, *contributing_right))
+            context_kind = _collision_context_kind((*contributing_left, *contributing_right))
+            path_presence = _collision_path_presence((*contributing_left, *contributing_right))
             intent_source_fields = tuple(
                 sorted(
                     {
@@ -581,6 +662,8 @@ def _collisions(
                     evidence_sources=sources,
                     edit_intent=edit_intent,
                     intent_source_fields=intent_source_fields,
+                    context_kind=context_kind,
+                    path_presence=path_presence,
                     revision_relation=revision_relation,
                     what_to_verify=(
                         f"Verify whether concurrent work will modify {target} before "
@@ -594,6 +677,18 @@ def _collisions(
             key=lambda item: (
                 0 if item.kind == "exact-file" else 1,
                 {"observed": 0, "corroborated": 1, "explicit": 2}[item.confidence],
+                {
+                    "observed-worktree": 0,
+                    "prose": 1,
+                    "mixed": 2,
+                    "code-fence-only": 3,
+                }[item.context_kind],
+                {
+                    "all-existing": 0,
+                    "mixed": 1,
+                    "all-missing": 2,
+                    "unavailable": 3,
+                }[item.path_presence],
                 {
                     "observed-edit": 0,
                     "likely-edit": 1,
@@ -812,7 +907,7 @@ def _changed_paths(
     )
 
 
-def _pointer_key(pointer: CodePointer) -> tuple[str, str, str, str, str, str, str, str]:
+def _pointer_key(pointer: CodePointer) -> tuple[str, ...]:
     return (
         pointer.issue_id,
         pointer.path,
@@ -820,6 +915,8 @@ def _pointer_key(pointer: CodePointer) -> tuple[str, str, str, str, str, str, st
         pointer.source,
         pointer.source_field or "",
         pointer.edit_intent,
+        pointer.context_kind,
+        pointer.path_presence,
         pointer.confidence,
         pointer.revision or "",
     )

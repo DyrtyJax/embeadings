@@ -131,6 +131,10 @@ Code-surface analysis may include additive `repository_context` and
 `pairs_omitted_by_module_guard` fields. The former distinguishes invoking-worktree provenance from a
 warned tracker-workspace fallback. The latter counts explicit-only shared-module pairs removed from
 the primary collision queue; it is not evidence that those pairs conflict or are irrelevant.
+Pointers may also include finite `context_kind` and `path_presence` values; collision leads aggregate
+them as prose, fenced, mixed, or observed context and existing, missing, mixed, or unavailable path
+presence. These are ranking and grounding evidence, not permission to hide a lead. A missing path can
+still describe planned new work, while an existing path is not proof that either task will edit it.
 
 ## Capability handshake
 

@@ -302,10 +302,13 @@ pointers from work-record text and observe changed paths from associated local G
 not copy source snippets, mutate a worktree, or persist inferred pointers back into Beads.
 
 Every pointer records its source (`explicit-reference` or `active-worktree-diff`), bounded confidence,
-finite edit intent (`observed-edit`, `likely-edit`, `reference-only`, or `unknown`), and Git revision
+finite edit intent (`observed-edit`, `likely-edit`, `reference-only`, or `unknown`), bounded reference
+context (`prose`, `code-fence`, or `observed-worktree`), repository path presence, and Git revision
 when available. Intent is a local ranking signal, not an admission gate: uncertain language must not
 hide an exact-file lead. Collision records expose the contributing intent fields and rank observed or
-likely edits ahead of references when stronger evidence is otherwise equal. Repository provenance comes from the invoking worktree when it shares
+repository-grounded prose ahead of fenced or missing references when stronger evidence is otherwise
+equal. HTML issue-template comments never contribute pointers or intent. These signals do not
+suppress collision recall. Repository provenance comes from the invoking worktree when it shares
 the tracker checkout's Git common directory. An invocation outside Git or in an unrelated repository
 uses an explicit warned fallback. Collision leads distinguish exact-file from shared-module evidence
 and report whether their revisions match. Automatic worktree association may use a full issue ID or

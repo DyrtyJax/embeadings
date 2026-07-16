@@ -426,6 +426,8 @@ def build_triage_payload(sweep: Mapping[str, Any]) -> dict[str, Any]:
     lanes = _field(policy, "lanes", default={}) or {}
     no_signal = _field(sweep, "no_signal", default={}) or {}
     excluded = _field(sweep, "excluded", default={}) or {}
+    warnings = {str(warning) for warning in (_field(sweep, "warnings", default=[]) or [])}
+    warnings.update(str(warning) for warning in (_field(analysis, "warnings", default=[]) or []))
     fingerprint = str(_field(sweep, "analysis_fingerprint", default=_analysis_fingerprint(sweep)))
     packet = {
         "schema_version": SCHEMA_VERSION,
@@ -475,7 +477,7 @@ def build_triage_payload(sweep: Mapping[str, Any]) -> dict[str, Any]:
             "no_signal": int(_field(no_signal, "count", default=0)),
             "excluded": int(_field(excluded, "count", default=0)),
         },
-        "warnings": _jsonable(_field(sweep, "warnings", default=[]) or []),
+        "warnings": sorted(warnings),
     }
     validate_artifact(packet)
     return packet
@@ -825,6 +827,10 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
                 "- Collision kind: " + _escape(_field(collision, "kind", default="unknown")),
                 "- Confidence: " + _escape(_field(collision, "confidence", default="unknown")),
                 "- Edit intent: " + _escape(_field(collision, "edit_intent", default="unknown")),
+                "- Reference context: "
+                + _escape(_field(collision, "context_kind", default="unknown")),
+                "- Repository path presence: "
+                + _escape(_field(collision, "path_presence", default="unavailable")),
                 "- Intent source fields: "
                 + _escape(
                     ", ".join(
@@ -976,7 +982,11 @@ def render_triage_markdown(payload: Mapping[str, Any]) -> str:
                 + "` — "
                 + _escape(_field(collision, "confidence", default="unknown"))
                 + ", intent "
-                + _escape(_field(collision, "edit_intent", default="unknown")),
+                + _escape(_field(collision, "edit_intent", default="unknown"))
+                + ", context "
+                + _escape(_field(collision, "context_kind", default="unknown"))
+                + ", paths "
+                + _escape(_field(collision, "path_presence", default="unavailable")),
                 f"  - Surfaces: {_escape(paths)}",
                 "  - Verify: "
                 + _escape(_field(collision, "what_to_verify", default="Coordinate the work.")),

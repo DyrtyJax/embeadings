@@ -10,7 +10,7 @@ Beads dependencies answer “what blocks this?” Semantic neighborhoods answer 
 find that neighborhood without adding durable labels, changing issue state, or replacing Beads'
 dependency graph.
 
-> Status: v0.4 implementation. Opinionated `triage`, `neighbors`, synchronous `sweep`, `batch`, and local code-surface
+> Status: v0.4 technical preview. Opinionated `triage`, `neighbors`, synchronous `sweep`, `batch`, and local code-surface
 > `collisions` are available for Beads and a selected Linear team; async runs and agent dispatch
 > remain future work.
 
@@ -125,9 +125,8 @@ JSON, rejects explicit report/checkpoint paths, and verifies the report's read-o
 sweeps may still use the external platform cache and run-state directories described above; they do
 not write into the analyzed repository by default.
 
-This is a local plugin foundation, not yet a marketplace release. Marketplace metadata, a public
-package tag, and observed-to-observed collision validation remain gated on the corresponding Beads
-work and private evaluation.
+This is a local plugin foundation, not yet a marketplace release. The CLI has a pinned v0.4.0
+technical-preview package; marketplace metadata remains gated on separate host-workflow evaluation.
 
 ## Intended workflow
 
@@ -197,12 +196,12 @@ This MVP intentionally does not index the whole codebase or add a vector databas
 three-repository public pilot, the hub guard reduced 119 explicit-pointer leads to a bounded queue of
 26, but only 30.2% of active records contained an extractable pointer. The first private code-surface
 pilot validated exact-file evidence while exposing stale-checkout provenance and very low precision
-for explicit-only module matches. Those blockers are fixed in source, but a public package tag remains
-gated on a repeat run with at least two associated active worktrees. The first corrected preflight
-found only one genuinely active implementation worktree and stopped without fabricating evidence. A
-separate single-worktree diagnostic passed provenance, module suppression, determinism, and safety,
-but 11 of 21 explicit-only exact-file leads were reference-for-inspection noise. Semantic code
-retrieval, AST symbols, Git-history inference, and MCP integration belong behind a future optional
+for explicit-only module matches. Those blockers are fixed. The v0.4.0 release gate then used four
+genuine active implementation worktrees: it retained all three real exact-file conflicts, emitted
+one useful observed shared-module lead, stayed deterministic and non-mutating, and found two
+additional association/scope defects before release. See the
+[aggregate gate report](docs/research/code-surface-v040-release-gate.md). Semantic code retrieval,
+AST symbols, Git-history inference, and MCP integration belong behind a future optional
 evidence-provider interface only if they measurably improve collision recall without producing an
 impractical queue.
 
@@ -312,6 +311,7 @@ Research notes:
 - [Anonymized aggregate findings from the first private pilot](docs/research/private-pilot-01.md)
 - [Aggregate findings from the first public code-surface pilot](docs/research/code-surface-public-eval-01.md)
 - [Aggregate findings from the private code-surface release gate](docs/research/code-surface-private-pilot-02.md)
+- [v0.4.0 concurrent-worktree release gate](docs/research/code-surface-v040-release-gate.md)
 - [Aggregate findings from the first private Linear evaluation](docs/research/linear-private-pilot-01.md)
 - [Privacy-preserving private code-surface evaluation protocol](docs/evaluation-code-surfaces.md)
 - [Privacy-preserving Linear regression protocol](docs/evaluation-linear.md)

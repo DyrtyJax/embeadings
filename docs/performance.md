@@ -46,3 +46,7 @@ behavior, and package versions. These are engineering signals, not universal mod
 
 The current measured decision is documented in
 [the embedding and storage alternatives record](decisions/embedding-storage-alternatives.md).
+
+For end-to-end tests in the 2,000–10,000 record range, use the
+[large-corpus evaluation protocol](evaluation-large-corpus.md). It intentionally separates a public
+GitHub scale surrogate from evidence collected on a native Beads tracker.

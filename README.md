@@ -10,7 +10,7 @@ Beads dependencies answer “what blocks this?” Semantic neighborhoods answer 
 find that neighborhood without adding durable labels, changing issue state, or replacing Beads'
 dependency graph.
 
-> Status: v0.3 implementation. `neighbors`, synchronous `sweep`, `batch`, and local code-surface
+> Status: v0.4 implementation. Opinionated `triage`, `neighbors`, synchronous `sweep`, `batch`, and local code-surface
 > `collisions` are available for Beads and a selected Linear team; async runs and agent dispatch
 > remain future work.
 
@@ -21,6 +21,7 @@ Python 3.11 or later is required. The default Beads source also requires an inst
 ```bash
 python -m pip install -e .
 embead doctor
+embead triage
 embead neighbors ISSUE_ID --include-closed
 embead sweep --size 9
 
@@ -100,7 +101,7 @@ claude --plugin-dir ./plugins/embeadings
 ```
 
 The Codex and Claude manifests live separately while sharing the same skills and guarded CLI
-launcher. The cross-platform Python launcher requires emBEADings 0.3.0 or newer, forces schema-v1
+launcher. The cross-platform Python launcher requires emBEADings 0.4.0 or newer, forces schema-v1
 JSON, rejects explicit report/checkpoint paths, and verifies the report's read-only policy. Semantic
 sweeps may still use the external platform cache and run-state directories described above; they do
 not write into the analyzed repository by default.
@@ -185,6 +186,7 @@ impractical queue.
 ## Commands
 
 ```bash
+embead triage [--review-budget 20]
 embead neighbors <issue-id>
 embead batch [--size 9]
 embead sweep [--size 9]
@@ -192,6 +194,11 @@ embead collisions [--worktree-map ISSUE_ID=PATH]
 embead doctor [--offline]
 embead capabilities [--json]
 ```
+
+`triage` is the opinionated front door: it applies a review budget of 20 by default, includes
+code-surface analysis when local Git evidence is available, writes the full audit report to external
+run state, and returns a compact redacted packet linked to that report by a stable analysis
+fingerprint. Use `sweep` when tuning experimental policy controls.
 
 Use `--json` for machine-readable stdout. `batch` is currently an alias for the synchronous sweep.
 Both commands accept mutually exclusive `--changed-since RFC3339` and `--since-checkpoint PATH`
@@ -283,6 +290,7 @@ Research notes:
 - [Privacy-preserving private code-surface evaluation protocol](docs/evaluation-code-surfaces.md)
 - [Privacy-preserving Linear regression protocol](docs/evaluation-linear.md)
 - [Public synthetic warm-path performance benchmark](docs/performance.md)
+- [Large-corpus evaluation and ICP protocol](docs/evaluation-large-corpus.md)
 - [Safe offline evaluation and readiness checks](docs/evaluation.md)
 - [Retrieve–verify research synthesis](docs/research/retrieve-verify-context-2026.md)
 - [First retrieve–verify public regression](docs/research/retrieve-verify-public-regression-01.md)

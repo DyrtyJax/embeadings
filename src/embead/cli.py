@@ -49,10 +49,12 @@ from .reports import (
     build_collisions_payload,
     build_neighbors_payload,
     build_sweep_payload,
+    build_triage_payload,
     render_batch_markdown,
     render_collisions_markdown,
     render_neighbors_markdown,
     render_sweep_markdown,
+    render_triage_markdown,
 )
 from .surfaces import analyze_code_surfaces, parse_worktree_mappings
 from .trackers import TrackerAdapter, TrackerError
@@ -104,6 +106,46 @@ def _parser() -> argparse.ArgumentParser:
     neighbors.add_argument("--include-closed", action="store_true")
     neighbors.add_argument("--json", action="store_true", dest="as_json")
     neighbors.add_argument("--output", type=Path)
+
+    triage = subparsers.add_parser(
+        "triage",
+        help="Run an opinionated bounded coordination review",
+    )
+    triage.add_argument(
+        "--review-budget",
+        "--weekly-review-budget",
+        dest="weekly_review_budget",
+        type=int,
+        default=20,
+        metavar="CANDIDATES",
+        help="Maximum semantic and structural review candidates (default: 20)",
+    )
+    triage.add_argument(
+        "--size", type=int, default=9, help="Hard maximum issues per review artifact"
+    )
+    triage.add_argument("--status", action="append")
+    triage.add_argument("--include-epics", action="store_true")
+    _incremental_arguments(triage)
+    _code_surface_arguments(triage, opt_in=False)
+    triage.add_argument("--output", type=Path)
+    triage.add_argument("--json", action="store_true", dest="as_json")
+    triage.set_defaults(
+        echo_threshold=0.72,
+        overlap_threshold=0.82,
+        exception_margin=0.08,
+        reciprocal_rank=5,
+        max_candidates_per_issue=3,
+        max_echoes_per_target=2,
+        max_echo_alternatives_per_active=3,
+        max_dependency_candidates_per_issue=3,
+        max_candidates=None,
+        max_dependency_candidates=75,
+        max_echo_candidates=125,
+        max_overlap_candidates=125,
+        objective=None,
+        semantic_view="whole",
+        code_surfaces=True,
+    )
 
     sweep = subparsers.add_parser("sweep", help="Create disposable semantic review batches")
     sweep.add_argument(
@@ -574,7 +616,7 @@ def _capabilities(args: argparse.Namespace) -> int:
         "protocol_version": 1,
         "role": "producer",
         "schema_versions": [1],
-        "report_types": ["neighbors", "batch", "sweep", "collisions"],
+        "report_types": ["neighbors", "batch", "sweep", "triage", "collisions"],
         "capabilities": list(PRODUCER_CAPABILITIES),
         "required_capabilities": ["read-only-review"],
     }
@@ -1212,7 +1254,14 @@ def _sweep(args: argparse.Namespace) -> int:
             args.write_checkpoint,
             _json_text(build_checkpoint(issues, workspace_id=snapshot.workspace_id)),
         )
-    sys.stdout.write(_json_text(payload) if args.as_json else render_sweep_markdown(payload))
+    if args.command == "triage":
+        packet = build_triage_payload(payload)
+        _atomic_text(run_dir / "triage.json", _json_text(packet))
+        _atomic_text(run_dir / "triage.md", render_triage_markdown(packet))
+        rendered = _json_text(packet) if args.as_json else render_triage_markdown(packet)
+    else:
+        rendered = _json_text(payload) if args.as_json else render_sweep_markdown(payload)
+    sys.stdout.write(rendered)
     if not args.as_json:
         sys.stdout.write(f"\nArtifacts: {run_dir}\n")
     return 0

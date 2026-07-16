@@ -37,7 +37,7 @@ def _report(*, report_type: str = "sweep", tracker_name: str = "beads") -> dict[
 def _stub_environment(
     tmp_path: Path,
     *,
-    version: str = "0.3.0",
+    version: str = "0.4.0",
     payload: dict[str, object] | str | None = None,
     install_cli: bool = True,
 ) -> tuple[dict[str, str], Path]:
@@ -88,7 +88,7 @@ sys.stdout.write(os.environ["EMBEAD_STUB_PAYLOAD"])
 def _run_wrapper(
     tmp_path: Path,
     *arguments: str,
-    version: str = "0.3.0",
+    version: str = "0.4.0",
     payload: dict[str, object] | str | None = None,
     install_cli: bool = True,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
@@ -129,7 +129,7 @@ def test_launcher_check_reports_cross_platform_contract(tmp_path: Path) -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {
-        "cli": "embead 0.3.0",
+        "cli": "embead 0.4.0",
         "json_schema_version": 1,
         "status": "ready",
     }
@@ -146,13 +146,13 @@ def test_wrapper_reports_missing_cli_without_running_tracker(tmp_path: Path) -> 
     assert not arguments_path.exists()
 
 
-@pytest.mark.parametrize("version", ["0.2.9", "0.3.0rc1", "not-a-version"])
+@pytest.mark.parametrize("version", ["0.3.9", "0.4.0rc1", "not-a-version"])
 def test_wrapper_rejects_old_or_unrecognized_cli_versions(tmp_path: Path, version: str) -> None:
     completed, arguments_path = _run_wrapper(tmp_path, "sweep", version=version)
 
     assert completed.returncode == 2
     assert completed.stdout == ""
-    assert "embeadings>=0.3.0 is required" in completed.stderr
+    assert "embeadings>=0.4.0 is required" in completed.stderr
     assert not arguments_path.exists()
 
 
@@ -160,6 +160,7 @@ def test_wrapper_rejects_old_or_unrecognized_cli_versions(tmp_path: Path, versio
     ("arguments", "expected"),
     [
         (("sweep",), ["sweep", "--json"]),
+        (("triage",), ["triage", "--json"]),
         (("--source", "beads", "collisions"), ["--source", "beads", "collisions", "--json"]),
         (("sweep", "--json"), ["sweep", "--json"]),
     ],
@@ -167,7 +168,9 @@ def test_wrapper_rejects_old_or_unrecognized_cli_versions(tmp_path: Path, versio
 def test_wrapper_forces_exactly_one_json_flag(
     tmp_path: Path, arguments: tuple[str, ...], expected: list[str]
 ) -> None:
-    report_type = "collisions" if "collisions" in arguments else "sweep"
+    report_type = next(
+        report for report in ("triage", "sweep", "collisions") if report in arguments
+    )
     completed, arguments_path = _run_wrapper(
         tmp_path,
         *arguments,

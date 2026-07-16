@@ -92,6 +92,15 @@ _ROOT_PATH_RE = re.compile(
     r"`(?P<path>[A-Za-z0-9_.-]+\.[A-Za-z0-9]+)"
     r"(?:(?P<separator>::|#)(?P<symbol>[A-Za-z_][A-Za-z0-9_.-]*))?`"
 )
+_EDIT_INTENT_RE = re.compile(
+    r"\b(?:add|change|create|edit|fix|implement|migrate|modify|move|refactor|remove|rename|"
+    r"repair|replace|rewrite|update|write)\b",
+    re.IGNORECASE,
+)
+_REFERENCE_INTENT_RE = re.compile(
+    r"\b(?:audit|check|document|inspect|inventory|read|reference|review|see|trace|verify)\b",
+    re.IGNORECASE,
+)
 
 # A worktree is evidence of current implementation, not an unbounded history report.  A valid but
 # stale base can otherwise turn most of a repository into "observed" evidence and create a
@@ -109,6 +118,7 @@ class CodePointer:
     revision: str | None
     symbol: str | None = None
     source_field: str | None = None
+    edit_intent: str = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +131,8 @@ class CodeSurfaceCollision:
     shared_symbols: tuple[str, ...]
     shared_modules: tuple[str, ...]
     evidence_sources: tuple[str, ...]
+    edit_intent: str
+    intent_source_fields: tuple[str, ...]
     revision_relation: str
     what_to_verify: str
 
@@ -197,6 +209,7 @@ def extract_explicit_pointers(issue: Any, *, revision: str | None) -> tuple[Code
                     confidence="explicit",
                     revision=revision,
                     source_field=field,
+                    edit_intent=_explicit_edit_intent(text, match.start(), match.end()),
                 )
             )
     return tuple(sorted(pointers, key=_pointer_key))
@@ -285,6 +298,7 @@ def analyze_code_surfaces(
                         source="active-worktree-diff",
                         confidence="observed",
                         revision=worktree.head,
+                        edit_intent="observed-edit",
                     )
                 )
 
@@ -385,6 +399,30 @@ def _module_for(path: str) -> str | None:
     if directories[0] in _GENERIC_ROOTS:
         return "/".join(directories[:2])
     return "/".join(directories[:2])
+
+
+def _explicit_edit_intent(text: str, start: int, end: int) -> str:
+    """Classify bounded local wording without retaining the surrounding text."""
+
+    context = text[max(0, start - 80) : min(len(text), end + 40)]
+    if _EDIT_INTENT_RE.search(context):
+        return "likely-edit"
+    if _REFERENCE_INTENT_RE.search(context):
+        return "reference-only"
+    return "unknown"
+
+
+def _collision_edit_intent(pointers: Sequence[CodePointer]) -> str:
+    intents = {pointer.edit_intent for pointer in pointers}
+    if "observed-edit" in intents:
+        return "observed-edit"
+    if "likely-edit" in intents and "reference-only" in intents:
+        return "mixed"
+    if "likely-edit" in intents:
+        return "likely-edit"
+    if "reference-only" in intents:
+        return "reference-only"
+    return "unknown"
 
 
 def _collisions(
@@ -514,6 +552,16 @@ def _collisions(
                 else "explicit"
             )
             revisions = {pointer.revision for pointer in (*left, *right) if pointer.revision}
+            edit_intent = _collision_edit_intent((*contributing_left, *contributing_right))
+            intent_source_fields = tuple(
+                sorted(
+                    {
+                        pointer.source_field
+                        for pointer in (*contributing_left, *contributing_right)
+                        if pointer.source_field
+                    }
+                )
+            )
             revision_relation = (
                 "unavailable" if not revisions else "same" if len(revisions) == 1 else "different"
             )
@@ -531,6 +579,8 @@ def _collisions(
                     shared_symbols=tuple(shared_symbols),
                     shared_modules=tuple(shared_modules),
                     evidence_sources=sources,
+                    edit_intent=edit_intent,
+                    intent_source_fields=intent_source_fields,
                     revision_relation=revision_relation,
                     what_to_verify=(
                         f"Verify whether concurrent work will modify {target} before "
@@ -544,6 +594,13 @@ def _collisions(
             key=lambda item: (
                 0 if item.kind == "exact-file" else 1,
                 {"observed": 0, "corroborated": 1, "explicit": 2}[item.confidence],
+                {
+                    "observed-edit": 0,
+                    "likely-edit": 1,
+                    "mixed": 2,
+                    "unknown": 3,
+                    "reference-only": 4,
+                }[item.edit_intent],
                 item.issue_id,
                 item.related_issue_id,
             ),
@@ -755,11 +812,14 @@ def _changed_paths(
     )
 
 
-def _pointer_key(pointer: CodePointer) -> tuple[str, str, str, str, str]:
+def _pointer_key(pointer: CodePointer) -> tuple[str, str, str, str, str, str, str, str]:
     return (
         pointer.issue_id,
         pointer.path,
         pointer.symbol or "",
         pointer.source,
         pointer.source_field or "",
+        pointer.edit_intent,
+        pointer.confidence,
+        pointer.revision or "",
     )

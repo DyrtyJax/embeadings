@@ -24,20 +24,21 @@ source files, dependencies, or issue state while this skill is active.
 For Beads, run:
 
 ```sh
-python <plugin-root>/scripts/run_embeadings.py sweep --weekly-review-budget 20
+python <plugin-root>/scripts/run_embeadings.py triage
 ```
 
 For Linear, run:
 
 ```sh
-python <plugin-root>/scripts/run_embeadings.py --source linear --linear-team TEAM sweep --weekly-review-budget 20
+python <plugin-root>/scripts/run_embeadings.py --source linear --linear-team TEAM triage
 ```
 
 Replace `TEAM` with the selected team ID, key, or exact name.
 
-Add `--code-surfaces` only when the current repository is the implementation repository whose paths
-should corroborate the tracker. Pass only options the user requested or that are necessary to select
-the tracker. Do not add `--output` or `--write-checkpoint`; the wrapper deliberately rejects writes.
+Triage includes code-surface analysis when the current repository is the implementation repository;
+unavailable Git evidence fails soft with an explicit warning. Pass only options the user requested or
+that are necessary to select the tracker. Do not add `--output` or `--write-checkpoint`; the wrapper
+deliberately rejects writes.
 
 ## Judge
 

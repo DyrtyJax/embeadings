@@ -13,6 +13,7 @@ from embead.reports import (
     build_collisions_payload,
     build_neighbors_payload,
     build_sweep_payload,
+    build_triage_payload,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,9 @@ SNAPSHOT = {
     "workspace_id": "synthetic-workspace",
     "beads_version": "1.0.5",
     "workspace_path": None,
+    "tracker_name": "beads",
+    "tracker_version": "1.0.5",
+    "acquisition_source": "live-beads-cli",
 }
 MODEL = {"model_id": "synthetic-local-model", "model_revision": "example-revision"}
 CACHE = {"hits": 2, "misses": 0}
@@ -91,6 +95,8 @@ CODE_SURFACE_ANALYSIS = {
             "shared_symbols": [],
             "shared_modules": ["src/cache"],
             "evidence_sources": ["active-worktree-diff"],
+            "edit_intent": "observed-edit",
+            "intent_source_fields": [],
             "revision_relation": "same",
             "what_to_verify": "Coordinate changes to the shared file.",
         }
@@ -104,7 +110,7 @@ def _load(directory: Path, name: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "name", ["neighbors", "batch", "sweep", "collisions", "capabilities", "checkpoint"]
+    "name", ["neighbors", "batch", "sweep", "triage", "collisions", "capabilities", "checkpoint"]
 )
 def test_schema_is_valid_draft_2020_12_and_accepts_example(name: str) -> None:
     schema = _load(SCHEMAS, f"{name}.schema.json")
@@ -131,7 +137,14 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
         "sweep": build_sweep_payload(
             "synthetic-run-1",
             [EVIDENCE],
-            [{"batch": 1, "issue_ids": ["demo-1"]}],
+            [
+                {
+                    "batch": 1,
+                    "kind": "singleton-envelope",
+                    "issue_ids": ["demo-1"],
+                    "review_units": [{"issue_ids": ["demo-1"]}],
+                }
+            ],
             snapshot=SNAPSHOT,
             model=MODEL,
             cache=CACHE,
@@ -207,6 +220,7 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
             filters={"status": ["open"]},
         ),
     }
+    payloads["triage"] = build_triage_payload(payloads["sweep"])
 
     for report_type, payload in payloads.items():
         Draft202012Validator(_load(SCHEMAS, f"{report_type}.schema.json")).validate(payload)
@@ -223,6 +237,7 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
         "generic_fallback_rate": 0.0,
     }
     assert payloads["batch"]["anchor_metrics"] == payloads["sweep"]["anchor_metrics"]
+    assert payloads["triage"]["analysis_fingerprint"] == payloads["sweep"]["analysis_fingerprint"]
 
 
 def test_version_one_allows_additive_fields() -> None:

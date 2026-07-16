@@ -7,12 +7,20 @@ from embead.reports import (
     build_batch_manifest,
     build_neighbors_payload,
     build_sweep_payload,
+    build_triage_payload,
     render_batch_markdown,
     render_neighbors_markdown,
     render_sweep_markdown,
+    render_triage_markdown,
 )
 
-SNAPSHOT = {"workspace_id": "workspace-1", "beads_version": "1.2.3"}
+SNAPSHOT = {
+    "workspace_id": "workspace-1",
+    "beads_version": "1.2.3",
+    "tracker_name": "beads",
+    "tracker_version": "1.2.3",
+    "acquisition_source": "live-beads-cli",
+}
 MODEL = {"id": "local-model", "revision": "abc123"}
 CACHE = {"hits": 8, "misses": 2}
 
@@ -122,8 +130,8 @@ def test_batch_manifest_sorts_issues_and_evidence() -> None:
         2,
         [Issue("bd-9", "Nine", "open"), Issue("bd-1", "One", "closed")],
         [
-            {"source_id": "bd-9", "target_id": "bd-8", "score": 0.4},
-            {"source_id": "bd-1", "target_id": "bd-2", "score": 0.8},
+            {"source_id": "bd-9", "target_id": "bd-1", "score": 0.4},
+            {"source_id": "bd-1", "target_id": "bd-9", "score": 0.8},
         ],
         ["Verify against source control", "Record counterevidence"],
         snapshot=SNAPSHOT,
@@ -142,7 +150,7 @@ def test_batch_markdown_uses_safe_candidate_language() -> None:
     manifest = build_batch_manifest(
         "run-1",
         1,
-        [Issue("bd-1", "Active work", "open")],
+        [Issue("bd-1", "Active work", "open"), Issue("bd-3", "Other work", "open")],
         [
             {
                 "issue_id": "bd-1",
@@ -162,6 +170,8 @@ def test_batch_markdown_uses_safe_candidate_language() -> None:
         snapshot=SNAPSHOT,
         model=MODEL,
         cache=CACHE,
+        batch_kind="singleton-envelope",
+        review_units=[{"issue_ids": ["bd-1"]}, {"issue_ids": ["bd-3"]}],
     )
 
     markdown = render_batch_markdown(manifest)
@@ -197,7 +207,20 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     payload = build_sweep_payload(
         "run-7",
         candidates,
-        [{"batch": 2, "issue_ids": ["bd-5"]}, {"batch": 1, "issue_ids": ["bd-2"]}],
+        [
+            {
+                "batch": 2,
+                "kind": "singleton-envelope",
+                "issue_ids": ["bd-5"],
+                "review_units": [{"issue_ids": ["bd-5"]}],
+            },
+            {
+                "batch": 1,
+                "kind": "singleton-envelope",
+                "issue_ids": ["bd-2"],
+                "review_units": [{"issue_ids": ["bd-2"]}],
+            },
+        ],
         snapshot=SNAPSHOT,
         model=MODEL,
         cache=CACHE,
@@ -353,3 +376,74 @@ def test_empty_sweep_is_a_successful_report() -> None:
     markdown = render_sweep_markdown(payload)
     assert "No review candidates were found" in markdown
     assert payload["candidates"] == []
+
+
+def test_triage_packet_is_compact_deterministic_and_traceable() -> None:
+    candidate = {
+        "issue_id": "bd-1",
+        "related_issue_id": "bd-2",
+        "kind": "completed-work-echo",
+        "lane": "echo",
+        "similarity": 0.91,
+        "candidate_evidence": {"evidence_basis": "semantic-only"},
+        "what_to_verify": "Verify the completed outcome.",
+        "counterevidence": ["no typed dependency"],
+        "description": "PRIVATE BODY MUST NOT ENTER THE PACKET",
+    }
+    policy = {
+        "review_budget": {"mode": "weekly", "candidate_limit": 20},
+        "lanes": {
+            "dependency": {"qualified": 0, "admitted": 0},
+            "echo": {"qualified": 1, "admitted": 1},
+            "overlap": {"qualified": 0, "admitted": 0},
+        },
+    }
+    first = build_sweep_payload(
+        "run-cold",
+        [candidate],
+        [
+            {
+                "batch": 1,
+                "kind": "singleton-envelope",
+                "issue_ids": ["bd-1"],
+                "review_units": [{"issue_ids": ["bd-1"]}],
+            }
+        ],
+        snapshot=SNAPSHOT,
+        model=MODEL,
+        cache={"hits": 0, "misses": 2},
+        candidate_policy=policy,
+        target_batch_size=9,
+        duration_ms=42,
+    )
+    second = build_sweep_payload(
+        "run-warm",
+        [candidate],
+        [
+            {
+                "batch": 1,
+                "kind": "singleton-envelope",
+                "issue_ids": ["bd-1"],
+                "review_units": [{"issue_ids": ["bd-1"]}],
+            }
+        ],
+        snapshot=SNAPSHOT,
+        model=MODEL,
+        cache={"hits": 2, "misses": 0},
+        candidate_policy=policy,
+        target_batch_size=9,
+        duration_ms=3,
+    )
+
+    first_packet = build_triage_payload(first)
+    second_packet = build_triage_payload(second)
+
+    assert first["analysis_fingerprint"] == second["analysis_fingerprint"]
+    assert first_packet == second_packet
+    assert first_packet["source_report"]["analysis_fingerprint"] == first["analysis_fingerprint"]
+    assert "PRIVATE BODY" not in json.dumps(first_packet)
+    assert first_packet["candidates"][0]["candidate_id"] == ("completed-work-echo|bd-1|bd-2")
+    markdown = render_triage_markdown(first_packet)
+    assert "embeADings" not in markdown
+    assert "emBEADings triage packet" in markdown
+    assert "Verify the completed outcome" in markdown

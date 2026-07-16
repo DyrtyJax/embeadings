@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DyrtyJax/embeadings/main/schemas/v1/triage.schema.json",
+  "title": "emBEADings compact triage packet, schema version 1",
+  "type": "object",
+  "required": ["schema_version", "report_type", "policy", "analysis_fingerprint", "source_report", "snapshot", "review_budget", "batch_policy", "lane_summary", "candidates", "collisions", "batches", "population", "warnings"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "report_type": { "const": "triage" },
+    "policy": {
+      "type": "object",
+      "required": ["read_only", "tracker_mutation_allowed", "advisory", "notice"],
+      "properties": {
+        "read_only": { "const": true },
+        "tracker_mutation_allowed": { "const": false },
+        "advisory": { "const": true },
+        "notice": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "analysis_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "source_report": {
+      "type": "object",
+      "required": ["report_type", "analysis_fingerprint"],
+      "properties": {
+        "report_type": { "const": "sweep" },
+        "analysis_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["workspace_id", "tracker_name", "tracker_version", "beads_version", "acquisition_source"],
+      "properties": {
+        "workspace_id": { "type": "string", "minLength": 1 },
+        "tracker_name": { "enum": ["beads", "linear"] },
+        "tracker_version": { "type": "string", "minLength": 1 },
+        "beads_version": { "type": ["string", "null"] },
+        "acquisition_source": { "type": "string", "minLength": 1 },
+        "live_issue_count": { "type": ["integer", "null"], "minimum": 0 },
+        "dependency_count": { "type": ["integer", "null"], "minimum": 0 },
+        "relation_diagnostics": { "type": ["object", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "review_budget": { "type": "object", "additionalProperties": true },
+    "batch_policy": {
+      "type": "object",
+      "required": ["max_batch_size"],
+      "properties": {
+        "max_batch_size": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "lane_summary": {
+      "type": "object",
+      "required": ["dependency", "echo", "overlap"],
+      "properties": {
+        "dependency": { "$ref": "#/$defs/lane" },
+        "echo": { "$ref": "#/$defs/lane" },
+        "overlap": { "$ref": "#/$defs/lane" }
+      },
+      "additionalProperties": false
+    },
+    "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+    "collisions": { "type": "array", "items": { "$ref": "#/$defs/collision" } },
+    "batches": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "population": {
+      "type": "object",
+      "required": ["no_signal", "excluded"],
+      "properties": {
+        "no_signal": { "type": "integer", "minimum": 0 },
+        "excluded": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "lane": {
+      "type": "object",
+      "required": ["qualified", "admitted", "omitted"],
+      "properties": {
+        "qualified": { "type": "integer", "minimum": 0 },
+        "admitted": { "type": "integer", "minimum": 0 },
+        "omitted": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["candidate_id", "kind", "lane", "issue_id", "related_issue_id", "similarity", "evidence_basis", "what_to_verify", "counterevidence"],
+      "properties": {
+        "candidate_id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "lane": { "enum": ["dependency", "echo", "overlap"] },
+        "objective": { "enum": ["overlap", "echo", "structure"] },
+        "issue_id": { "type": "string", "minLength": 1 },
+        "related_issue_id": { "type": "string", "minLength": 1 },
+        "similarity": { "type": "number", "minimum": -1, "maximum": 1 },
+        "evidence_basis": { "enum": ["semantic-only", "structurally-corroborated"] },
+        "admission_reason": { "type": "string", "minLength": 1 },
+        "structural_context": { "type": "string" },
+        "dependency_evidence": { "type": ["object", "null"], "additionalProperties": true },
+        "verification_anchor": { "type": "object", "additionalProperties": true },
+        "what_to_verify": { "type": "string", "minLength": 1 },
+        "counterevidence": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "collision": {
+      "type": "object",
+      "required": ["issue_id", "related_issue_id", "kind", "confidence", "shared_paths", "shared_symbols", "shared_modules", "evidence_sources", "edit_intent", "intent_source_fields", "revision_relation", "what_to_verify"],
+      "properties": {
+        "issue_id": { "type": "string", "minLength": 1 },
+        "related_issue_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["exact-file", "shared-module"] },
+        "confidence": { "enum": ["observed", "corroborated", "explicit"] },
+        "shared_paths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "shared_symbols": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "shared_modules": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "evidence_sources": { "type": "array", "items": { "enum": ["explicit-reference", "active-worktree-diff"] }, "uniqueItems": true },
+        "edit_intent": { "enum": ["observed-edit", "likely-edit", "mixed", "reference-only", "unknown"] },
+        "intent_source_fields": { "type": "array", "items": { "enum": ["title", "description", "acceptance_criteria", "design", "notes"] }, "uniqueItems": true },
+        "revision_relation": { "enum": ["same", "different", "unavailable"] },
+        "what_to_verify": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

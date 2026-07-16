@@ -4,7 +4,7 @@ from argparse import Namespace
 import pytest
 
 from embead import __version__, cli
-from embead.models import IssueRecord, WorkspaceSnapshot
+from embead.models import DependencyLink, IssueRecord, WorkspaceSnapshot
 from embead.provider import HashingProvider
 from embead.ranking import CandidateRanking, LaneMetrics
 
@@ -258,6 +258,74 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert (output / "report.json").is_file()
     assert (output / "report.md").is_file()
     assert list(output.glob("batch-*.json")) == []
+
+
+def test_empty_structure_sweep_skips_embeddings_and_preserves_funnel(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    issues = (
+        IssueRecord(id="active", title="Active work", status="open"),
+        IssueRecord(
+            id="closed-a",
+            title="Closed work A",
+            status="closed",
+            dependency_links=(DependencyLink("closed-a", "closed-b", "blocks"),),
+        ),
+        IssueRecord(id="closed-b", title="Closed work B", status="closed"),
+    )
+
+    class ClosedOnlyAdapter:
+        def load(self):
+            return WorkspaceSnapshot("closed-only", "1.0.5", "/tmp/demo/.beads"), issues
+
+    def no_vectors(*_args, **_kwargs):
+        raise AssertionError("empty structural audits must not load semantic vectors")
+
+    monkeypatch.setattr(cli, "BeadsAdapter", ClosedOnlyAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
+    monkeypatch.setattr(cli, "_load_vectors", no_vectors)
+    monkeypatch.setattr(
+        cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
+    )
+
+    output = tmp_path / "structure-only"
+    assert (
+        cli.main(
+            [
+                "sweep",
+                "--objective",
+                "structure",
+                "--weekly-review-budget",
+                "20",
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["candidates"] == []
+    assert payload["cache"] == {
+        "hits": 0,
+        "misses": 0,
+        "embedding_skipped": True,
+        "skip_reason": "no-reviewable-typed-relationships",
+        "skipped_records": 3,
+    }
+    assert payload["parameters"]["candidate_policy"]["dependency_funnel"] == {
+        "total_non_parent_typed": 1,
+        "inactive_or_closed_only": 1,
+        "below_qualification": 0,
+        "eligible": 0,
+        "admitted": 0,
+        "omitted_by_per_issue_cap": 0,
+        "omitted_by_lane_cap": 0,
+        "omitted_by_run_cap": 0,
+    }
+    assert "Semantic embedding skipped" in payload["warnings"][0]
+    assert not (tmp_path / "cache").exists()
 
 
 def test_collisions_is_corpus_read_only_and_does_not_load_embedding_provider(

@@ -288,6 +288,7 @@ Research notes:
 - [First retrieve–verify public regression](docs/research/retrieve-verify-public-regression-01.md)
 - [Second retrieve–verify private regression](docs/research/retrieve-verify-private-regression-02.md)
 - [Third retrieve–verify private regression](docs/research/retrieve-verify-private-regression-03.md)
+- [Objective-default decision from three public corpora](docs/research/objective-default-public-decision-01.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)
 - [Version 1 JSON Schemas](schemas/v1/) and [synthetic examples](examples/)
 

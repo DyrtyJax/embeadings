@@ -137,6 +137,56 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
             cache=CACHE,
             filters={"status": ["open"]},
             thresholds={"completed_work_echo": 0.72},
+            candidate_policy={
+                "review_budget": {
+                    "mode": "weekly",
+                    "candidate_limit": 20,
+                    "admitted_candidates": 1,
+                    "omitted_candidates": 0,
+                    "selection_policy": "reserved-lane-access-then-priority-reflow",
+                    "reservation_order": ["dependency", "echo", "overlap"],
+                    "priority_order": [
+                        "typed-dependency",
+                        "high-confidence-completed-work-echo",
+                        "possible-overlap",
+                    ],
+                    "omitted_by_lane": {"dependency": 0, "echo": 0, "overlap": 0},
+                    "lane_capacity": {
+                        "dependency": {
+                            "reserved": 12,
+                            "admitted_to_reservation": 1,
+                            "unused": 11,
+                        },
+                        "echo": {
+                            "reserved": 4,
+                            "admitted_to_reservation": 0,
+                            "unused": 4,
+                        },
+                        "overlap": {
+                            "reserved": 4,
+                            "admitted_to_reservation": 0,
+                            "unused": 4,
+                        },
+                    },
+                    "code_surface_scope": "outside-semantic-candidate-limit",
+                },
+                "lanes": {
+                    lane: {
+                        "qualified": 0,
+                        "admitted": 0,
+                        "baseline_protected": 0,
+                        "dropped_by_lane_cap": 0,
+                        "dropped_by_issue_cap": 0,
+                        "dropped_by_target_cap": 0,
+                        "dropped_by_dependency_issue_cap": 0,
+                        "dropped_by_run_cap": 0,
+                        "reserved": 0,
+                        "admitted_to_reservation": 0,
+                        "unused_reserved": 0,
+                    }
+                    for lane in ("dependency", "echo", "overlap")
+                },
+            },
             capped_typed_dependencies=[
                 {
                     "source_id": "demo-3",
@@ -179,6 +229,20 @@ def test_version_one_allows_additive_fields() -> None:
     payload = _load(EXAMPLES, "sweep.json")
     payload["future_diagnostic"] = {"reason": "synthetic"}
     payload["candidates"][0]["future_evidence"] = ["synthetic"]
+
+    Draft202012Validator(_load(SCHEMAS, "sweep.schema.json")).validate(payload)
+
+
+def test_version_one_accepts_legacy_review_budget_shape() -> None:
+    payload = _load(EXAMPLES, "sweep.json")
+    review_budget = payload["parameters"]["candidate_policy"]["review_budget"]
+    for field in (
+        "selection_policy",
+        "reservation_order",
+        "lane_capacity",
+        "code_surface_scope",
+    ):
+        review_budget.pop(field)
 
     Draft202012Validator(_load(SCHEMAS, "sweep.schema.json")).validate(payload)
 

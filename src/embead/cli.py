@@ -37,7 +37,13 @@ from .incremental import (
 from .linear import LinearAdapter
 from .models import IssueRecord, WorkspaceSnapshot, canonical_text, semantic_field_texts
 from .provider import HashingProvider, Model2VecProvider, provider_readiness
-from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
+from .ranking import (
+    CandidatePolicy,
+    CandidateRanking,
+    has_reviewable_typed_relationship,
+    rank_candidates,
+    structural_context,
+)
 from .reports import (
     build_batch_manifest,
     build_collisions_payload,
@@ -912,16 +918,36 @@ def _sweep(args: argparse.Namespace) -> int:
         if scope is not None
         else None
     )
+    skip_semantic_vectors = objectives == frozenset({"structure"}) and not (
+        has_reviewable_typed_relationship(
+            population,
+            issues,
+            eligible_issue_ids=active_scope_ids,
+        )
+    )
     provider = _provider(args.provider)
     cache_path, state_path = _workspace_paths(snapshot.workspace_id)
     phase_started = time.monotonic()
-    vectors, cache_stats = _load_vectors(issues, provider, VectorCache(cache_path))
+    if skip_semantic_vectors:
+        # A non-zero sentinel keeps the ranking and packaging interfaces stable.
+        # No candidate can consume it because the structural comparability gate
+        # proved that this review has no active typed relationship to qualify.
+        vectors = {issue.id: [1.0] for issue in issues}
+        cache_stats = {
+            "hits": 0,
+            "misses": 0,
+            "embedding_skipped": True,
+            "skip_reason": "no-reviewable-typed-relationships",
+            "skipped_records": len(issues),
+        }
+    else:
+        vectors, cache_stats = _load_vectors(issues, provider, VectorCache(cache_path))
     embedding_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
     whole_record_index = SimilarityIndex(vectors)
     similarity_scoring_ms = round((time.monotonic() - phase_started) * 1000)
     similarity_index: SimilarityIndex | MultiViewSimilarityIndex = whole_record_index
-    if args.semantic_view == "fields":
+    if args.semantic_view == "fields" and not skip_semantic_vectors:
         phase_started = time.monotonic()
         similarity_index, field_cache_stats = _load_field_similarity_index(
             issues,
@@ -1004,6 +1030,11 @@ def _sweep(args: argparse.Namespace) -> int:
         for item in manifests
     ]
     ranking_warnings = list(snapshot.source_warnings)
+    if skip_semantic_vectors:
+        ranking_warnings.append(
+            "Semantic embedding skipped: the structure-only review had no reviewable "
+            "active typed relationships."
+        )
     semantic_issue_cap_drops = (
         ranking.dropped_by_issue_cap - ranking.dropped_by_dependency_issue_cap
     )

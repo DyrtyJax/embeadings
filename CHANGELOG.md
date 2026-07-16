@@ -10,5 +10,6 @@ First public technical preview.
 - Dual Codex and Claude Code plugin foundation around the same guarded CLI contract.
 - Public scale diagnostics and privacy-preserving evaluation protocols.
 
-Known limitation: observed-to-observed collision quality requires multiple genuine active worktrees;
-synthetic fixtures and single-worktree diagnostics are not substitutes for that release gate.
+The release gate used four genuine active worktrees and retained all three known exact-file
+collisions. That one-repository result does not establish precision or recall across other repository
+layouts; broader ICP evaluation remains ongoing.

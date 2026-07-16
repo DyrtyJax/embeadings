@@ -13,32 +13,44 @@ def test_public_hard_negative_fixture_is_deterministic_and_reason_coded() -> Non
 
     assert first.stdout == second.stdout
     payload = json.loads(first.stdout)
-    assert payload["fixture_version"] == 2
-    assert payload["rating_counts"] == {"0": 6, "1": 2, "2": 2}
+    assert payload["fixture_version"] == 3
+    assert payload["rating_counts"] == {"0": 10, "1": 2, "2": 12}
+    assert payload["seed_audit"] == {
+        "exact_title_pairs_reviewed": 3,
+        "hard_negative_pairs_reviewed": 10,
+        "source": "sanitized Ruff evaluator patterns",
+        "status": "manually-audited-before-inclusion",
+        "strong_reference_pairs_reviewed": 11,
+    }
     assert len(payload["fingerprint"]) == 64
     assert {pair["reason"] for pair in payload["pairs"]} >= {
-        "same-token-different-intent",
+        "generic-token-different-intent",
         "shared-subsystem-different-outcome",
-        "reference-versus-edit-intent",
-        "completed-invariant",
-        "direct-parent-child-known-structure",
-        "repeated-closed-target-hub",
+        "explicit-follow-up-repaired-invariant",
+        "exact-normalized-title",
+        "generic-token-disjoint-rule-code",
     }
-    assert all("selected_channel" in pair for pair in payload["pairs"])
+    assert all(
+        {"selected_channel", "exact_identifier_score", "sparse_tfidf_score"} <= pair.keys()
+        for pair in payload["pairs"]
+    )
+    assert set(payload["retrieval_metrics"]) == {
+        "exact_identifier",
+        "provider_field_aware",
+        "provider_whole_record",
+        "sparse_tfidf",
+    }
 
 
-def test_fixture_carries_hierarchy_and_repeated_target_regressions() -> None:
+def test_fixture_carries_sanitized_audited_reference_and_title_seeds() -> None:
     root = Path(__file__).resolve().parents[1]
     payload = json.loads(
-        (root / "tests/fixtures/semantic-hard-negatives-v2.json").read_text(encoding="utf-8")
+        (root / "tests/fixtures/semantic-gold-v3.json").read_text(encoding="utf-8")
     )
-    issues = {issue["id"]: issue for issue in payload["issues"]}
+    judgments = payload["judgments"]
 
-    assert issues["syn-impact-metrics"]["parent_id"] == "syn-impact-program"
-    hub_pairs = [
-        judgment
-        for judgment in payload["judgments"]
-        if judgment["reason"] == "repeated-closed-target-hub"
-    ]
-    assert len(hub_pairs) == 2
-    assert {pair["right"] for pair in hub_pairs} == {"syn-rollout-closed"}
+    assert sum(item["seed"] == "strong-reference" for item in judgments) == 11
+    assert sum(item["seed"] == "exact-title" for item in judgments) == 3
+    assert sum(item["seed"] == "hard-negative" for item in judgments) == 10
+    assert {item["audit_status"] for item in judgments} == {"manually-audited"}
+    assert "ruff-gh-" not in json.dumps(payload).lower()

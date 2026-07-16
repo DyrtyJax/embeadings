@@ -266,13 +266,16 @@ python scripts/evaluate_semantic_fixture.py
 python scripts/evaluate_semantic_fixture.py --provider model2vec
 ```
 
-The fixture contains sanitized same-token/different-intent, shared-subsystem, completed-invariant,
-reference-versus-edit, direct-hierarchy, and repeated-closed-target hub cases. Generic embedding
-benchmarks are insufficient release evidence.
+The fixture contains 11 sanitized, audited follow-up/reference shapes, three exact normalized-title
+pairs, and ten generic-token, disjoint-rule, shared-subsystem, and different-invariant hard negatives.
+It compares the embedding view with exact identifier/title and sparse lexical baselines. Generic
+embedding benchmarks are insufficient release evidence.
 
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
-as no-signal, and epics are excluded by default; pass `--include-epics` when broad container records
-are intentionally part of the review population. `--size` is a hard artifact maximum. Connected
+as no-signal. Epics and Beads `ephemeral: true` runtime records are excluded by default; pass
+`--include-epics` or `--include-ephemeral` only when those records are intentionally part of the
+review population. This keeps recurring patrol wisps from consuming durable-backlog budgets while
+preserving an explicit runtime-analysis path. `--size` is a hard artifact maximum. Connected
 review units remain connected when a large component is split. Independent echo-only singletons are
 packed into bounded, explicitly labeled agent envelopes rather than emitted as hundreds of files.
 Sweep reports include deterministic component, fragmentation, envelope, and cross-batch-edge counts.

@@ -19,10 +19,26 @@ repeatable without pretending that generated records measure `bd` or filesystem 
 ## Reference result
 
 On 2026-07-14, an Apple arm64 reference machine running Python 3.14.4 and NumPy 2.5.1 completed the
-1,000-record benchmark in **under one second** median analysis time over three repeats. The contract is
-five seconds, leaving headroom for slower supported machines. Results vary with CPU, BLAS, Python, and
-corpus shape; run the command on the release environment instead of treating this observation as a
-universal guarantee.
+1,000-record benchmark's exact candidate phase originally took **2.40 seconds** median over three
+repeats. The scope-aware vectorized implementation reduced the same phase to **1.22 seconds** without
+changing the candidate fingerprint (about 49%). The contract remains five seconds for the default
+benchmark. Results vary with CPU, BLAS, Python, and corpus shape; run the command on the release
+environment instead of treating this observation as a universal guarantee.
+
+The benchmark can also isolate an incremental active scope while retaining every closed record as
+completed-work evidence:
+
+```console
+python benchmarks/benchmark_warm.py --records 8000 --eligible-active 100 --repeats 1
+```
+
+On the same reference machine, exact candidate analysis measured 4.93s / 21.99s / 89.27s at
+2K / 4K / 8K full-scope records, compared with prior nested-ranking observations of
+9.56s / 22.47s / 129.91s. The 8K corpus with 100 eligible active records took 1.24s in candidate
+analysis; the complete analysis including full-population deterministic batching took 5.52s. A real
+8,143-record Ruff run fell from 101.20s to 30.69s while preserving all 250 semantic candidates and
+their order. These results keep ANN behind a measured-need gate: incremental exact review is practical,
+while a full 8K sweep remains an occasional calibration operation rather than a weekly default.
 
 Production sweep reports expose `timings_ms` for acquisition, embedding/cache work, similarity
 scoring, candidate analysis, and batching. Those fields make a slow Beads adapter or cache visible

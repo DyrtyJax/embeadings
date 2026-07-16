@@ -100,6 +100,110 @@ class SimilarityIndex:
         ranked.sort(key=lambda item: (-item[1], item[0]))
         return ranked
 
+    def top_ranks(
+        self,
+        query_ids: Sequence[str],
+        candidate_ids: Sequence[str],
+        limit: int,
+    ) -> dict[tuple[str, str], int]:
+        """Return exact deterministic top ranks without per-pair Python score calls."""
+
+        if limit < 1:
+            return {}
+        candidates = list(dict.fromkeys(candidate_ids))
+        candidate_positions = np.asarray(
+            [self._position(identifier) for identifier in candidates],
+            dtype=np.intp,
+        )
+        ranks: dict[tuple[str, str], int] = {}
+        query_positions = np.asarray(
+            [self._position(identifier) for identifier in query_ids],
+            dtype=np.intp,
+        )
+        # Chunking bounds temporary memory while selecting top-k rows in bulk.
+        for block_start in range(0, len(query_ids), 128):
+            block_end = min(block_start + 128, len(query_ids))
+            block_positions = query_positions[block_start:block_end]
+            block_scores = self._scores[np.ix_(block_positions, candidate_positions)]
+            for row, query_position in enumerate(block_positions):
+                block_scores[row, candidate_positions == query_position] = -np.inf
+            count = min(limit, len(candidates))
+            if not count:
+                continue
+            if count < len(candidates):
+                np.negative(block_scores, out=block_scores)
+                selected_by_row = np.argpartition(block_scores, count - 1, axis=1)[:, :count]
+                np.negative(block_scores, out=block_scores)
+            else:
+                selected_by_row = np.tile(np.arange(len(candidates)), (len(block_positions), 1))
+            for row, selected in enumerate(selected_by_row):
+                query_id = query_ids[block_start + row]
+                scores = block_scores[row]
+                selected = selected[np.isfinite(scores[selected])]
+                if not len(selected):
+                    continue
+                cutoff = float(np.min(scores[selected]))
+                higher = np.flatnonzero(scores > cutoff)
+                tied = np.flatnonzero(scores == cutoff)
+                needed = count - len(higher)
+                selected_indexes = np.concatenate(
+                    (
+                        higher,
+                        np.asarray(
+                            sorted(tied, key=lambda index: candidates[index])[:needed],
+                            dtype=np.intp,
+                        ),
+                    )
+                )
+                ordered = sorted(
+                    selected_indexes,
+                    key=lambda index: (-float(scores[index]), candidates[index]),
+                )
+                ranks.update(
+                    {
+                        (query_id, candidates[index]): rank
+                        for rank, index in enumerate(ordered, start=1)
+                    }
+                )
+        return ranks
+
+    def pairs_at_or_above(
+        self,
+        left_ids: Sequence[str],
+        right_ids: Sequence[str],
+        threshold: float,
+        *,
+        upper_triangle: bool = False,
+        eligible_ids: frozenset[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return deterministic threshold-qualified pairs using vectorized score rows."""
+
+        left = list(left_ids)
+        right = list(right_ids)
+        right_positions = np.asarray(
+            [self._position(identifier) for identifier in right],
+            dtype=np.intp,
+        )
+        right_eligible = (
+            np.asarray([identifier in eligible_ids for identifier in right], dtype=np.bool_)
+            if eligible_ids is not None
+            else None
+        )
+        pairs: list[tuple[str, str]] = []
+        for left_index, left_id in enumerate(left):
+            start = left_index + 1 if upper_triangle else 0
+            if start >= len(right):
+                continue
+            scores = self._scores[self._position(left_id), right_positions[start:]]
+            admitted = scores >= threshold
+            if eligible_ids is not None and left_id not in eligible_ids:
+                admitted &= right_eligible[start:]
+            for offset in np.flatnonzero(admitted):
+                right_id = right[start + int(offset)]
+                if right_id != left_id:
+                    pairs.append((left_id, right_id))
+        return pairs
+
     def sum_scores(
         self,
         query_ids: Sequence[str],
@@ -181,6 +285,43 @@ class MultiViewSimilarityIndex:
             ),
             None,
         )
+
+    def pairs_at_or_above(
+        self,
+        left_ids: Sequence[str],
+        right_ids: Sequence[str],
+        threshold: float,
+        *,
+        upper_triangle: bool = False,
+        eligible_ids: frozenset[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Union exact threshold pairs from every semantic view."""
+
+        pairs = set(
+            self._whole_record.pairs_at_or_above(
+                left_ids,
+                right_ids,
+                threshold,
+                upper_triangle=upper_triangle,
+                eligible_ids=eligible_ids,
+            )
+        )
+        for index in self._fields.values():
+            available = set(index.ids)
+            field_left = [identifier for identifier in left_ids if identifier in available]
+            field_right = [identifier for identifier in right_ids if identifier in available]
+            pairs.update(
+                index.pairs_at_or_above(
+                    field_left,
+                    field_right,
+                    threshold,
+                    upper_triangle=upper_triangle,
+                    eligible_ids=eligible_ids,
+                )
+            )
+        left_order = {identifier: position for position, identifier in enumerate(left_ids)}
+        right_order = {identifier: position for position, identifier in enumerate(right_ids)}
+        return sorted(pairs, key=lambda pair: (left_order[pair[0]], right_order[pair[1]]))
 
 
 def normalize(vector: Vector) -> list[float]:

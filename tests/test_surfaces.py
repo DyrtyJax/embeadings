@@ -211,6 +211,27 @@ def test_explicit_only_shared_directory_pointer_is_suppressed() -> None:
     assert analysis.pairs_omitted_by_module_guard == 1
 
 
+def test_incremental_collision_scope_keeps_only_pairs_touching_eligible_issue() -> None:
+    issues = [
+        IssueRecord(id="changed", title="Update `src/shared.py`"),
+        IssueRecord(
+            id="unchanged-a",
+            title="Modify `src/shared.py` and `src/other.py`",
+        ),
+        IssueRecord(id="unchanged-b", title="Refactor `src/other.py`"),
+    ]
+
+    analysis = analyze_code_surfaces(
+        issues,
+        workspace_path=None,
+        eligible_issue_ids=frozenset({"changed"}),
+    )
+
+    assert {
+        (collision.issue_id, collision.related_issue_id) for collision in analysis.collisions
+    } == {("changed", "unchanged-a")}
+
+
 def test_shared_path_symbol_is_preserved_as_bounded_evidence() -> None:
     issues = [
         IssueRecord(id="proj-1", title="Change `src/parser/core.py::parse`"),

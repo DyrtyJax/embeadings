@@ -174,6 +174,7 @@ def _canonical_state_marker(record: Any) -> dict[str, Any]:
         issue_type = _first(record, "issue_type", "type") or ""
         priority = record.get("priority")
         updated_at = _first(record, "updated_at", "updatedAt") or ""
+        ephemeral = record.get("ephemeral", False)
         dependencies_value = _first(record, "dependencies", "depends_on", "dependency_ids")
     else:
         identifier = getattr(record, "id", None)
@@ -181,6 +182,7 @@ def _canonical_state_marker(record: Any) -> dict[str, Any]:
         issue_type = getattr(record, "issue_type", "") or ""
         priority = getattr(record, "priority", None)
         updated_at = getattr(record, "updated_at", "") or ""
+        ephemeral = getattr(record, "ephemeral", False)
         dependencies_value = None
     if not isinstance(identifier, str) or not identifier.strip():
         raise ValueError("state digest record contains no valid ID")
@@ -190,6 +192,8 @@ def _canonical_state_marker(record: Any) -> dict[str, Any]:
         raise ValueError("state digest record contains an invalid issue type")
     if not isinstance(updated_at, str):
         raise ValueError("state digest record contains an invalid update marker")
+    if not isinstance(ephemeral, bool):
+        raise ValueError("state digest record contains invalid ephemeral metadata")
     try:
         normalized_priority = _parse_priority(priority)
         if isinstance(record, Mapping):
@@ -207,6 +211,7 @@ def _canonical_state_marker(record: Any) -> dict[str, Any]:
         "issue_type": issue_type.strip().casefold(),
         "priority": normalized_priority,
         "updated_at": _normalized_update_marker(updated_at),
+        "ephemeral": ephemeral,
         "dependencies": dependency_markers,
     }
 
@@ -238,6 +243,7 @@ def _state_divergence_reasons(
         "issue_type": "issue_type",
         "priority": "priority",
         "updated_at": "update_marker",
+        "ephemeral": "ephemeral",
         "dependencies": "dependency_structure",
     }
     for identifier in live.keys() & export.keys():
@@ -342,6 +348,14 @@ def _parse_priority(value: Any) -> int | None:
     return priority
 
 
+def _parse_bool(value: Any, *, field_name: str) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise BeadsError(f"issue {field_name} must be a boolean")
+    return value
+
+
 def _parse_labels(value: Any) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -439,4 +453,5 @@ def _parse_issue(raw: Any) -> IssueRecord:
         design=_optional_string(raw, "design", "design_notes"),
         notes=_optional_string(raw, "notes", "current_notes"),
         updated_at=_optional_string(raw, "updated_at", "updatedAt"),
+        ephemeral=_parse_bool(raw.get("ephemeral"), field_name="ephemeral"),
     )

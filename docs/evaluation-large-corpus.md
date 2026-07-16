@@ -42,6 +42,31 @@ bd init --from-jsonl --prefix ruff --skip-agents --skip-hooks
 embead triage --review-budget 20 --output /private/tmp/ruff-embead-triage
 ```
 
+The 20-candidate packet tests the operational review queue; it is not a representative quality
+sample. For precision-decay work, create one expanded, objective-separated sweep and sample exact
+rank bands from that fixed artifact. Do not rerun selection with budgets of 20, 50, 100, and 250:
+caps and lane reservations can make those candidate sets differ instead of forming strict prefixes.
+
+```console
+embead sweep --objective echo --objective overlap \
+  --weekly-review-budget 250 \
+  --output /private/tmp/ruff-embead-pool
+
+python scripts/prepare_ranked_evaluation.py \
+  /private/tmp/ruff-embead-pool/report.json \
+  --output-dir /private/tmp/ruff-embead-ranked-review \
+  --pool-size 250 \
+  --rank-boundaries 20,50,100,250 \
+  --sample-per-stratum 10
+```
+
+The command prints only review paths, sample size, and fingerprints. `review.json` shuffles the
+selected pairs deterministically and hides rank, lane, kind, and score. Reviewers should rate that
+file before opening `manifest.json`. The manifest records the immutable
+input digest, exact-prefix pool fingerprint, stable public sampling seed, rank/lane strata, and the
+key required to calculate precision by band. This harness lives under `scripts/` intentionally; it
+does not expand the routine `embead triage` interface.
+
 Do not commit the export or generated Beads database. Before and after each run, fingerprint the
 JSONL, tracker export, Git status, and external cache/state directories.
 

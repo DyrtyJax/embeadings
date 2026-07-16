@@ -10,6 +10,21 @@ read-only reviewer agents.
 The output is evidence-discovery material, not tracker truth. Similarity must never directly close,
 defer, reprioritize, relabel, or rewrite an issue.
 
+### Specification status
+
+This is a living specification for the v0.4 implementation. Unless a section is explicitly marked
+**experimental** or **post-MVP**, it describes shipped behavior. The command inventory in section 6
+is the current public CLI contract and takes precedence over older milestone language.
+
+- **Shipped:** synchronous local analysis, Beads and Linear read adapters, `triage`, `neighbors`,
+  `sweep`, its `batch` alias, `collisions`, readiness diagnostics, versioned reports, and the thin
+  local agent-plugin foundation.
+- **Experimental:** explicit review objectives and field-aware semantic retrieval. These are
+  opt-in research surfaces, not the default ranking contract.
+- **Post-MVP:** background/async runs, run-status commands, first-party agent dispatch, hosted
+  embedding providers, and semantic code or AST indexes. These are roadmap concepts, not accepted
+  commands or implied release commitments.
+
 ## 2. Problem
 
 Dependency graphs encode explicit ordering and blocking relationships. They do not reliably reveal:
@@ -24,7 +39,7 @@ Keyword search helps only when authors use the same words. Durable semantic labe
 taxonomy that must itself be maintained. The tool should instead compute local, disposable semantic
 relationships from current issue text.
 
-## 3. Goals
+## 3. Current goals
 
 1. Read a live Beads workspace or selected Linear team through supported read-only interfaces.
 2. Embed new or changed records incrementally using a content-addressed cache.
@@ -32,9 +47,15 @@ relationships from current issue text.
 4. Surface high-similarity active/completed pairs as review candidates.
 5. Produce deterministic, balanced review batches with a configurable target size.
 6. Emit stable JSON for tools and concise Markdown for people and agents.
-7. Support non-blocking background runs with explicit queued/running/complete/failed state.
-8. Keep all models, vectors, logs, and reports out of the analyzed repository by default.
-9. Make privacy, offline operation, and non-mutation testable invariants.
+7. Keep all models, vectors, logs, and reports out of the analyzed repository by default.
+8. Make privacy, offline operation, and non-mutation testable invariants.
+
+### Post-MVP goals
+
+- Consider non-blocking background runs with explicit queued/running/complete/failed state only if
+  synchronous runs become an observed workflow constraint.
+- Consider first-party agent dispatch only after the manifest contract proves insufficient for host
+  integrations. The current plugin intentionally delegates to the installed synchronous CLI.
 
 ## 4. Non-goals
 
@@ -62,10 +83,35 @@ the tracker.
 
 ### Tool author
 
-As a tool author, I can consume versioned JSON manifests and supply an optional dispatcher without
-depending on internal embedding implementation details.
+As a tool author, I can consume versioned JSON manifests without depending on internal embedding
+implementation details. A host may wrap that synchronous contract today; first-party dispatch is
+post-MVP.
 
 ## 6. CLI contract
+
+The shipped command inventory is:
+
+```bash
+embead triage [--review-budget 20]
+embead neighbors ISSUE_ID [--limit N] [--include-closed]
+embead sweep [--size 9]
+embead batch [--size 9]
+embead collisions [--worktree-map ISSUE_ID=PATH]
+embead readiness [--offline]
+embead doctor [--offline]
+embead capabilities [--json]
+```
+
+All analysis commands are synchronous. `--json` selects machine-readable stdout; `--output`
+selects an explicit external artifact path where supported. `triage` is the opinionated bounded
+front door, while `sweep` exposes research and policy controls. `batch` is currently an alias for a
+synchronous sweep, not a separate scheduler.
+
+Common population controls are deliberately narrower than the original proposal. `triage`,
+`sweep`, `batch`, and `collisions` accept stored status filters and optional epic inclusion where
+applicable. `sweep` and `batch` also accept incremental timestamps or external checkpoints,
+candidate-policy controls, explicit objectives, and optional code-surface analysis. The CLI does
+not translate parent, ready, label, or arbitrary issue-ID expressions into tracker queries.
 
 ### `neighbors`
 
@@ -76,34 +122,44 @@ embead neighbors ISSUE_ID [--limit N] [--include-closed]
 Returns the nearest records with similarity scores and structural context. Human output must label
 scores as advisory. JSON output includes the embedding model and index generation.
 
-### `batch`
+### `triage`, `sweep`, and `batch`
 
 ```bash
-embead batch [FILTERS] [--size 9] [--output PATH] [--format json|markdown|both]
+embead triage [--review-budget 20] [--size 9]
+embead sweep [--status STATUS] [--size 9] [--output PATH]
+embead batch [--status STATUS] [--size 9] [--output PATH]
 ```
 
-Builds deterministic, balanced semantic neighborhoods from a candidate population. Filters select
-the population structurally before embeddings are applied. The first release should support status,
-priority, label, parent, ready, and explicit issue-ID inputs by translating them to supported Beads
-CLI operations.
+Builds deterministic, bounded semantic neighborhoods from a candidate population. Population
+filters are applied before embeddings. `triage` writes the full sweep audit to external run state
+and returns a smaller agent-ready packet carrying the same stable analysis fingerprint.
 
-### `sweep`
+### `collisions`
 
 ```bash
-embead sweep [FILTERS] [--size 9] [--async]
+embead collisions [--status STATUS] [--worktree-map ISSUE_ID=PATH]
 ```
 
-Generates an analysis report plus one manifest per batch. `--async` returns a run ID immediately and
-writes status transitions atomically.
+Produces bounded local code-surface coordination leads without loading the embedding model. The same
+evidence can be added to `sweep` or is enabled opportunistically by `triage`.
 
-### `status`
+### Readiness and capability inspection
 
 ```bash
-embead status RUN_ID [--json]
+embead readiness [--offline]
+embead doctor [--offline]
+embead capabilities [--json]
 ```
 
-Returns `queued`, `running`, `complete`, or `failed`, timestamps, output locations, and a bounded error
-message when failed.
+These commands inspect or prepare local prerequisites without reading tracker issue content where
+their contract says so. `capabilities` lets consumers negotiate the report contract before invoking
+analysis.
+
+### Post-MVP async concept
+
+`embead sweep --async` and `embead status RUN_ID` are reserved design sketches. They are not parsed
+by v0.4. If implemented, async execution must preserve the same read-only analysis contract, expose
+bounded queued/running/complete/failed state, and avoid introducing a required daemon.
 
 ## 7. Data acquisition
 
@@ -395,10 +451,11 @@ Each batch manifest is versioned JSON containing:
 `source_revision` is optional because Beads can operate without Git. Project-specific dispatchers may
 add repository context separately without changing the core manifest.
 
-## 14. Agent integration
+## 14. Post-MVP agent dispatch
 
-Agent dispatch is an optional adapter consuming batch manifests. The core CLI stops after producing
-manifests and reports.
+The shipped core CLI stops after producing manifests and reports. The local plugin foundation wraps
+that synchronous CLI and does not add a scheduler or tracker-write authority. A future first-party
+dispatch adapter could consume batch manifests if host-neutral integration proves insufficient.
 
 A reviewer adapter must:
 
@@ -409,8 +466,8 @@ A reviewer adapter must:
 - make partial failures visible;
 - avoid requiring durable issues for disposable audit work.
 
-The initial public interface should be a command template or subprocess protocol rather than a
-runtime-specific SDK. First-party adapters may later support multiple coding-agent CLIs.
+Any future public dispatch interface should remain a command template or subprocess protocol rather
+than a runtime-specific SDK. First-party adapters may later support multiple coding-agent CLIs.
 
 ## 15. Safety and privacy invariants
 
@@ -422,10 +479,13 @@ Automated tests must prove:
 4. First-run model downloads are pinned, disclosed, and separate from issue text.
 5. Logs do not contain full issue bodies unless verbose output is explicitly requested.
 6. Cache and report directories cannot be mistaken for Beads source data.
-7. Concurrent runs cannot corrupt cache or status state.
-8. Failed runs transition to `failed` and retain diagnostic context.
+7. Concurrent synchronous runs cannot corrupt shared cache or artifact state.
+8. Command failures return bounded diagnostics without mutating tracker or repository state.
 9. Reports identify their tracker snapshot and embedding model.
 10. Fixtures and documentation contain only synthetic public examples.
+
+Post-MVP background execution would add separate status-transition and interrupted-run invariants;
+those are not claims about the current synchronous CLI.
 
 ## 16. Configuration
 
@@ -474,7 +534,7 @@ Use synthetic Beads workspaces to test:
 - related records that must not be classified as duplicates;
 - malformed CLI JSON and unsupported Beads versions;
 - cold, warm, and one-record incremental runs;
-- concurrent and interrupted async sweeps;
+- concurrent synchronous sweeps and interrupted cache/artifact writes;
 - deterministic batch membership and size bounds;
 - candidate caps and structurally corroborated threshold exceptions;
 - candidate-focused batching with explicit no-signal records and sparse tails;
@@ -488,34 +548,34 @@ retained with the repository owner's approval. The warm path for a public synthe
 records should complete within five seconds on a documented reference CPU, with similarity scoring and
 batching measured separately from Beads acquisition.
 
-## 20. Milestones
+## 20. Delivery boundary and roadmap
 
-### M0 — public contract
+### Shipped foundation
 
-- Review this specification with Beads users and maintainers.
-- Comment on the upstream vector-search discussion with the proposed scope.
-- Confirm the synthetic evaluation corpus and initial quality metrics.
+- Package, Beads and Linear read adapters, canonicalization, pinned local provider, cache, and
+  synchronous `neighbors`, `sweep`, `batch`, `triage`, and `collisions` commands.
+- Stable versioned artifacts, bounded candidate queues, deterministic batching, incremental scopes,
+  checkpoints, privacy tests, and cross-platform cache locking.
+- Runtime-neutral JSON consumption plus a thin read-only Codex/Claude Code plugin foundation.
 
-### M1 — local semantic core
+### Current hardening and evaluation
 
-- Package skeleton, Beads read adapter, canonicalization, local provider, cache, and `neighbors`.
-- Cross-platform locking and privacy tests.
+- Calibrate semantic ranking and review-budget behavior on public large-corpus surrogates and native
+  Beads repositories without turning evaluation controls into default workflow complexity.
+- Validate observed-to-observed code-surface behavior with multiple genuinely active worktrees.
+- Preserve compatibility and non-mutation guarantees while simplifying low-value or duplicative
+  surfaces.
 
-### M2 — review batches
+### Post-MVP, evidence-gated
 
-- Structural filters, balanced batching, completed-work echoes, deferred-work proximity, and reports.
-- Stable manifest schema and async status.
-
-### M3 — optional agent adapters
-
-- Runtime-neutral subprocess contract.
-- One reference read-only reviewer adapter and adversarial mutation tests.
-
-### M4 — ecosystem release
-
-- Test against multiple public Beads repositories.
-- Publish package and checksums.
-- Submit to the Beads community-tools catalog.
+- Async execution and `status` only if measured run duration or unattended operation warrants their
+  lifecycle and storage complexity.
+- First-party reviewer dispatch only if host-neutral manifests and the local plugin prove
+  insufficient.
+- Hosted providers, semantic code retrieval, AST indexing, or external vector stores only behind
+  optional evidence-provider contracts with independent privacy and quality gates.
+- Marketplace/package publication and community-catalog submission after the corresponding release
+  gates pass.
 
 ## 21. Open decisions
 

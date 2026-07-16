@@ -721,14 +721,23 @@ def test_sweep_batches_only_signal_issues_and_reports_no_signal_and_epics(
         IssueRecord("no-signal", "No signal", status="open", issue_type="feature"),
         IssueRecord("container", "Broad epic", status="open", issue_type="epic"),
         IssueRecord("closed", "Completed", status="closed", issue_type="task"),
+        IssueRecord("active-wisp", "Patrol", status="open", ephemeral=True),
+        IssueRecord("closed-wisp", "Patrol", status="closed", ephemeral=True),
     )
 
     class CandidateAdapter:
         def load(self):
             return WorkspaceSnapshot("workspace-test", "1.0.5", "/tmp/demo/.beads"), issues
 
-    def fake_candidates(population, _issues, _vectors, **_kwargs):
+    def fake_candidates(population, all_issues, _vectors, **_kwargs):
         assert [issue.id for issue in population] == ["active-a", "active-b", "no-signal"]
+        assert {issue.id for issue in all_issues} == {
+            "active-a",
+            "active-b",
+            "no-signal",
+            "container",
+            "closed",
+        }
         return CandidateRanking(
             candidates=(
                 {
@@ -772,9 +781,9 @@ def test_sweep_batches_only_signal_issues_and_reports_no_signal_and_epics(
     assert payload["batch_diagnostics"]["configured_max_batch_size"] == 5
     assert payload["no_signal"] == {"count": 1, "issue_ids": ["no-signal"]}
     assert payload["excluded"] == {
-        "by_reason": {"epic": 1},
-        "count": 1,
-        "issue_ids": ["container"],
+        "by_reason": {"ephemeral": 2, "epic": 1},
+        "count": 3,
+        "issue_ids": ["active-wisp", "closed-wisp", "container"],
     }
     manifest = json.loads((output / "batch-1.json").read_text())
     assert {issue["id"] for issue in manifest["issues"]} == {"active-a", "active-b"}
@@ -782,6 +791,38 @@ def test_sweep_batches_only_signal_issues_and_reports_no_signal_and_epics(
         "active-b",
         "closed",
     }
+    assert "Ephemeral runtime records excluded: 2" in (output / "report.md").read_text()
+
+
+def test_sweep_can_explicitly_include_ephemeral_records(monkeypatch, tmp_path, capsys) -> None:
+    issues = (
+        IssueRecord("durable", "Durable", status="open"),
+        IssueRecord("wisp", "Patrol", status="open", ephemeral=True),
+    )
+
+    class EphemeralAdapter:
+        def load(self):
+            return WorkspaceSnapshot("workspace-test", "1.0.5", None), issues
+
+    def fake_candidates(population, all_issues, _vectors, **_kwargs):
+        assert {issue.id for issue in population} == {"durable", "wisp"}
+        assert {issue.id for issue in all_issues} == {"durable", "wisp"}
+        return CandidateRanking(
+            candidates=(), qualified=0, dropped_by_issue_cap=0, dropped_by_run_cap=0
+        )
+
+    monkeypatch.setattr(cli, "BeadsAdapter", EphemeralAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=8))
+    monkeypatch.setattr(cli, "_candidate_evidence", fake_candidates)
+    monkeypatch.setattr(
+        cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
+    )
+
+    output = tmp_path / "include-ephemeral"
+    assert cli.main(["sweep", "--include-ephemeral", "--output", str(output), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["parameters"]["filters"]["include_ephemeral"] is True
+    assert payload["excluded"] == {"by_reason": {}, "count": 0, "issue_ids": []}
 
 
 def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint(
@@ -815,6 +856,13 @@ def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint
     monkeypatch.setattr(cli, "BeadsAdapter", IncrementalAdapter)
     monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=32))
     monkeypatch.setattr(cli, "_candidate_evidence", fake_candidates)
+
+    def fake_surfaces(_args, _snapshot, population, eligible_issue_ids):
+        assert {issue.id for issue in population} == {"changed", "unchanged"}
+        assert eligible_issue_ids == {"changed"}
+        return {"collisions": [], "scope": "incremental"}
+
+    monkeypatch.setattr(cli, "_surface_analysis", fake_surfaces)
     monkeypatch.setattr(
         cli, "_workspace_paths", lambda _identity: (tmp_path / "cache", tmp_path / "state")
     )
@@ -823,6 +871,7 @@ def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint
         cli.main(
             [
                 "sweep",
+                "--code-surfaces",
                 "--changed-since",
                 "2026-07-10T00:00:00Z",
                 "--write-checkpoint",
@@ -835,6 +884,10 @@ def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint
         == 0
     )
     payload = json.loads(capsys.readouterr().out)
+    assert payload["code_surface_analysis"] == {
+        "collisions": [],
+        "scope": "incremental",
+    }
     assert payload["parameters"]["filters"]["incremental_scope"] == {
         "checkpoint_created_at": None,
         "changed_active_count": 1,

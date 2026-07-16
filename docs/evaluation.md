@@ -34,10 +34,26 @@ python scripts/evaluate_semantic_fixture.py
 python scripts/evaluate_semantic_fixture.py --provider model2vec
 ```
 
-The output is deterministic for a fixed provider and contains no repository or tracker data. Record
-its fingerprint, per-rating mean field score, and pair-level selected channel. A model upgrade does
-not pass merely because its average similarity rises: rating-2 candidate recall must improve without
-raising vocabulary-only and shared-subsystem hard negatives into the review budget.
+The version-3 fixture contains 11 sanitized, manually audited follow-up/reference shapes, three exact
+normalized-title pairs, and ten hard negatives. It contains no source issue text, repository data, or
+private tracker data. Every run compares the selected provider's whole-record and field-aware views
+with exact-title/identifier and sparse TF-IDF baselines. Record the fingerprint, recall@5, fixed-budget
+precision, abstention, per-rating scores, and external wall time. A model upgrade does not pass merely
+because its average similarity rises: rating-2 candidate recall must improve without raising
+vocabulary-only and shared-subsystem hard negatives into the review budget.
+
+Reference results on 2026-07-16 were:
+
+| Retrieval view | Recall@5 | Rating-2 precision at 14 | Useful precision at 14 |
+| --- | ---: | ---: | ---: |
+| Potion whole record | 100% | 78.6% | 92.9% |
+| Potion field aware | 100% | 85.7% | 92.9% |
+| Exact title / identifier | 100% | 85.7% | 100% |
+| Sparse TF-IDF | 100% | 78.6% | 92.9% |
+
+Warm local wall time was about 0.88s for Potion and 0.11s for the experimental hashing provider on
+the reference machine. The deterministic lexical baseline is intentionally first-class evidence: the
+embedding provider should complement explicit identifiers and exact outcomes, not rediscover them.
 
 For each existing evaluator corpus, compare the unchanged baseline with the experimental path:
 

@@ -239,14 +239,20 @@ def rank_candidates(
     score = _score_function(scorer)
     active = sorted(population, key=issue_id)
     closed = sorted((item for item in all_issues if _is_closed(issue_status(item))), key=issue_id)
-    ranks = _Ranks.build(active, closed, score, policy.reciprocal_rank)
+    ranks = _Ranks.build(
+        active,
+        closed,
+        scorer,
+        policy.reciprocal_rank,
+        eligible_issue_ids=eligible_issue_ids,
+    )
     reciprocal_evidence = _ReciprocalEvidence.build((*active, *closed))
 
     reciprocal_diagnostics = _empty_reciprocal_diagnostics()
     requested = _qualifying_candidates(
         active,
         closed,
-        score,
+        scorer,
         ranks,
         policy,
         echo_threshold=policy.echo_threshold,
@@ -254,6 +260,7 @@ def rank_candidates(
         reciprocal_evidence=reciprocal_evidence,
         reciprocal_diagnostics=reciprocal_diagnostics,
         objectives=policy.objectives,
+        eligible_issue_ids=eligible_issue_ids,
     )
     if eligible_issue_ids is not None:
         requested = [
@@ -281,13 +288,14 @@ def rank_candidates(
         baseline = _qualifying_candidates(
             active,
             closed,
-            score,
+            scorer,
             ranks,
             policy,
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
             reciprocal_evidence=reciprocal_evidence,
             objectives=policy.objectives,
+            eligible_issue_ids=eligible_issue_ids,
         )
         if eligible_issue_ids is not None:
             baseline = [
@@ -327,13 +335,14 @@ def rank_candidates(
         reference = _qualifying_candidates(
             active,
             closed,
-            score,
+            scorer,
             ranks,
             policy,
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
             reciprocal_evidence=reciprocal_evidence,
             objectives=policy.objectives,
+            eligible_issue_ids=eligible_issue_ids,
         )
         if eligible_issue_ids is not None:
             reference = [
@@ -452,20 +461,31 @@ class _Ranks:
         cls,
         active: Sequence[Any],
         closed: Sequence[Any],
-        score: Callable[[str, str], float],
+        scorer: Scorer,
         limit: int,
+        *,
+        eligible_issue_ids: frozenset[str] | None = None,
     ) -> _Ranks:
+        eligible_active = (
+            [item for item in active if issue_id(item) in eligible_issue_ids]
+            if eligible_issue_ids is not None
+            else active
+        )
+        if not eligible_active:
+            return cls(overlap={}, active_to_closed={}, closed_to_active={})
         return cls(
-            overlap=_top_ranks(active, active, score, limit),
-            active_to_closed=_top_ranks(active, closed, score, limit),
-            closed_to_active=_top_ranks(closed, active, score, limit),
+            # An eligible-to-unchanged overlap needs both directional ranks,
+            # so every active row remains relevant even in an incremental run.
+            overlap=_top_ranks(active, active, scorer, limit),
+            active_to_closed=_top_ranks(eligible_active, closed, scorer, limit),
+            closed_to_active=_top_ranks(closed, active, scorer, limit),
         )
 
 
 def _qualifying_candidates(
     active: Sequence[Any],
     closed: Sequence[Any],
-    score: Callable[[str, str], float],
+    scorer: Scorer,
     ranks: _Ranks,
     policy: CandidatePolicy,
     *,
@@ -474,38 +494,66 @@ def _qualifying_candidates(
     reciprocal_evidence: _ReciprocalEvidence,
     reciprocal_diagnostics: dict[str, Any] | None = None,
     objectives: frozenset[str] | None = None,
+    eligible_issue_ids: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
+    score = _score_function(scorer)
     qualified: list[dict[str, Any]] = []
     overlap_enabled = objectives is None or "overlap" in objectives
     echo_enabled = objectives is None or "echo" in objectives
     structure_enabled = objectives is None or "structure" in objectives
     if overlap_enabled or structure_enabled:
-        for left_index, left in enumerate(active):
-            for right in active[left_index + 1 :]:
-                candidate = _qualify(
-                    "possible-overlap",
-                    left,
-                    right,
-                    score,
-                    threshold=overlap_threshold,
-                    exception_margin=policy.exception_margin,
-                    reciprocal_rank=policy.reciprocal_rank,
-                    left_rank=ranks.overlap.get((issue_id(left), issue_id(right))),
-                    right_rank=ranks.overlap.get((issue_id(right), issue_id(left))),
-                    reciprocal_evidence=reciprocal_evidence,
-                    reciprocal_diagnostics=reciprocal_diagnostics,
-                    semantic_enabled=overlap_enabled,
-                    structure_enabled=structure_enabled,
-                    legacy_mode=objectives is None,
-                )
-                if candidate is not None:
-                    qualified.append(candidate)
+        by_active_id = {issue_id(item): item for item in active}
+        overlap_pairs = _pairs_at_or_above(
+            active,
+            active,
+            scorer,
+            max(-1.0, overlap_threshold - policy.exception_margin),
+            upper_triangle=True,
+            eligible_issue_ids=eligible_issue_ids,
+        )
+        for left_id, right_id in overlap_pairs:
+            left = by_active_id[left_id]
+            right = by_active_id[right_id]
+            candidate = _qualify(
+                "possible-overlap",
+                left,
+                right,
+                score,
+                threshold=overlap_threshold,
+                exception_margin=policy.exception_margin,
+                reciprocal_rank=policy.reciprocal_rank,
+                left_rank=ranks.overlap.get((left_id, right_id)),
+                right_rank=ranks.overlap.get((right_id, left_id)),
+                reciprocal_evidence=reciprocal_evidence,
+                reciprocal_diagnostics=reciprocal_diagnostics,
+                semantic_enabled=overlap_enabled,
+                structure_enabled=structure_enabled,
+                legacy_mode=objectives is None,
+            )
+            if candidate is not None:
+                qualified.append(candidate)
 
     if echo_enabled or structure_enabled:
-        for active_issue in active:
+        active_echoes = (
+            [item for item in active if issue_id(item) in eligible_issue_ids]
+            if eligible_issue_ids is not None
+            else active
+        )
+        by_closed_id = {issue_id(item): item for item in closed}
+        echo_pairs = _pairs_at_or_above(
+            active_echoes,
+            closed,
+            scorer,
+            max(-1.0, echo_threshold - policy.exception_margin),
+        )
+        echo_targets: dict[str, list[str]] = defaultdict(list)
+        for active_id, closed_id in echo_pairs:
+            echo_targets[active_id].append(closed_id)
+        for active_issue in active_echoes:
             echoes: list[dict[str, Any]] = []
             dependency_echoes: list[dict[str, Any]] = []
-            for completed_issue in closed:
+            for completed_id in echo_targets[issue_id(active_issue)]:
+                completed_issue = by_closed_id[completed_id]
                 if issue_id(active_issue) == issue_id(completed_issue):
                     continue
                 candidate = _qualify(
@@ -1366,15 +1414,19 @@ def _candidate_id(candidate: dict[str, Any]) -> str:
 def _top_ranks(
     queries: Sequence[Any],
     candidates: Sequence[Any],
-    score: Callable[[str, str], float],
+    scorer: Scorer,
     limit: int,
 ) -> dict[tuple[str, str], int]:
     if limit == 0:
         return {}
-    ranks: dict[tuple[str, str], int] = {}
+    query_ids = [issue_id(item) for item in queries]
     candidate_ids = [issue_id(item) for item in candidates]
-    for query in queries:
-        query_id = issue_id(query)
+    vectorized = getattr(scorer, "top_ranks", None)
+    if vectorized is not None:
+        return vectorized(query_ids, candidate_ids, limit)
+    score = _score_function(scorer)
+    ranks: dict[tuple[str, str], int] = {}
+    for query_id in query_ids:
         eligible = (candidate_id for candidate_id in candidate_ids if candidate_id != query_id)
         ordered = heapq.nsmallest(
             limit,
@@ -1385,6 +1437,42 @@ def _top_ranks(
             {(query_id, candidate_id): rank for rank, candidate_id in enumerate(ordered, 1)}
         )
     return ranks
+
+
+def _pairs_at_or_above(
+    left: Sequence[Any],
+    right: Sequence[Any],
+    scorer: Scorer,
+    threshold: float,
+    *,
+    upper_triangle: bool = False,
+    eligible_issue_ids: frozenset[str] | None = None,
+) -> list[tuple[str, str]]:
+    """Prefilter exact candidate pairs before building evidence dictionaries."""
+
+    left_ids = [issue_id(item) for item in left]
+    right_ids = [issue_id(item) for item in right]
+    vectorized = getattr(scorer, "pairs_at_or_above", None)
+    if vectorized is not None:
+        return vectorized(
+            left_ids,
+            right_ids,
+            threshold,
+            upper_triangle=upper_triangle,
+            eligible_ids=eligible_issue_ids,
+        )
+    score = _score_function(scorer)
+    pairs: list[tuple[str, str]] = []
+    for left_index, left_id in enumerate(left_ids):
+        start = left_index + 1 if upper_triangle else 0
+        for right_id in right_ids[start:]:
+            if left_id == right_id:
+                continue
+            if eligible_issue_ids is not None and not ({left_id, right_id} & eligible_issue_ids):
+                continue
+            if score(left_id, right_id) >= threshold:
+                pairs.append((left_id, right_id))
+    return pairs
 
 
 def _candidate_identity(candidate: dict[str, Any]) -> tuple[str, str, str]:

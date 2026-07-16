@@ -1004,6 +1004,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     warnings = payload.get("warnings") or []
     no_signal = payload.get("no_signal") or {}
     excluded = payload.get("excluded") or {}
+    excluded_by_reason = _field(excluded, "by_reason", default={}) or {}
     candidate_policy = _field(payload.get("parameters") or {}, "candidate_policy", default={}) or {}
     filters = _field(payload.get("parameters") or {}, "filters", default={}) or {}
     incremental_scope = _field(filters, "incremental_scope", default={}) or {}
@@ -1032,6 +1033,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         f"- Other review candidates: {len(candidates) - echo_count - overlap_count}",
         f"- No-signal records: {_field(no_signal, 'count', default=0)}",
         f"- Excluded records: {_field(excluded, 'count', default=0)}",
+        "- Ephemeral runtime records excluded: "
+        + str(_field(excluded_by_reason, "ephemeral", default=0)),
         f"- Qualified typed dependencies omitted by caps: {len(capped_dependencies)}",
         f"- Review scope: {_field(incremental_scope, 'mode', default='full')}",
         "- Changed active records in scope: "

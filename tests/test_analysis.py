@@ -39,6 +39,35 @@ def test_similarity_index_matches_scalar_cosine_and_ranks_ties_by_id() -> None:
     ]
 
 
+def test_similarity_index_vectorized_ranks_preserve_ties_and_self_exclusion() -> None:
+    index = SimilarityIndex({"Q": [1, 0], "A": [1, 1], "B": [1, 1], "C": [0, 1]})
+
+    assert index.top_ranks(["Q", "A"], ["Q", "A", "B", "C"], 2) == {
+        ("Q", "A"): 1,
+        ("Q", "B"): 2,
+        ("A", "B"): 1,
+        ("A", "C"): 2,
+    }
+
+
+def test_similarity_index_vectorized_pairs_apply_scope_before_pair_generation() -> None:
+    index = SimilarityIndex({"A": [1, 0], "B": [0.9, 0.1], "C": [0.8, 0.2], "D": [0, 1]})
+
+    assert index.pairs_at_or_above(
+        ["A", "B", "C"],
+        ["A", "B", "C"],
+        0.95,
+        upper_triangle=True,
+        eligible_ids=frozenset({"C"}),
+    ) == [("A", "C"), ("B", "C")]
+    assert index.pairs_at_or_above(
+        ["A", "D"],
+        ["B", "C"],
+        0.95,
+        eligible_ids=frozenset({"A"}),
+    ) == [("A", "B"), ("A", "C")]
+
+
 @pytest.mark.parametrize(
     ("vectors", "message"),
     [
@@ -76,6 +105,12 @@ def test_multi_view_similarity_preserves_local_channel_evidence() -> None:
     )
     assert index.channel_rank("title", "A", "B", ["B", "C"]) == 1
     assert index.channel_rank("design", "C", "B", ["A", "B"]) is None
+    assert index.pairs_at_or_above(
+        ["A", "B", "C"],
+        ["A", "B", "C"],
+        0.9,
+        upper_triangle=True,
+    ) == [("A", "B"), ("A", "C")]
 
 
 def test_neighbors_filter_closed_and_break_ties_by_id() -> None:

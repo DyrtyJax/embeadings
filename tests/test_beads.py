@@ -300,6 +300,7 @@ def test_true_stale_export_has_privacy_safe_divergence_categories() -> None:
         ("issue_type", "bug", "issue_type"),
         ("priority", 4, "priority"),
         ("updated_at", "2026-07-14T00:00:02Z", "update_marker"),
+        ("ephemeral", True, "ephemeral"),
         (
             "dependencies",
             [{"depends_on_id": "other-target", "type": "blocks"}],
@@ -343,6 +344,7 @@ def test_list_parses_legacy_envelope_and_aliases() -> None:
                             "acceptanceCriteria": "Works",
                             "design_notes": "Simple",
                             "current_notes": "Done",
+                            "ephemeral": True,
                         }
                     ]
                 },
@@ -357,6 +359,7 @@ def test_list_parses_legacy_envelope_and_aliases() -> None:
     assert issue.labels == ("old",)
     assert issue.parent_id == "old-root"
     assert issue.dependencies == ("old-0",)
+    assert issue.ephemeral is True
 
 
 def test_workspace_snapshot_uses_stable_explicit_identity() -> None:

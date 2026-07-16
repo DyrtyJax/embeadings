@@ -104,6 +104,11 @@ def _parser() -> argparse.ArgumentParser:
     neighbors.add_argument("issue_id")
     neighbors.add_argument("--limit", type=int, default=5)
     neighbors.add_argument("--include-closed", action="store_true")
+    neighbors.add_argument(
+        "--include-ephemeral",
+        action="store_true",
+        help="Include temporary Beads runtime records (excluded by default)",
+    )
     neighbors.add_argument("--json", action="store_true", dest="as_json")
     neighbors.add_argument("--output", type=Path)
 
@@ -125,6 +130,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     triage.add_argument("--status", action="append")
     triage.add_argument("--include-epics", action="store_true")
+    _ephemeral_argument(triage)
     _incremental_arguments(triage)
     _code_surface_arguments(triage, opt_in=False)
     triage.add_argument("--output", type=Path)
@@ -151,6 +157,7 @@ def _parser() -> argparse.ArgumentParser:
     sweep.add_argument(
         "--size", type=int, default=9, help="Hard maximum issues per agent review artifact"
     )
+    _ephemeral_argument(sweep)
     sweep.add_argument(
         "--status",
         action="append",
@@ -178,6 +185,7 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--echo-threshold", type=float, default=0.72)
     batch.add_argument("--overlap-threshold", type=float, default=0.82)
     batch.add_argument("--include-epics", action="store_true")
+    _ephemeral_argument(batch)
     _candidate_policy_arguments(batch)
     _semantic_retrieval_arguments(batch)
     _incremental_arguments(batch)
@@ -225,6 +233,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Include a stored status (repeatable; defaults to all active work)",
     )
     collisions.add_argument("--include-epics", action="store_true")
+    _ephemeral_argument(collisions)
     _code_surface_arguments(collisions, opt_in=False)
     collisions.add_argument("--output", type=Path)
     collisions.add_argument("--json", action="store_true", dest="as_json")
@@ -324,6 +333,14 @@ def _incremental_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         metavar="PATH",
         help="Atomically write a portable metadata-only checkpoint outside the repository",
+    )
+
+
+def _ephemeral_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--include-ephemeral",
+        action="store_true",
+        help="Include temporary Beads runtime records (excluded by default)",
     )
 
 
@@ -660,6 +677,7 @@ def _surface_analysis(
     args: argparse.Namespace,
     snapshot: Any,
     issues: list[IssueRecord],
+    eligible_issue_ids: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     mappings = parse_worktree_mappings(args.worktree_map)
     analysis = analyze_code_surfaces(
@@ -669,6 +687,7 @@ def _surface_analysis(
         worktree_mappings=mappings,
         base_reference=args.base_ref,
         hub_surface_limit=args.max_hub_surface_issues,
+        eligible_issue_ids=eligible_issue_ids,
     )
     return analysis.to_dict()
 
@@ -681,12 +700,17 @@ def _collisions(args: argparse.Namespace) -> int:
         for issue in issues
         if issue.status.casefold() in statuses
         and (args.include_epics or issue.issue_type.casefold() != "epic")
+        and (args.include_ephemeral or not issue.ephemeral)
     ]
     analysis = _surface_analysis(args, snapshot, population)
     payload = build_collisions_payload(
         analysis,
         snapshot=asdict(snapshot),
-        filters={"status": sorted(statuses), "include_epics": args.include_epics},
+        filters={
+            "status": sorted(statuses),
+            "include_epics": args.include_epics,
+            "include_ephemeral": args.include_ephemeral,
+        },
     )
     rendered = _json_text(payload) if args.as_json else render_collisions_markdown(payload)
     if args.output:
@@ -711,6 +735,8 @@ def _json_text(payload: Any) -> str:
 
 def _neighbors(args: argparse.Namespace) -> int:
     snapshot, issues = _load_source(args)
+    if not args.include_ephemeral:
+        issues = tuple(issue for issue in issues if not issue.ephemeral)
     by_id = {issue.id: issue for issue in issues}
     if args.issue_id not in by_id:
         raise ValueError(f"issue not found: {args.issue_id}")
@@ -918,6 +944,14 @@ def _sweep(args: argparse.Namespace) -> int:
     started = time.monotonic()
     phase_started = started
     snapshot, issues = _load_source(args)
+    review_issues = (
+        issues
+        if args.include_ephemeral
+        else tuple(issue for issue in issues if not issue.ephemeral)
+    )
+    excluded_ephemeral = [
+        issue for issue in issues if issue.ephemeral and not args.include_ephemeral
+    ]
     acquisition_ms = round((time.monotonic() - phase_started) * 1000)
     if args.write_checkpoint:
         ensure_external_path(
@@ -932,7 +966,7 @@ def _sweep(args: argparse.Namespace) -> int:
             purpose="checkpoint input",
         )
     statuses = {status.casefold() for status in (args.status or ACTIVE_STATUSES)}
-    selected_population = [issue for issue in issues if issue.status.casefold() in statuses]
+    selected_population = [issue for issue in review_issues if issue.status.casefold() in statuses]
     excluded_epics = [
         issue
         for issue in selected_population
@@ -940,12 +974,6 @@ def _sweep(args: argparse.Namespace) -> int:
     ]
     excluded_ids = {issue.id for issue in excluded_epics}
     population = [issue for issue in selected_population if issue.id not in excluded_ids]
-    code_surface_payload: dict[str, Any] | None = None
-    code_surface_ms = 0
-    if args.code_surfaces or args.worktree_map or (objectives and "collision" in objectives):
-        phase_started = time.monotonic()
-        code_surface_payload = _surface_analysis(args, snapshot, population)
-        code_surface_ms = round((time.monotonic() - phase_started) * 1000)
     scope: IncrementalScope | None = None
     if args.changed_since:
         scope = scope_since_timestamp(issues, args.changed_since)
@@ -960,10 +988,21 @@ def _sweep(args: argparse.Namespace) -> int:
         if scope is not None
         else None
     )
+    code_surface_payload: dict[str, Any] | None = None
+    code_surface_ms = 0
+    if args.code_surfaces or args.worktree_map or (objectives and "collision" in objectives):
+        phase_started = time.monotonic()
+        code_surface_payload = _surface_analysis(
+            args,
+            snapshot,
+            population,
+            active_scope_ids,
+        )
+        code_surface_ms = round((time.monotonic() - phase_started) * 1000)
     skip_semantic_vectors = objectives == frozenset({"structure"}) and not (
         has_reviewable_typed_relationship(
             population,
-            issues,
+            review_issues,
             eligible_issue_ids=active_scope_ids,
         )
     )
@@ -974,16 +1013,16 @@ def _sweep(args: argparse.Namespace) -> int:
         # A non-zero sentinel keeps the ranking and packaging interfaces stable.
         # No candidate can consume it because the structural comparability gate
         # proved that this review has no active typed relationship to qualify.
-        vectors = {issue.id: [1.0] for issue in issues}
+        vectors = {issue.id: [1.0] for issue in review_issues}
         cache_stats = {
             "hits": 0,
             "misses": 0,
             "embedding_skipped": True,
             "skip_reason": "no-reviewable-typed-relationships",
-            "skipped_records": len(issues),
+            "skipped_records": len(review_issues),
         }
     else:
-        vectors, cache_stats = _load_vectors(issues, provider, VectorCache(cache_path))
+        vectors, cache_stats = _load_vectors(review_issues, provider, VectorCache(cache_path))
     embedding_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
     whole_record_index = SimilarityIndex(vectors)
@@ -992,7 +1031,7 @@ def _sweep(args: argparse.Namespace) -> int:
     if args.semantic_view == "fields" and not skip_semantic_vectors:
         phase_started = time.monotonic()
         similarity_index, field_cache_stats = _load_field_similarity_index(
-            issues,
+            review_issues,
             provider,
             VectorCache(cache_path),
             whole_record_index,
@@ -1002,7 +1041,7 @@ def _sweep(args: argparse.Namespace) -> int:
     phase_started = time.monotonic()
     ranking = _candidate_evidence(
         population,
-        issues,
+        review_issues,
         vectors,
         echo_threshold=args.echo_threshold,
         overlap_threshold=args.overlap_threshold,
@@ -1072,6 +1111,10 @@ def _sweep(args: argparse.Namespace) -> int:
         for item in manifests
     ]
     ranking_warnings = list(snapshot.source_warnings)
+    if excluded_ephemeral:
+        ranking_warnings.append(
+            f"Excluded {len(excluded_ephemeral)} ephemeral runtime records from durable review."
+        )
     if skip_semantic_vectors:
         ranking_warnings.append(
             "Semantic embedding skipped: the structure-only review had no reviewable "
@@ -1186,6 +1229,7 @@ def _sweep(args: argparse.Namespace) -> int:
         filters={
             "status": sorted(statuses),
             "include_epics": args.include_epics,
+            "include_ephemeral": args.include_ephemeral,
             **({"review_objectives": sorted(objectives)} if objectives is not None else {}),
             **({"semantic_view": "fields"} if args.semantic_view == "fields" else {}),
             "incremental_scope": scope_payload,
@@ -1226,12 +1270,17 @@ def _sweep(args: argparse.Namespace) -> int:
         warnings=ranking_warnings,
         no_signal={"count": len(no_signal_ids), "issue_ids": no_signal_ids},
         excluded={
-            "count": len(excluded_epics) + len(unchanged_ids),
+            "count": len(excluded_epics) + len(excluded_ephemeral) + len(unchanged_ids),
             "by_reason": {
                 **({"epic": len(excluded_epics)} if excluded_epics else {}),
+                **({"ephemeral": len(excluded_ephemeral)} if excluded_ephemeral else {}),
                 **({"unchanged": len(unchanged_ids)} if unchanged_ids else {}),
             },
-            "issue_ids": sorted([issue.id for issue in excluded_epics] + unchanged_ids),
+            "issue_ids": sorted(
+                [issue.id for issue in excluded_epics]
+                + [issue.id for issue in excluded_ephemeral]
+                + unchanged_ids
+            ),
         },
         target_batch_size=args.size,
         batch_diagnostics=asdict(packaging.diagnostics),

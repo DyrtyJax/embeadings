@@ -241,6 +241,7 @@ def analyze_code_surfaces(
     runner: GitRunner = _default_git_runner,
     max_collision_evidence: int = 8,
     hub_surface_limit: int = 5,
+    eligible_issue_ids: frozenset[str] | None = None,
 ) -> CodeSurfaceAnalysis:
     """Build explicit and observed surfaces, then derive bounded pairwise collisions."""
 
@@ -334,6 +335,7 @@ def analyze_code_surfaces(
         by_issue,
         max_evidence=max_collision_evidence,
         hub_surface_limit=hub_surface_limit,
+        eligible_issue_ids=eligible_issue_ids,
     )
     explicit_ids = {
         pointer.issue_id for pointer in pointers if pointer.source == "explicit-reference"
@@ -509,6 +511,7 @@ def _collisions(
     *,
     max_evidence: int,
     hub_surface_limit: int,
+    eligible_issue_ids: frozenset[str] | None = None,
 ) -> tuple[tuple[CodeSurfaceCollision, ...], tuple[dict[str, Any], ...], int, int]:
     path_issues: dict[str, set[str]] = defaultdict(set)
     module_issues: dict[str, set[str]] = defaultdict(set)
@@ -549,6 +552,8 @@ def _collisions(
     issue_ids = sorted(by_issue)
     for index, issue_id in enumerate(issue_ids):
         for related_id in issue_ids[index + 1 :]:
+            if eligible_issue_ids is not None and not ({issue_id, related_id} & eligible_issue_ids):
+                continue
             left = by_issue[issue_id]
             right = by_issue[related_id]
             left_paths = {pointer.path for pointer in left if not pointer.path.endswith("/")}

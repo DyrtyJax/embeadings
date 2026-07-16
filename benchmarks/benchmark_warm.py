@@ -46,7 +46,9 @@ def _median(samples: list[dict[str, float]], key: str) -> float:
     return round(statistics.median(sample[key] for sample in samples), 3)
 
 
-def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
+def run(
+    count: int, dimension: int, repeats: int, *, eligible_active: int | None = None
+) -> dict[str, Any]:
     started = time.perf_counter()
     issues = _synthetic_issues(count)
     acquisition_ms = _milliseconds(started)
@@ -57,6 +59,13 @@ def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
     vectors = dict(zip((issue.id for issue in issues), encoded, strict=True))
     embedding_ms = _milliseconds(started)
     population = [issue for issue in issues if issue.status == "open"]
+    if eligible_active is not None and eligible_active > len(population):
+        raise ValueError("eligible active records cannot exceed the active population")
+    eligible_ids = (
+        frozenset(issue.id for issue in population[:eligible_active])
+        if eligible_active is not None
+        else None
+    )
 
     samples: list[dict[str, float]] = []
     candidate_counts: list[int] = []
@@ -75,6 +84,7 @@ def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
             echo_threshold=0.72,
             overlap_threshold=0.82,
             similarity_index=index,
+            eligible_issue_ids=eligible_ids,
         )
         candidate_analysis_ms = _milliseconds(started)
 
@@ -111,6 +121,9 @@ def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
         "benchmark": "embeadings-public-synthetic-warm-analysis-v1",
         "records": count,
         "active_records": len(population),
+        "eligible_active_records": (
+            len(eligible_ids) if eligible_ids is not None else len(population)
+        ),
         "closed_records": count - len(population),
         "vector_dimension": dimension,
         "repeats": repeats,
@@ -129,6 +142,7 @@ def run(count: int, dimension: int, repeats: int) -> dict[str, Any]:
         "candidate_count": candidate_counts[-1],
         "batch_count": batch_counts[-1],
         "deterministic_output": len(set(output_fingerprints)) == 1,
+        "output_fingerprint": output_fingerprints[-1],
         "target_ms": 5000,
         "target_met": _median(samples, "analysis_total") < 5000,
     }
@@ -139,10 +153,26 @@ def main() -> None:
     parser.add_argument("--records", type=int, default=1000)
     parser.add_argument("--dimension", type=int, default=256)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument(
+        "--eligible-active",
+        type=int,
+        help="Limit expensive candidate generation to the first N active synthetic records",
+    )
     args = parser.parse_args()
     if args.records < 2 or args.dimension < 2 or args.repeats < 1:
         parser.error("records and dimension must be at least 2; repeats must be positive")
-    print(json.dumps(run(args.records, args.dimension, args.repeats), indent=2, sort_keys=True))
+    if args.eligible_active is not None and args.eligible_active < 1:
+        parser.error("eligible-active must be positive")
+    try:
+        result = run(
+            args.records,
+            args.dimension,
+            args.repeats,
+            eligible_active=args.eligible_active,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    print(json.dumps(result, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

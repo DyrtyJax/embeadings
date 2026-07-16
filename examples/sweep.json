@@ -39,8 +39,12 @@
         "candidate_limit": 250,
         "admitted_candidates": 1,
         "omitted_candidates": 0,
+        "selection_policy": "reserved-lane-access-then-priority-reflow",
+        "reservation_order": ["dependency", "echo", "overlap"],
         "priority_order": ["typed-dependency", "high-confidence-completed-work-echo", "possible-overlap"],
-        "omitted_by_lane": { "dependency": 0, "echo": 0, "overlap": 0 }
+        "omitted_by_lane": { "dependency": 0, "echo": 0, "overlap": 0 },
+        "lane_capacity": {},
+        "code_surface_scope": "outside-semantic-candidate-limit"
       },
       "lane_caps": { "dependency": 75, "echo": 125, "overlap": 125 },
       "baseline_protected": 0,

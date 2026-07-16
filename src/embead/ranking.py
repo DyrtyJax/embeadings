@@ -156,6 +156,68 @@ class CandidateRanking:
     dependency_funnel: DependencyFunnel | None = None
 
 
+def has_reviewable_typed_relationship(
+    active: Sequence[Any],
+    all_issues: Sequence[Any],
+    *,
+    eligible_issue_ids: frozenset[str] | None = None,
+) -> bool:
+    """Return whether a structural audit has an active relationship to score.
+
+    This intentionally mirrors the comparability boundary used by the
+    dependency discovery funnel, but stops before semantic qualification. It
+    lets structure-only callers avoid loading embeddings when every non-parent
+    relationship is closed-only, missing an endpoint, or outside an
+    incremental scope.
+    """
+
+    active_ids = {issue_id(item) for item in active}
+    records = {issue_id(item): item for item in all_issues}
+    seen: set[tuple[str, str, str]] = set()
+    for source in all_issues:
+        source_id = issue_id(source)
+        typed_links = [
+            (
+                str(getattr(link, "target_id", "")),
+                str(getattr(link, "relationship_type", "depends-on")),
+            )
+            for link in tuple(getattr(source, "dependency_links", ()) or ())
+        ]
+        typed_targets = {target for target, _ in typed_links}
+        typed_links.extend(
+            (str(target), "depends-on")
+            for target in tuple(getattr(source, "dependencies", ()) or ())
+            if str(target) not in typed_targets
+        )
+        for target_id, relationship_type in typed_links:
+            if relationship_type == "parent-child":
+                continue
+            identity = (source_id, target_id, relationship_type)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            target = records.get(target_id)
+            active_endpoints = {
+                identifier for identifier in (source_id, target_id) if identifier in active_ids
+            }
+            in_incremental_scope = eligible_issue_ids is None or bool(
+                active_endpoints & eligible_issue_ids
+            )
+            if (
+                target is not None
+                and in_incremental_scope
+                and (
+                    len(active_endpoints) == 2
+                    or (
+                        len(active_endpoints) == 1
+                        and (_is_closed(issue_status(source)) or _is_closed(issue_status(target)))
+                    )
+                )
+            ):
+                return True
+    return False
+
+
 def rank_candidates(
     population: Sequence[Any],
     all_issues: Sequence[Any],

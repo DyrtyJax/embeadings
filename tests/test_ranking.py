@@ -3,7 +3,7 @@ import subprocess
 
 from embead.beads import BeadsAdapter
 from embead.models import DependencyLink, IssueRecord
-from embead.ranking import CandidatePolicy, rank_candidates
+from embead.ranking import CandidatePolicy, has_reviewable_typed_relationship, rank_candidates
 
 
 class Scores:
@@ -46,6 +46,34 @@ def policy(**overrides):
     }
     values.update(overrides)
     return CandidatePolicy(**values)
+
+
+def test_reviewable_typed_relationship_boundary_matches_structural_funnel() -> None:
+    active_a = IssueRecord(
+        id="A",
+        title="A",
+        status="open",
+        dependency_links=(DependencyLink("A", "B", "blocks"),),
+    )
+    active_b = IssueRecord(id="B", title="B", status="open")
+    closed_c = IssueRecord(
+        id="C",
+        title="C",
+        status="closed",
+        dependency_links=(DependencyLink("C", "D", "blocks"),),
+    )
+    closed_d = IssueRecord(id="D", title="D", status="closed")
+
+    assert has_reviewable_typed_relationship((active_a, active_b), (active_a, active_b))
+    assert not has_reviewable_typed_relationship(
+        (active_a, active_b),
+        (active_a, active_b),
+        eligible_issue_ids=frozenset({"unrelated"}),
+    )
+    assert not has_reviewable_typed_relationship(
+        (),
+        (closed_c, closed_d),
+    )
 
 
 def test_shared_parent_admits_bounded_threshold_exception() -> None:

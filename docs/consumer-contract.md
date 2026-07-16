@@ -83,7 +83,9 @@ entry with `qualified = admitted + omitted` and render `omissions_by_reason`; th
 `omitted_by_target_cap` as the total omitted count. `echo_backfills` identifies the lower-ranked
 candidate admitted for an active record after one or more completed-target-cap omissions. Consumers
 should describe these as coverage substitutions and must not claim that a fallback is more relevant
-or actionable without reviewer evidence.
+or actionable without reviewer evidence. Backfill `admitted_candidate_id` and omission `candidate_id`
+use the composite namespace `kind|issue_id|related_issue_id`; they are receipt identities, not the
+candidate object's legacy `id` field.
 
 When `review_budget.mode` is `weekly`, `review_budget.lane_capacity` records each lane's `reserved`,
 `admitted_to_reservation`, and `unused` capacity. These are access reservations, not required quotas;
@@ -97,6 +99,12 @@ exclusive aggregate counts and satisfy two producer-checked conservation equatio
 therefore explain a zero-candidate dependency lane without exposing issue bodies or edge endpoints.
 In incremental mode, an otherwise comparable edge with no changed active endpoint is counted as
 inactive for that review scope.
+
+For a structure-only review with no comparable active typed relationship, the producer skips vector
+and cache work. The report keeps the same empty candidate set and conserved dependency funnel, while
+`cache.embedding_skipped`, `cache.skip_reason`, and `cache.skipped_records` make the optimization
+explicit. Structure-only reviews with comparable edges still use local semantic scores to enforce
+the documented qualification floor.
 
 Snapshot metadata identifies the generic `tracker_name` and `tracker_version` plus the authoritative
 `acquisition_source`. The schema-v1 `beads_version` field remains required for compatibility and is

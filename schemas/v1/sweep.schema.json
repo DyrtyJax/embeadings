@@ -336,6 +336,8 @@
         "candidate_limit": { "type": "integer", "minimum": 1 },
         "admitted_candidates": { "type": "integer", "minimum": 0 },
         "omitted_candidates": { "type": "integer", "minimum": 0 },
+        "selection_policy": { "const": "reserved-lane-access-then-priority-reflow" },
+        "reservation_order": { "const": ["dependency", "echo", "overlap"] },
         "priority_order": {
           "const": ["typed-dependency", "high-confidence-completed-work-echo", "possible-overlap"]
         },
@@ -348,7 +350,27 @@
             "overlap": { "type": "integer", "minimum": 0 }
           },
           "additionalProperties": false
-        }
+        },
+        "lane_capacity": {
+          "type": "object",
+          "properties": {
+            "dependency": { "$ref": "#/$defs/lane-capacity" },
+            "echo": { "$ref": "#/$defs/lane-capacity" },
+            "overlap": { "$ref": "#/$defs/lane-capacity" }
+          },
+          "additionalProperties": false
+        },
+        "code_surface_scope": { "const": "outside-semantic-candidate-limit" }
+      },
+      "additionalProperties": false
+    },
+    "lane-capacity": {
+      "type": "object",
+      "required": ["reserved", "admitted_to_reservation", "unused"],
+      "properties": {
+        "reserved": { "type": "integer", "minimum": 0 },
+        "admitted_to_reservation": { "type": "integer", "minimum": 0 },
+        "unused": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -361,8 +383,12 @@
         "baseline_protected": { "type": "integer", "minimum": 0 },
         "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
         "dropped_by_issue_cap": { "type": "integer", "minimum": 0 },
+        "dropped_by_target_cap": { "type": "integer", "minimum": 0 },
         "dropped_by_dependency_issue_cap": { "type": "integer", "minimum": 0 },
-        "dropped_by_run_cap": { "type": "integer", "minimum": 0 }
+        "dropped_by_run_cap": { "type": "integer", "minimum": 0 },
+        "reserved": { "type": "integer", "minimum": 0 },
+        "admitted_to_reservation": { "type": "integer", "minimum": 0 },
+        "unused_reserved": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },

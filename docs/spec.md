@@ -240,6 +240,10 @@ enforces both conservation equations: total equals inactive plus below-floor plu
 eligible equals admitted plus the three cap-omission counts. Funnel diagnostics contain counts only;
 endpoint identifiers remain limited to admitted candidates and the existing capped-edge summaries.
 
+A structure-only sweep with no comparable active typed relationship skips provider encoding and
+cache access, records that skip in the report, and still emits the conserved structural funnel.
+Comparable typed relationships continue to use semantic scores for qualification.
+
 When either threshold is lowered below its default, selection first reproduces the default-threshold
 queue under the same lane, endpoint, and run caps. Only remaining capacity is offered to permissive
 additions. Reports expose qualified, admitted, baseline-protected, and cap-drop counts for every lane,

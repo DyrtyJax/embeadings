@@ -53,6 +53,8 @@ Keep all output and platform cache/state directories outside the evaluated repos
 - recall of previously rated-2 pairs in the pre-cap candidate pool;
 - actionable precision at a fixed review budget;
 - same-token/different-intent and broad-hub rejection;
+- direct parent/child exclusion from explicit overlap discovery;
+- repeated completed-target omissions and deterministic replacement membership;
 - abstention/no-signal quality;
 - per-objective and per-channel candidate counts;
 - candidate-set churn and deterministic ordering;

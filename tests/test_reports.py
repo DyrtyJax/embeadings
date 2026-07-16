@@ -242,9 +242,22 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
                 "omitted_by_lane_cap": 0,
                 "omitted_by_run_cap": 0,
             },
+            "echo_target_hubs": [
+                {
+                    "related_issue_id": "bd-4",
+                    "qualified": 3,
+                    "admitted": 2,
+                    "omitted_by_target_cap": 1,
+                }
+            ],
             "lanes": {
                 "dependency": {"qualified": 2, "admitted": 1, "dropped_by_lane_cap": 1},
-                "echo": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
+                "echo": {
+                    "qualified": 3,
+                    "admitted": 2,
+                    "dropped_by_lane_cap": 0,
+                    "dropped_by_target_cap": 1,
+                },
                 "overlap": {"qualified": 1, "admitted": 1, "dropped_by_lane_cap": 0},
             },
         },
@@ -281,6 +294,8 @@ def test_sweep_payload_and_markdown_include_metadata_and_ordering() -> None:
     assert "Discovery conservation: 3 = 1 + 0 + 2" in markdown
     assert "Admission conservation: 2 = 1 + 1 + 0 + 0" in markdown
     assert "Baseline candidates protected in sensitivity mode: 1" in markdown
+    assert "Repeated completed targets" in markdown
+    assert "`bd-4`: 3 qualified; 2 admitted; 1 omitted by diversity cap" in markdown
     assert "Admitted by substantive local evidence: 1" in markdown
     assert "Omitted without discriminative local evidence: 2" in markdown
     assert "qualification-removed" in markdown

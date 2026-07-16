@@ -37,6 +37,8 @@ class CandidatePolicy:
     exception_margin: float = 0.08
     reciprocal_rank: int = 5
     max_per_issue: int = 3
+    max_echoes_per_target: int = 2
+    max_echo_alternatives_per_active: int = 3
     max_dependencies_per_issue: int = 3
     max_total: int = 250
     max_dependencies: int = 75
@@ -62,6 +64,10 @@ class CandidatePolicy:
             raise ValueError("reciprocal rank cannot be negative")
         if self.max_per_issue < 1:
             raise ValueError("per-issue candidate cap must be positive")
+        if self.max_echoes_per_target < 1:
+            raise ValueError("completed-target echo cap must be positive")
+        if self.max_echo_alternatives_per_active < 1:
+            raise ValueError("per-active echo alternative cap must be positive")
         if self.max_dependencies_per_issue < 0:
             raise ValueError("per-issue dependency candidate cap cannot be negative")
         if self.max_total < 1:
@@ -98,6 +104,7 @@ class LaneMetrics:
     baseline_protected: int = 0
     dropped_by_lane_cap: int = 0
     dropped_by_issue_cap: int = 0
+    dropped_by_target_cap: int = 0
     dropped_by_dependency_issue_cap: int = 0
     dropped_by_run_cap: int = 0
     reserved: int = 0
@@ -140,7 +147,9 @@ class CandidateRanking:
     baseline_protected: int = 0
     dropped_by_lane_cap: int = 0
     dropped_by_dependency_issue_cap: int = 0
+    dropped_by_echo_target_cap: int = 0
     capped_typed_dependencies: tuple[dict[str, str], ...] = ()
+    echo_target_hubs: tuple[dict[str, Any], ...] = ()
     reciprocal_diagnostics: dict[str, Any] | None = None
     cap_replacements: tuple[dict[str, Any], ...] = ()
     dependency_funnel: DependencyFunnel | None = None
@@ -462,8 +471,12 @@ def _qualifying_candidates(
                     else:
                         echoes.append(candidate)
             qualified.extend(dependency_echoes)
-            if echoes:
-                qualified.append(min(echoes, key=_ranking_key))
+            # Retain qualified alternatives until selection. The selector still
+            # enforces one echo per active record, but can now backfill when the
+            # best closed target has already reached its diversity cap.
+            qualified.extend(
+                sorted(echoes, key=_ranking_key)[: policy.max_echo_alternatives_per_active]
+            )
     return qualified
 
 
@@ -490,6 +503,7 @@ def _select_candidates(
             "baseline_protected": 0,
             "dropped_by_lane_cap": 0,
             "dropped_by_issue_cap": 0,
+            "dropped_by_target_cap": 0,
             "dropped_by_dependency_issue_cap": 0,
             "dropped_by_run_cap": 0,
             "reserved": 0,
@@ -500,6 +514,9 @@ def _select_candidates(
     }
     accepted: list[dict[str, Any]] = []
     capped_typed_dependencies: list[dict[str, str]] = []
+    echo_target_counts: dict[str, int] = defaultdict(int)
+    echo_target_omissions: dict[str, int] = defaultdict(int)
+    echo_target_qualified: dict[str, int] = defaultdict(int)
     seen_issues_by_kind: set[tuple[str, str]] = set()
     ordered_stages = tuple(
         tuple((candidate, protected) for candidate in sorted(candidates, key=_ranking_key))
@@ -507,6 +524,8 @@ def _select_candidates(
     )
     for candidate, _ in (item for stage in ordered_stages for item in stage):
         metrics[candidate["lane"]]["qualified"] += 1
+        if candidate["lane"] == "echo" and candidate["kind"] == "completed-work-echo":
+            echo_target_qualified[candidate["related_issue_id"]] += 1
 
     processed: set[tuple[str, str, str]] = set()
 
@@ -526,6 +545,15 @@ def _select_candidates(
             return False
         left_id = candidate["issue_id"]
         right_id = candidate["related_issue_id"]
+        if (
+            lane == "echo"
+            and candidate["kind"] == "completed-work-echo"
+            and echo_target_counts[right_id] >= policy.max_echoes_per_target
+        ):
+            values["dropped_by_target_cap"] += 1
+            echo_target_omissions[right_id] += 1
+            processed.add(identity)
+            return False
         if lane == "dependency":
             if (
                 dependency_counts[left_id] >= policy.max_dependencies_per_issue
@@ -567,6 +595,7 @@ def _select_candidates(
         lane_counts[lane] += 1
         if candidate["lane"] == "echo":
             seen_issues_by_kind.add(kind_issue)
+            echo_target_counts[right_id] += 1
         values["admitted"] += 1
         values["baseline_protected"] += int(protected)
         values["admitted_to_reservation"] += int(reserved)
@@ -605,6 +634,16 @@ def _select_candidates(
         )
 
     lane_metrics = {lane: LaneMetrics(**values) for lane, values in metrics.items()}
+    echo_target_hubs = tuple(
+        {
+            "related_issue_id": target_id,
+            "qualified": echo_target_qualified[target_id],
+            "admitted": echo_target_counts[target_id],
+            "omitted_by_target_cap": omitted,
+        }
+        for target_id, omitted in sorted(echo_target_omissions.items())
+        if omitted
+    )
     return CandidateRanking(
         candidates=tuple(sorted(accepted, key=_ranking_key)),
         qualified=sum(values.qualified for values in lane_metrics.values()),
@@ -616,7 +655,11 @@ def _select_candidates(
         dropped_by_dependency_issue_cap=sum(
             values.dropped_by_dependency_issue_cap for values in lane_metrics.values()
         ),
+        dropped_by_echo_target_cap=sum(
+            values.dropped_by_target_cap for values in lane_metrics.values()
+        ),
         capped_typed_dependencies=tuple(capped_typed_dependencies),
+        echo_target_hubs=echo_target_hubs,
     )
 
 
@@ -705,6 +748,13 @@ def _qualify(
     similarity = score(left_id, right_id)
     context = structural_context(left, right)
     relationship = dependency_evidence(left, right)
+    if (
+        not legacy_mode
+        and semantic_enabled
+        and kind == "possible-overlap"
+        and context == "parent/child"
+    ):
+        return None
     if not semantic_enabled and not (structure_enabled and relationship is not None):
         return None
     reciprocal = (
@@ -1131,6 +1181,17 @@ def _shared_bounded_resource(
                 return f"{lane}-issue:{endpoint}"
     if (
         left["kind"] == right["kind"] == "completed-work-echo"
+        and left["related_issue_id"] == right["related_issue_id"]
+        and sum(
+            item["kind"] == "completed-work-echo"
+            and item["related_issue_id"] == left["related_issue_id"]
+            for item in reference
+        )
+        >= policy.max_echoes_per_target
+    ):
+        return f"echo-target:{left['related_issue_id']}"
+    if (
+        left["kind"] == right["kind"] == "completed-work-echo"
         and left["issue_id"] == right["issue_id"]
     ):
         return f"one-echo:{left['issue_id']}"
@@ -1149,6 +1210,12 @@ def _governing_replacement_cap(
     displaced: Sequence[dict[str, Any]],
     policy: CandidatePolicy,
 ) -> str | None:
+    if candidate["kind"] == "completed-work-echo" and any(
+        item["kind"] == candidate["kind"]
+        and item["related_issue_id"] == candidate["related_issue_id"]
+        for item in displaced
+    ):
+        return "max-echoes-per-target"
     if candidate["kind"] == "completed-work-echo" and any(
         item["kind"] == candidate["kind"] and item["issue_id"] == candidate["issue_id"]
         for item in displaced

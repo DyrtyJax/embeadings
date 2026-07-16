@@ -198,6 +198,21 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--max-candidates-per-issue", type=int, default=3)
     parser.add_argument(
+        "--max-echoes-per-target",
+        type=int,
+        default=2,
+        help=(
+            "Maximum completed-work echoes that may point to the same closed record "
+            "before deterministic backfill"
+        ),
+    )
+    parser.add_argument(
+        "--max-echo-alternatives-per-active",
+        type=int,
+        default=3,
+        help="Bound completed-record fallbacks retained for each active issue",
+    )
+    parser.add_argument(
         "--max-dependency-candidates-per-issue",
         type=int,
         default=3,
@@ -700,6 +715,8 @@ def _candidate_evidence(
     exception_margin: float = 0.08,
     reciprocal_rank: int = 5,
     max_candidates_per_issue: int = 3,
+    max_echoes_per_target: int = 2,
+    max_echo_alternatives_per_active: int = 3,
     max_dependency_candidates_per_issue: int = 3,
     max_candidates: int = 250,
     max_dependency_candidates: int = 75,
@@ -719,6 +736,8 @@ def _candidate_evidence(
             exception_margin=exception_margin,
             reciprocal_rank=reciprocal_rank,
             max_per_issue=max_candidates_per_issue,
+            max_echoes_per_target=max_echoes_per_target,
+            max_echo_alternatives_per_active=max_echo_alternatives_per_active,
             max_dependencies_per_issue=max_dependency_candidates_per_issue,
             max_total=max_candidates,
             max_dependencies=max_dependency_candidates,
@@ -772,7 +791,9 @@ def _candidate_evidence(
         baseline_protected=ranking.baseline_protected,
         dropped_by_lane_cap=ranking.dropped_by_lane_cap,
         dropped_by_dependency_issue_cap=ranking.dropped_by_dependency_issue_cap,
+        dropped_by_echo_target_cap=ranking.dropped_by_echo_target_cap,
         capped_typed_dependencies=ranking.capped_typed_dependencies,
+        echo_target_hubs=ranking.echo_target_hubs,
         reciprocal_diagnostics=ranking.reciprocal_diagnostics,
         cap_replacements=ranking.cap_replacements,
         dependency_funnel=ranking.dependency_funnel,
@@ -834,6 +855,8 @@ def _sweep(args: argparse.Namespace) -> int:
         exception_margin=args.exception_margin,
         reciprocal_rank=args.reciprocal_rank,
         max_per_issue=args.max_candidates_per_issue,
+        max_echoes_per_target=args.max_echoes_per_target,
+        max_echo_alternatives_per_active=args.max_echo_alternatives_per_active,
         max_dependencies_per_issue=args.max_dependency_candidates_per_issue,
         max_total=max_candidates,
         max_dependencies=lane_caps["dependency"],
@@ -918,6 +941,8 @@ def _sweep(args: argparse.Namespace) -> int:
         exception_margin=args.exception_margin,
         reciprocal_rank=args.reciprocal_rank,
         max_candidates_per_issue=args.max_candidates_per_issue,
+        max_echoes_per_target=args.max_echoes_per_target,
+        max_echo_alternatives_per_active=args.max_echo_alternatives_per_active,
         max_dependency_candidates_per_issue=args.max_dependency_candidates_per_issue,
         max_candidates=max_candidates,
         max_dependency_candidates=lane_caps["dependency"],
@@ -990,6 +1015,12 @@ def _sweep(args: argparse.Namespace) -> int:
             "Per-issue dependency allowance omitted "
             f"{ranking.dropped_by_dependency_issue_cap} qualified typed edges; "
             "compact structural summaries were retained."
+        )
+    if ranking.dropped_by_echo_target_cap:
+        ranking_warnings.append(
+            "Completed-target diversity cap omitted "
+            f"{ranking.dropped_by_echo_target_cap} repeated echo pairs; "
+            "the next qualified candidates were considered."
         )
     if ranking.dropped_by_run_cap:
         ranking_warnings.append(
@@ -1093,6 +1124,8 @@ def _sweep(args: argparse.Namespace) -> int:
             "exception_margin": args.exception_margin,
             "reciprocal_rank": args.reciprocal_rank,
             "max_per_issue": args.max_candidates_per_issue,
+            "max_echoes_per_target": args.max_echoes_per_target,
+            "max_echo_alternatives_per_active": args.max_echo_alternatives_per_active,
             "max_dependencies_per_issue": args.max_dependency_candidates_per_issue,
             "max_total": max_candidates,
             **({"review_objectives": sorted(objectives)} if objectives is not None else {}),
@@ -1110,6 +1143,8 @@ def _sweep(args: argparse.Namespace) -> int:
             "dropped_by_lane_cap": ranking.dropped_by_lane_cap,
             "dropped_by_issue_cap": ranking.dropped_by_issue_cap,
             "dropped_by_dependency_issue_cap": ranking.dropped_by_dependency_issue_cap,
+            "dropped_by_echo_target_cap": ranking.dropped_by_echo_target_cap,
+            "echo_target_hubs": list(ranking.echo_target_hubs),
             "dropped_by_run_cap": ranking.dropped_by_run_cap,
         },
         capped_typed_dependencies=list(ranking.capped_typed_dependencies),

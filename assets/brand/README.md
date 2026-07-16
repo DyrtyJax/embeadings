@@ -8,8 +8,11 @@ These restrained, repository-native assets use no external images or font files:
 - `synthetic-collision-evidence.svg` — a synthetic, terminal-style evidence panel for the project
   README.
 
-The mark shows two work paths converging on a shared code surface. The amber surface is a prompt to
-coordinate, not a claim that the work necessarily conflicts.
+The light mark shows two internally bonded but mutually unlinked epic molecules extending toward a
+shared near-touch point. Solid bonds represent known structure inside each epic; the open gap preserves
+uncertainty; and the amber point is a prompt to review a possible collision, not a verdict that the work
+conflicts. The gesture is intentionally abstract and echoes the near-touch composition of Michelangelo's
+*The Creation of Adam* without depicting hands or reproducing the painting.
 
 To reproduce the PNG with librsvg:
 

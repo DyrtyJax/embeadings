@@ -1,15 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
   <title id="title">emBEADings mark</title>
-  <desc id="desc">Two bead paths converge on a highlighted shared code surface.</desc>
-  <rect width="96" height="96" rx="22" fill="#0b1220"/>
-  <g fill="none" stroke="#64748b" stroke-linecap="round" stroke-width="4">
-    <path d="M18 26 45 48"/>
-    <path d="M18 70 45 48"/>
-    <path d="M51 48h27"/>
+  <desc id="desc">Two separate epic molecules extend toward an amber near-touch collision point.</desc>
+  <rect x="1" y="1" width="94" height="94" rx="21" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <circle cx="48" cy="48" r="13" fill="#f59e0b" opacity=".08"/>
+  <circle cx="48" cy="48" r="10" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity=".28"/>
+  <g fill="none" stroke="#1d4ed8" stroke-linecap="round" stroke-linejoin="round" stroke-width="3">
+    <path d="M21 39 10 27M21 39 9 51M21 39 26 22"/>
+    <path d="M25 41C31 42 37 44 44 46"/>
   </g>
-  <circle cx="18" cy="26" r="7" fill="#60a5fa"/>
-  <circle cx="18" cy="70" r="7" fill="#34d399"/>
-  <circle cx="78" cy="48" r="7" fill="#e2e8f0"/>
-  <rect x="39" y="39" width="18" height="18" rx="5" fill="#fbbf24"/>
-  <path d="m45 45-2.5 3 2.5 3M51 45l2.5 3-2.5 3" fill="none" stroke="#0b1220" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+  <g fill="#2563eb">
+    <circle cx="21" cy="39" r="6.5"/>
+    <circle cx="10" cy="27" r="4"/>
+    <circle cx="9" cy="51" r="4"/>
+    <circle cx="26" cy="22" r="3.5"/>
+    <circle cx="44" cy="46" r="4"/>
+  </g>
+  <g fill="none" stroke="#047857" stroke-linecap="round" stroke-linejoin="round" stroke-width="3">
+    <path d="M75 57 86 69M75 57 87 45M75 57 70 74"/>
+    <path d="M71 55C65 54 59 52 52 50"/>
+  </g>
+  <g fill="#059669">
+    <circle cx="75" cy="57" r="6.5"/>
+    <circle cx="86" cy="69" r="4"/>
+    <circle cx="87" cy="45" r="4"/>
+    <circle cx="70" cy="74" r="3.5"/>
+    <circle cx="52" cy="50" r="4"/>
+  </g>
+  <circle cx="48" cy="48" r="2.2" fill="#f59e0b"/>
 </svg>

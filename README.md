@@ -1,6 +1,6 @@
 # emBEADings
 
-<img src="https://raw.githubusercontent.com/DyrtyJax/embeadings/v0.4.2/assets/brand/embeadings-mark.svg" width="72" alt="Two bead paths converging on a shared code surface">
+<img src="https://raw.githubusercontent.com/DyrtyJax/embeadings/main/assets/brand/embeadings-mark.svg" width="72" alt="Two epic molecules reaching toward an amber collision point">
 
 [![CI](https://github.com/DyrtyJax/embeadings/actions/workflows/ci.yml/badge.svg)](https://github.com/DyrtyJax/embeadings/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/DyrtyJax/embeadings?include_prereleases)](https://github.com/DyrtyJax/embeadings/releases/tag/v0.4.2)

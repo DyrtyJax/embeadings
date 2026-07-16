@@ -297,6 +297,7 @@ Research notes:
 - [Second retrieve–verify private regression](docs/research/retrieve-verify-private-regression-02.md)
 - [Third retrieve–verify private regression](docs/research/retrieve-verify-private-regression-03.md)
 - [Objective-default decision from three public corpora](docs/research/objective-default-public-decision-01.md)
+- [Ruff 8,143-issue scale-surrogate review](docs/research/ruff-scale-surrogate-01.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)
 - [Version 1 JSON Schemas](schemas/v1/) and [synthetic examples](examples/)
 

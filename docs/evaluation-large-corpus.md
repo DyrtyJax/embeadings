@@ -45,6 +45,11 @@ embead triage --review-budget 20 --output /private/tmp/ruff-embead-triage
 Do not commit the export or generated Beads database. Before and after each run, fingerprint the
 JSONL, tracker export, Git status, and external cache/state directories.
 
+Converted issue text is not code-repository provenance. Unless the disposable tracker is genuinely
+attached to a checkout of the evaluated source repository, rate semantic candidates only and treat
+code-surface output as a grounding diagnostic. Missing repository paths and fenced reproduction
+filenames must not be reported as known edit collisions.
+
 ## Required measurements
 
 Record:
@@ -91,3 +96,9 @@ scoring 0.6 seconds, and candidate analysis 95.2 seconds. The bounded packet con
 4 overlaps. A brief maintainer inspection found both strong duplicate/continuation leads and
 high-scoring shared-domain siblings; independent blinded rating is still required before making a
 precision claim.
+
+The first maintainer review rated 17 of 20 semantic candidates as at least contextually useful and 8
+as concrete coordination leads. None of 27 explicit-only code-surface leads was a likely edit
+collision: the disposable database was not attached to a Ruff source checkout, and generic
+reproduction paths dominated. The resulting context and repository-grounding changes are documented
+in the [public review](research/ruff-scale-surrogate-01.md).

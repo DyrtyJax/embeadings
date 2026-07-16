@@ -58,6 +58,14 @@
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 }
         },
+        "context_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "path_presence_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
         "hub_surface_limit": { "type": "integer", "minimum": 1 },
         "hub_surfaces": {
           "type": "array",
@@ -111,7 +119,9 @@
         "revision": { "type": ["string", "null"] },
         "symbol": { "type": ["string", "null"] },
         "source_field": { "type": ["string", "null"] },
-        "edit_intent": { "enum": ["observed-edit", "likely-edit", "reference-only", "unknown"] }
+        "edit_intent": { "enum": ["observed-edit", "likely-edit", "reference-only", "unknown"] },
+        "context_kind": { "enum": ["observed-worktree", "prose", "code-fence"] },
+        "path_presence": { "enum": ["existing", "missing", "unavailable"] }
       },
       "additionalProperties": false
     },
@@ -149,6 +159,8 @@
           "items": { "enum": ["title", "description", "acceptance_criteria", "design", "notes"] },
           "uniqueItems": true
         },
+        "context_kind": { "enum": ["observed-worktree", "prose", "mixed", "code-fence-only"] },
+        "path_presence": { "enum": ["all-existing", "mixed", "all-missing", "unavailable"] },
         "revision_relation": { "enum": ["same", "different", "unavailable"] },
         "what_to_verify": { "type": "string", "minLength": 1 }
       },

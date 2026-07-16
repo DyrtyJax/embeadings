@@ -79,6 +79,14 @@
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 }
         },
+        "context_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "path_presence_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
         "hub_surface_limit": { "type": "integer", "minimum": 1 },
         "hub_surfaces": { "type": "array" },
         "pairs_omitted_by_hub_guard": { "type": "integer", "minimum": 0 },

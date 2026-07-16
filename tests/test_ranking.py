@@ -75,6 +75,44 @@ def test_dependency_admits_bounded_threshold_exception() -> None:
     )
 
 
+def test_explicit_objectives_separate_structure_from_semantic_novelty() -> None:
+    issues = [issue("A", dependencies=("B",)), issue("B")]
+    scores = Scores({("A", "B"): 0.76})
+
+    overlap_only = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(objectives=frozenset({"overlap"})),
+    )
+    structure_only = rank_candidates(
+        issues,
+        issues,
+        scores,
+        policy(objectives=frozenset({"structure"})),
+    )
+
+    assert overlap_only.candidates == ()
+    assert overlap_only.dependency_funnel.inactive_or_closed_only == 1
+    assert structure_only.candidates[0]["lane"] == "dependency"
+    assert structure_only.candidates[0]["admission_reason"] == ("dependency-threshold-exception")
+
+
+def test_dependency_is_context_not_budget_when_structure_objective_is_omitted() -> None:
+    issues = [issue("A", dependencies=("B",)), issue("B")]
+
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.9}),
+        policy(objectives=frozenset({"overlap"})),
+    )
+
+    assert result.candidates[0]["lane"] == "overlap"
+    assert result.candidates[0]["dependency_evidence"]["target_id"] == "B"
+    assert result.lanes["dependency"].admitted == 0
+
+
 def test_direct_and_reciprocal_semantic_candidates_expose_no_structural_corroboration() -> None:
     issues = [
         issue("A", title="Cache report", description="Preserve report checksum evidence"),

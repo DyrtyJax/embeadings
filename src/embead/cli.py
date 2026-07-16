@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -16,7 +17,12 @@ from typing import Any
 from platformdirs import user_cache_path, user_state_path
 
 from ._version import __version__
-from .analysis import SimilarityIndex, nearest_neighbors, package_candidate_batches
+from .analysis import (
+    MultiViewSimilarityIndex,
+    SimilarityIndex,
+    nearest_neighbors,
+    package_candidate_batches,
+)
 from .beads import BeadsAdapter
 from .cache import VectorCache
 from .doctor import diagnose
@@ -29,7 +35,7 @@ from .incremental import (
     scope_since_timestamp,
 )
 from .linear import LinearAdapter
-from .models import IssueRecord, WorkspaceSnapshot, canonical_text
+from .models import IssueRecord, WorkspaceSnapshot, canonical_text, semantic_field_texts
 from .provider import HashingProvider, Model2VecProvider, provider_readiness
 from .ranking import CandidatePolicy, CandidateRanking, rank_candidates, structural_context
 from .reports import (
@@ -110,6 +116,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Include epic/container records in candidate analysis (excluded by default)",
     )
     _candidate_policy_arguments(sweep)
+    _semantic_retrieval_arguments(sweep)
     _incremental_arguments(sweep)
     _code_surface_arguments(sweep, opt_in=True)
     sweep.add_argument("--output", type=Path)
@@ -124,6 +131,7 @@ def _parser() -> argparse.ArgumentParser:
     batch.add_argument("--overlap-threshold", type=float, default=0.82)
     batch.add_argument("--include-epics", action="store_true")
     _candidate_policy_arguments(batch)
+    _semantic_retrieval_arguments(batch)
     _incremental_arguments(batch)
     _code_surface_arguments(batch, opt_in=True)
     batch.add_argument("--output", type=Path)
@@ -215,6 +223,24 @@ def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--max-echo-candidates", type=int, default=125)
     parser.add_argument("--max-overlap-candidates", type=int, default=125)
+
+
+def _semantic_retrieval_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--objective",
+        action="append",
+        choices=("collision", "overlap", "echo", "structure"),
+        help=(
+            "Run an explicit review objective (repeatable). Selecting objectives separates "
+            "typed structure from semantic novelty; omitted for legacy behavior."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-view",
+        choices=("whole", "fields"),
+        default="whole",
+        help=("Use the stable whole-record vector or experimental whole-plus-field retrieval"),
+    )
 
 
 def _incremental_arguments(parser: argparse.ArgumentParser) -> None:
@@ -330,6 +356,151 @@ def _load_vectors(
         "hits": hits,
         "misses": len(issues) - hits,
     }
+
+
+def _load_field_similarity_index(
+    issues: tuple[IssueRecord, ...],
+    provider: Model2VecProvider | HashingProvider,
+    cache: VectorCache,
+    whole_record: SimilarityIndex,
+) -> tuple[MultiViewSimilarityIndex, dict[str, Any]]:
+    """Load addressable field views without changing the stable whole-record cache."""
+
+    field_vectors: dict[str, dict[str, list[float]]] = {}
+    field_hits = field_misses = 0
+    view_counts: dict[str, int] = {}
+    for field in ("title", "description", "acceptance_criteria", "design"):
+        entries = [
+            (issue.id, text) for issue in issues if (text := semantic_field_texts(issue).get(field))
+        ]
+        if not entries:
+            continue
+        canonicalization_version = f"field-aware-v1:{field}"
+        keys = [
+            cache.key_for(
+                text,
+                model_id=provider.model_id,
+                model_revision=provider.model_revision,
+                canonicalization_version=canonicalization_version,
+            )
+            for _identifier, text in entries
+        ]
+        hits = sum(
+            cache.get(
+                key,
+                model_id=provider.model_id,
+                model_revision=provider.model_revision,
+            )
+            is not None
+            for key in keys
+        )
+        field_hits += hits
+        field_misses += len(entries) - hits
+        vectors = cache.encode(
+            [text for _identifier, text in entries],
+            provider,
+            canonicalization_version=canonicalization_version,
+        )
+        field_vectors[field] = dict(
+            zip((identifier for identifier, _text in entries), vectors, strict=True)
+        )
+        view_counts[field] = len(entries)
+    return MultiViewSimilarityIndex(whole_record, field_vectors), {
+        "field_hits": field_hits,
+        "field_misses": field_misses,
+        "field_view_counts": view_counts,
+        "semantic_view": "fields",
+    }
+
+
+def _objective_for_candidate(candidate: dict[str, Any]) -> str:
+    if candidate["lane"] == "dependency":
+        return "structure"
+    return "echo" if candidate["kind"] == "completed-work-echo" else "overlap"
+
+
+def _retrieval_provenance(
+    candidate: dict[str, Any],
+    index: SimilarityIndex | MultiViewSimilarityIndex,
+    *,
+    active_ids: list[str],
+    closed_ids: list[str],
+) -> dict[str, Any]:
+    left_id = candidate["issue_id"]
+    right_id = candidate["related_issue_id"]
+    if isinstance(index, MultiViewSimilarityIndex):
+        channel_scores = index.channel_scores(left_id, right_id)
+        selection_rule = "max-semantic-view"
+    else:
+        channel_scores = (("whole_record", index.score(left_id, right_id)),)
+        selection_rule = "whole-record-cosine"
+    forward_pool = closed_ids if candidate["kind"] == "completed-work-echo" else active_ids
+    reverse_pool = active_ids
+    best_score = max(score for _channel, score in channel_scores)
+    receipts = []
+    for channel, score in channel_scores:
+        if isinstance(index, MultiViewSimilarityIndex):
+            forward_rank = index.channel_rank(
+                channel, left_id, right_id, [item for item in forward_pool if item != left_id]
+            )
+            reverse_rank = index.channel_rank(
+                channel, right_id, left_id, [item for item in reverse_pool if item != right_id]
+            )
+        else:
+            forward_rank = _rank_in_channel(
+                index, left_id, right_id, [item for item in forward_pool if item != left_id]
+            )
+            reverse_rank = _rank_in_channel(
+                index, right_id, left_id, [item for item in reverse_pool if item != right_id]
+            )
+        receipts.append(
+            {
+                "channel": (
+                    "whole-record-semantic"
+                    if channel == "whole_record"
+                    else f"field-semantic:{channel}"
+                ),
+                "evidence_family": "tracker-text",
+                "pair_score": round(score, 6),
+                "selected": math.isclose(score, best_score, abs_tol=1e-12),
+                "ranks": {
+                    "issue_to_related": forward_rank,
+                    "related_to_issue": reverse_rank,
+                },
+            }
+        )
+    relationship = candidate.get("dependency_evidence")
+    if isinstance(relationship, dict):
+        receipts.append(
+            {
+                "channel": "typed-tracker-relationship",
+                "evidence_family": "tracker-structure",
+                "relationship_type": relationship.get("type"),
+                "selected": candidate["lane"] == "dependency",
+            }
+        )
+    return {
+        "selection_rule": selection_rule,
+        "channels": receipts,
+    }
+
+
+def _rank_in_channel(
+    index: SimilarityIndex,
+    query_id: str,
+    target_id: str,
+    candidate_ids: list[str],
+) -> int | None:
+    return next(
+        (
+            position
+            for position, (identifier, _score) in enumerate(
+                index.ranked(query_id, candidate_ids), start=1
+            )
+            if identifier == target_id
+        ),
+        None,
+    )
 
 
 def _structural_context(left: IssueRecord, right: IssueRecord) -> str:
@@ -525,7 +696,7 @@ def _candidate_evidence(
     *,
     echo_threshold: float,
     overlap_threshold: float,
-    similarity_index: SimilarityIndex | None = None,
+    similarity_index: SimilarityIndex | MultiViewSimilarityIndex | None = None,
     exception_margin: float = 0.08,
     reciprocal_rank: int = 5,
     max_candidates_per_issue: int = 3,
@@ -536,6 +707,7 @@ def _candidate_evidence(
     max_overlap_candidates: int = 125,
     lane_reservations: dict[str, int] | None = None,
     eligible_issue_ids: frozenset[str] | None = None,
+    objectives: frozenset[str] | None = None,
 ) -> CandidateRanking:
     ranking = rank_candidates(
         population,
@@ -553,26 +725,44 @@ def _candidate_evidence(
             max_echoes=max_echo_candidates,
             max_overlaps=max_overlap_candidates,
             lane_reservations=lane_reservations,
+            objectives=objectives,
         ),
         eligible_issue_ids=eligible_issue_ids,
     )
     by_id = {issue.id: issue for issue in all_issues}
+    active_ids = sorted(issue.id for issue in population)
+    closed_ids = sorted(
+        issue.id
+        for issue in all_issues
+        if issue.status.casefold() in {"closed", "done", "completed", "resolved"}
+    )
     explained = []
     for candidate in ranking.candidates:
         left = by_id[candidate["issue_id"]]
         right = by_id[candidate["related_issue_id"]]
-        explained.append(
-            {
-                **candidate,
-                **explain_candidate(
-                    left,
-                    right,
-                    kind=candidate["kind"],
-                    similarity=candidate["similarity"],
-                    structural_context=candidate["structural_context"],
-                ),
-            }
-        )
+        enriched = {
+            **candidate,
+            **explain_candidate(
+                left,
+                right,
+                kind=candidate["kind"],
+                similarity=candidate["similarity"],
+                structural_context=candidate["structural_context"],
+            ),
+        }
+        if objectives is not None or isinstance(similarity_index, MultiViewSimilarityIndex):
+            enriched.update(
+                {
+                    "objective": _objective_for_candidate(candidate),
+                    "retrieval_provenance": _retrieval_provenance(
+                        candidate,
+                        similarity_index or SimilarityIndex(vectors),
+                        active_ids=active_ids,
+                        closed_ids=closed_ids,
+                    ),
+                }
+            )
+        explained.append(enriched)
     return CandidateRanking(
         candidates=tuple(explained),
         qualified=ranking.qualified,
@@ -621,11 +811,18 @@ def _sweep(args: argparse.Namespace) -> int:
         if args.max_candidates is not None
         else 250
     )
+    objectives = frozenset(args.objective) if args.objective else None
     lane_caps = {
         "dependency": args.max_dependency_candidates,
         "echo": args.max_echo_candidates,
         "overlap": args.max_overlap_candidates,
     }
+    if objectives is not None:
+        lane_caps = {
+            "dependency": lane_caps["dependency"] if "structure" in objectives else 0,
+            "echo": lane_caps["echo"] if "echo" in objectives else 0,
+            "overlap": lane_caps["overlap"] if "overlap" in objectives else 0,
+        }
     lane_reservations = (
         _review_lane_reservations(max_candidates, lane_caps)
         if args.weekly_review_budget is not None
@@ -639,10 +836,11 @@ def _sweep(args: argparse.Namespace) -> int:
         max_per_issue=args.max_candidates_per_issue,
         max_dependencies_per_issue=args.max_dependency_candidates_per_issue,
         max_total=max_candidates,
-        max_dependencies=args.max_dependency_candidates,
-        max_echoes=args.max_echo_candidates,
-        max_overlaps=args.max_overlap_candidates,
+        max_dependencies=lane_caps["dependency"],
+        max_echoes=lane_caps["echo"],
+        max_overlaps=lane_caps["overlap"],
         lane_reservations=lane_reservations,
+        objectives=objectives,
     )
     policy.validate()
     started = time.monotonic()
@@ -672,7 +870,7 @@ def _sweep(args: argparse.Namespace) -> int:
     population = [issue for issue in selected_population if issue.id not in excluded_ids]
     code_surface_payload: dict[str, Any] | None = None
     code_surface_ms = 0
-    if args.code_surfaces or args.worktree_map:
+    if args.code_surfaces or args.worktree_map or (objectives and "collision" in objectives):
         phase_started = time.monotonic()
         code_surface_payload = _surface_analysis(args, snapshot, population)
         code_surface_ms = round((time.monotonic() - phase_started) * 1000)
@@ -696,8 +894,19 @@ def _sweep(args: argparse.Namespace) -> int:
     vectors, cache_stats = _load_vectors(issues, provider, VectorCache(cache_path))
     embedding_ms = round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
-    similarity_index = SimilarityIndex(vectors)
+    whole_record_index = SimilarityIndex(vectors)
     similarity_scoring_ms = round((time.monotonic() - phase_started) * 1000)
+    similarity_index: SimilarityIndex | MultiViewSimilarityIndex = whole_record_index
+    if args.semantic_view == "fields":
+        phase_started = time.monotonic()
+        similarity_index, field_cache_stats = _load_field_similarity_index(
+            issues,
+            provider,
+            VectorCache(cache_path),
+            whole_record_index,
+        )
+        cache_stats.update(field_cache_stats)
+        embedding_ms += round((time.monotonic() - phase_started) * 1000)
     phase_started = time.monotonic()
     ranking = _candidate_evidence(
         population,
@@ -711,11 +920,12 @@ def _sweep(args: argparse.Namespace) -> int:
         max_candidates_per_issue=args.max_candidates_per_issue,
         max_dependency_candidates_per_issue=args.max_dependency_candidates_per_issue,
         max_candidates=max_candidates,
-        max_dependency_candidates=args.max_dependency_candidates,
-        max_echo_candidates=args.max_echo_candidates,
-        max_overlap_candidates=args.max_overlap_candidates,
+        max_dependency_candidates=lane_caps["dependency"],
+        max_echo_candidates=lane_caps["echo"],
+        max_overlap_candidates=lane_caps["overlap"],
         lane_reservations=lane_reservations,
         eligible_issue_ids=active_scope_ids,
+        objectives=objectives,
     )
     candidates = list(ranking.candidates)
     candidate_analysis_ms = round((time.monotonic() - phase_started) * 1000)
@@ -725,7 +935,7 @@ def _sweep(args: argparse.Namespace) -> int:
         candidates,
         vectors,
         max_batch_size=args.size,
-        similarity_index=similarity_index,
+        similarity_index=whole_record_index,
     )
     batches = packaging.batches
     batching_ms = round((time.monotonic() - phase_started) * 1000)
@@ -871,6 +1081,8 @@ def _sweep(args: argparse.Namespace) -> int:
         filters={
             "status": sorted(statuses),
             "include_epics": args.include_epics,
+            **({"review_objectives": sorted(objectives)} if objectives is not None else {}),
+            **({"semantic_view": "fields"} if args.semantic_view == "fields" else {}),
             "incremental_scope": scope_payload,
         },
         thresholds={
@@ -883,6 +1095,8 @@ def _sweep(args: argparse.Namespace) -> int:
             "max_per_issue": args.max_candidates_per_issue,
             "max_dependencies_per_issue": args.max_dependency_candidates_per_issue,
             "max_total": max_candidates,
+            **({"review_objectives": sorted(objectives)} if objectives is not None else {}),
+            **({"semantic_view": "fields"} if args.semantic_view == "fields" else {}),
             "review_budget": review_budget,
             "lane_caps": lane_caps,
             "qualified": ranking.qualified,

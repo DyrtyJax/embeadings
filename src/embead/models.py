@@ -108,6 +108,29 @@ def canonical_text(issue: IssueRecord, *, field_limit: int = DEFAULT_FIELD_LIMIT
     return "\n\n".join(f"{heading}:\n{text}" for heading, text in sections if text)
 
 
+def semantic_field_texts(
+    issue: IssueRecord, *, field_limit: int = DEFAULT_FIELD_LIMIT
+) -> dict[str, str]:
+    """Return stable, addressable semantic views for experimental retrieval.
+
+    Notes are intentionally excluded from field-local retrieval. They remain in
+    :func:`canonical_text`, but evaluator feedback showed that historical and
+    administrative notes can overwhelm the current intent of a work item.
+    """
+
+    if field_limit < 1:
+        raise ValueError("field_limit must be positive")
+    fields = (
+        ("title", issue.title),
+        ("description", issue.description),
+        ("acceptance_criteria", issue.acceptance_criteria),
+        ("design", issue.design),
+    )
+    return {
+        name: text for name, value in fields if (text := _normalize_text(value, limit=field_limit))
+    }
+
+
 def content_hash(
     issue: IssueRecord,
     *,

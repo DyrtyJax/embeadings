@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import pytest
 
 from embead.analysis import (
+    MultiViewSimilarityIndex,
     SimilarityIndex,
     balanced_batches,
     candidate_batches,
@@ -55,6 +56,26 @@ def test_similarity_index_reports_missing_issue() -> None:
     index = SimilarityIndex({"A": [1, 0]})
     with pytest.raises(KeyError, match="missing vector for issue 'B'"):
         index.score("A", "B")
+
+
+def test_multi_view_similarity_preserves_local_channel_evidence() -> None:
+    whole = SimilarityIndex({"A": [1, 0], "B": [0, 1], "C": [1, 0]})
+    index = MultiViewSimilarityIndex(
+        whole,
+        {
+            "title": {"A": [1, 0], "B": [1, 0], "C": [0, 1]},
+            "design": {"A": [1, 0], "B": [0, 1]},
+        },
+    )
+
+    assert index.score("A", "B") == pytest.approx(1)
+    assert index.channel_scores("A", "B") == (
+        ("title", pytest.approx(1)),
+        ("design", pytest.approx(0)),
+        ("whole_record", pytest.approx(0)),
+    )
+    assert index.channel_rank("title", "A", "B", ["B", "C"]) == 1
+    assert index.channel_rank("design", "C", "B", ["A", "B"]) is None
 
 
 def test_neighbors_filter_closed_and_break_ties_by_id() -> None:

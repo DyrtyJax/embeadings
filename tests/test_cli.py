@@ -108,6 +108,48 @@ def test_cli_version_uses_package_version(capsys) -> None:
     assert capsys.readouterr().out == f"embead {__version__}\n"
 
 
+def test_explicit_echo_objective_emits_field_provenance(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    output = tmp_path / "objective-sweep"
+
+    assert (
+        cli.main(
+            [
+                "--provider",
+                "hashing",
+                "sweep",
+                "--objective",
+                "echo",
+                "--semantic-view",
+                "fields",
+                "--echo-threshold",
+                "-1",
+                "--reciprocal-rank",
+                "0",
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    candidate = payload["candidates"][0]
+    assert candidate["objective"] == "echo"
+    assert payload["parameters"]["filters"]["review_objectives"] == ["echo"]
+    assert payload["parameters"]["filters"]["semantic_view"] == "fields"
+    assert candidate["retrieval_provenance"]["selection_rule"] == "max-semantic-view"
+    assert {receipt["channel"] for receipt in candidate["retrieval_provenance"]["channels"]} >= {
+        "whole-record-semantic",
+        "field-semantic:title",
+    }
+    assert payload["cache"]["field_view_counts"]["title"] == len(ISSUES)
+    markdown = (output / "report.md").read_text(encoding="utf-8")
+    assert "Review objective: echo" in markdown
+    assert "Retrieval provenance: max-semantic-view" in markdown
+
+
 def test_readiness_help_is_tracker_neutral(capsys) -> None:
     with pytest.raises(SystemExit) as raised:
         cli.main(["--help"])

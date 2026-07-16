@@ -42,6 +42,12 @@ embead sweep --since-checkpoint /tmp/embead-checkpoint.json \
 
 # Keep a weekly review queue to at most twelve candidates
 embead sweep --weekly-review-budget 12
+
+# Experimental retrieve-verify evaluation: separate semantic novelty from known structure
+embead sweep --objective overlap --objective echo --semantic-view fields
+
+# Audit typed tracker relationships without spending the semantic novelty budget
+embead sweep --objective structure
 ```
 
 ### Use a Linear team
@@ -108,18 +114,18 @@ work and private evaluation.
 ```text
 Beads or Linear data
       │
-      ▼
-incremental local embeddings
-      │
-      ├── nearest active and closed neighbors
-      ├── duplicate/echo review candidates
-      └── balanced disposable batches
+      ├── tracker structure and lifecycle
+      ├── explicit and observed code surfaces
+      └── whole-record and field-local semantics
                          │
                          ▼
-              human or read-only agents
+              bounded candidate union
                          │
                          ▼
-                 evidence-backed report
+        objective-specific review and abstention
+                         │
+                         ▼
+           evidence receipt + disposable batches
 ```
 
 The tool discovers a Beads workspace or queries one selected Linear team, computes embeddings locally,
@@ -213,6 +219,36 @@ reservation, admission-to-reservation, unused, and omitted counts per lane. Code
 leads are reported separately and do not consume the semantic candidate budget. The preset composes
 with both incremental scope flags.
 
+### Experimental objective and field-aware retrieval
+
+The default sweep retains the stable v0.3 behavior. Passing one or more `--objective` flags enables
+the retrieve–verify evaluation contract:
+
+- `overlap` searches active work for semantic scope overlap;
+- `echo` searches active work against completed work;
+- `structure` audits typed tracker relationships in its own lane;
+- `collision` enables the existing local code-surface analysis outside the semantic budget.
+
+When `structure` is omitted, a typed dependency may annotate an overlap or echo but cannot take the
+dependency lane or admit a below-threshold pair. This prevents known graph edges from consuming a
+novel-discovery budget. `--semantic-view fields` is also experimental: it retains the whole-record
+vector and adds separate title, description, acceptance-criteria, and design vectors. Notes remain in
+the whole-record representation but are excluded from field-local retrieval. Candidate JSON and
+Markdown record the selected objective, every contributing channel, its pair score, both directional
+ranks, and whether structural evidence was selected or merely contextual.
+
+The current field union uses the maximum available semantic-view score deliberately. It is an
+auditable research baseline, not a calibrated probability or final fusion policy. Run the public
+hard-negative benchmark before comparing model or ranking changes:
+
+```bash
+python scripts/evaluate_semantic_fixture.py
+python scripts/evaluate_semantic_fixture.py --provider model2vec
+```
+
+The fixture contains sanitized same-token/different-intent, shared-subsystem, completed-invariant,
+and reference-versus-edit cases. Generic embedding benchmarks are insufficient release evidence.
+
 Sweeps batch only issues participating in accepted review signals. Unmatched records are summarized
 as no-signal, and epics are excluded by default; pass `--include-epics` when broad container records
 are intentionally part of the review population. `--size` is a hard artifact maximum. Connected
@@ -234,6 +270,8 @@ Research notes:
 - [Privacy-preserving Linear regression protocol](docs/evaluation-linear.md)
 - [Public synthetic warm-path performance benchmark](docs/performance.md)
 - [Safe offline evaluation and readiness checks](docs/evaluation.md)
+- [Retrieve–verify research synthesis](docs/research/retrieve-verify-context-2026.md)
+- [First retrieve–verify public regression](docs/research/retrieve-verify-public-regression-01.md)
 - [Consumer compatibility and capability contract](docs/consumer-contract.md)
 - [Version 1 JSON Schemas](schemas/v1/) and [synthetic examples](examples/)
 

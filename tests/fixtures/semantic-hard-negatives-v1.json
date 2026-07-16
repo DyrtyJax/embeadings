@@ -1,0 +1,106 @@
+{
+  "fixture_version": 1,
+  "issues": [
+    {
+      "id": "syn-arg-build",
+      "title": "Build command arguments",
+      "description": "Construct the subprocess argument vector without shell interpolation.",
+      "acceptance_criteria": "Flags and user values preserve argument boundaries.",
+      "design": "Use a dedicated argv builder.",
+      "status": "open"
+    },
+    {
+      "id": "syn-arg-quote",
+      "title": "Validate command argument quoting",
+      "description": "Exercise subprocess argv construction with spaces and repeated flags.",
+      "acceptance_criteria": "Each user value remains one argument.",
+      "status": "open"
+    },
+    {
+      "id": "syn-command-palette",
+      "title": "Add command palette",
+      "description": "Open a searchable action menu from the keyboard.",
+      "acceptance_criteria": "Control K focuses the palette and filters actions.",
+      "status": "open"
+    },
+    {
+      "id": "syn-cache-active",
+      "title": "Repair vector cache checksum handling",
+      "description": "Reject corrupt cache entries and recompute their vectors.",
+      "acceptance_criteria": "A checksum mismatch never returns a cached vector.",
+      "status": "open"
+    },
+    {
+      "id": "syn-cache-closed",
+      "title": "Validate cached vector checksums",
+      "description": "Added checksum validation before reading vector payloads.",
+      "acceptance_criteria": "Corrupt entries are treated as cache misses.",
+      "status": "closed"
+    },
+    {
+      "id": "syn-cache-dashboard",
+      "title": "Show cache usage dashboard",
+      "description": "Display cache hit counts and storage totals in an operator view.",
+      "acceptance_criteria": "Operators can inspect aggregate cache usage.",
+      "status": "open"
+    },
+    {
+      "id": "syn-runbook-reference",
+      "title": "Review release readiness",
+      "description": "Inspect docs/release-runbook.md before approving the release.",
+      "acceptance_criteria": "The existing runbook is reviewed; it is not edited.",
+      "status": "open"
+    },
+    {
+      "id": "syn-runbook-edit",
+      "title": "Rewrite release runbook",
+      "description": "Edit docs/release-runbook.md to document rollback verification.",
+      "acceptance_criteria": "The runbook contains the new rollback procedure.",
+      "status": "open"
+    }
+  ],
+  "judgments": [
+    {
+      "left": "syn-arg-build",
+      "right": "syn-arg-quote",
+      "objective": "overlap",
+      "rating": 2,
+      "reason": "same-edit-boundary"
+    },
+    {
+      "left": "syn-arg-build",
+      "right": "syn-command-palette",
+      "objective": "overlap",
+      "rating": 0,
+      "reason": "same-token-different-intent"
+    },
+    {
+      "left": "syn-arg-quote",
+      "right": "syn-command-palette",
+      "objective": "overlap",
+      "rating": 0,
+      "reason": "same-token-different-intent"
+    },
+    {
+      "left": "syn-cache-active",
+      "right": "syn-cache-closed",
+      "objective": "echo",
+      "rating": 2,
+      "reason": "completed-invariant"
+    },
+    {
+      "left": "syn-cache-active",
+      "right": "syn-cache-dashboard",
+      "objective": "overlap",
+      "rating": 0,
+      "reason": "shared-subsystem-different-outcome"
+    },
+    {
+      "left": "syn-runbook-reference",
+      "right": "syn-runbook-edit",
+      "objective": "collision",
+      "rating": 1,
+      "reason": "reference-versus-edit-intent"
+    }
+  ]
+}

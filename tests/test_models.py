@@ -2,7 +2,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from embead.models import IssueRecord, canonical_text, content_hash
+from embead.models import IssueRecord, canonical_text, content_hash, semantic_field_texts
 
 
 def test_issue_record_is_immutable() -> None:
@@ -40,6 +40,23 @@ def test_canonical_text_truncates_each_field_deterministically() -> None:
     )
     with pytest.raises(ValueError):
         canonical_text(issue, field_limit=0)
+
+
+def test_semantic_field_texts_are_addressable_and_exclude_notes() -> None:
+    issue = IssueRecord(
+        id="A",
+        title="  Build command arguments  ",
+        description="Construct argv.  \r\n",
+        acceptance_criteria="",
+        design="Use an argument builder.",
+        notes="Historical command palette discussion.",
+    )
+
+    assert semantic_field_texts(issue) == {
+        "title": "Build command arguments",
+        "description": "Construct argv.",
+        "design": "Use an argument builder.",
+    }
 
 
 def test_content_hash_is_stable_and_invalidated_by_embedding_inputs() -> None:

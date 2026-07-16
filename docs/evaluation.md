@@ -25,6 +25,44 @@ Both use the corpus-free string `model readiness probe`, do not invoke `bd`, and
 model ID, revision, and vector dimension. The same contract is available as
 `embead.provider_readiness()`.
 
+## Retrieve–verify regression checkpoint
+
+Run the committed public fixture before private or public corpus evaluation:
+
+```console
+python scripts/evaluate_semantic_fixture.py
+python scripts/evaluate_semantic_fixture.py --provider model2vec
+```
+
+The output is deterministic for a fixed provider and contains no repository or tracker data. Record
+its fingerprint, per-rating mean field score, and pair-level selected channel. A model upgrade does
+not pass merely because its average similarity rises: rating-2 candidate recall must improve without
+raising vocabulary-only and shared-subsystem hard negatives into the review budget.
+
+For each existing evaluator corpus, compare the unchanged baseline with the experimental path:
+
+```console
+embead sweep --weekly-review-budget 20 --json
+embead sweep --objective overlap --objective echo --semantic-view fields \
+  --weekly-review-budget 20 --json
+embead sweep --objective structure --weekly-review-budget 20 --json
+```
+
+Keep all output and platform cache/state directories outside the evaluated repository. Compare:
+
+- recall of previously rated-2 pairs in the pre-cap candidate pool;
+- actionable precision at a fixed review budget;
+- same-token/different-intent and broad-hub rejection;
+- abstention/no-signal quality;
+- per-objective and per-channel candidate counts;
+- candidate-set churn and deterministic ordering;
+- cold/warm runtime, cache accounting, and peak memory;
+- tracker, Git-visible, and physical-storage non-mutation evidence.
+
+Do not enable a pairwise reranker in this checkpoint. The first gate isolates whether objective
+separation and field-local candidate generation improve recall and review packaging. A later verifier
+must be evaluated symmetrically in both issue orders and against permutation stability.
+
 Resolve the tracker executable rather than trusting shell ordering:
 
 ```console

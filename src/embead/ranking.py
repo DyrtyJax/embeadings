@@ -23,6 +23,7 @@ Scorer = ScoreIndex | Callable[[str, str], float]
 
 CLOSED_STATUSES = {"closed", "done", "completed", "resolved"}
 LANES = ("dependency", "echo", "overlap")
+REVIEW_OBJECTIVES = frozenset({"collision", "overlap", "echo", "structure"})
 DEFAULT_ECHO_THRESHOLD = 0.72
 DEFAULT_OVERLAP_THRESHOLD = 0.82
 
@@ -44,6 +45,7 @@ class CandidatePolicy:
     lane_reservations: dict[str, int] | None = None
     baseline_echo_threshold: float = DEFAULT_ECHO_THRESHOLD
     baseline_overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD
+    objectives: frozenset[str] | None = None
 
     def validate(self) -> None:
         thresholds = (
@@ -75,6 +77,10 @@ class CandidatePolicy:
                 raise ValueError("lane reservations cannot exceed the run candidate cap")
             if any(self.lane_reservations[lane] > self.lane_caps[lane] for lane in LANES):
                 raise ValueError("lane reservations cannot exceed lane candidate caps")
+        if self.objectives is not None:
+            unknown = self.objectives - REVIEW_OBJECTIVES
+            if unknown:
+                raise ValueError(f"unknown review objectives: {', '.join(sorted(unknown))}")
 
     @property
     def lane_caps(self) -> dict[str, int]:
@@ -175,6 +181,7 @@ def rank_candidates(
         overlap_threshold=policy.overlap_threshold,
         reciprocal_evidence=reciprocal_evidence,
         reciprocal_diagnostics=reciprocal_diagnostics,
+        objectives=policy.objectives,
     )
     if eligible_issue_ids is not None:
         requested = [
@@ -191,6 +198,7 @@ def rank_candidates(
         overlap_threshold=policy.overlap_threshold,
         exception_margin=policy.exception_margin,
         eligible_issue_ids=eligible_issue_ids,
+        enabled=policy.objectives is None or "structure" in policy.objectives,
     )
     is_sensitivity = (
         policy.echo_threshold < policy.baseline_echo_threshold
@@ -207,6 +215,7 @@ def rank_candidates(
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
             reciprocal_evidence=reciprocal_evidence,
+            objectives=policy.objectives,
         )
         if eligible_issue_ids is not None:
             baseline = [
@@ -252,6 +261,7 @@ def rank_candidates(
             echo_threshold=policy.baseline_echo_threshold,
             overlap_threshold=policy.baseline_overlap_threshold,
             reciprocal_evidence=reciprocal_evidence,
+            objectives=policy.objectives,
         )
         if eligible_issue_ids is not None:
             reference = [
@@ -285,6 +295,7 @@ def _dependency_discovery_funnel(
     overlap_threshold: float,
     exception_margin: float,
     eligible_issue_ids: frozenset[str] | None,
+    enabled: bool,
 ) -> DependencyFunnel:
     """Classify each typed edge once without retaining endpoint details.
 
@@ -321,6 +332,9 @@ def _dependency_discovery_funnel(
                 continue
             seen.add(identity)
             total += 1
+            if not enabled:
+                inactive += 1
+                continue
             target = records.get(target_id)
             active_endpoints = {
                 identifier for identifier in (source_id, target_id) if identifier in active_ids
@@ -387,57 +401,69 @@ def _qualifying_candidates(
     overlap_threshold: float,
     reciprocal_evidence: _ReciprocalEvidence,
     reciprocal_diagnostics: dict[str, Any] | None = None,
+    objectives: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     qualified: list[dict[str, Any]] = []
-    for left_index, left in enumerate(active):
-        for right in active[left_index + 1 :]:
-            candidate = _qualify(
-                "possible-overlap",
-                left,
-                right,
-                score,
-                threshold=overlap_threshold,
-                exception_margin=policy.exception_margin,
-                reciprocal_rank=policy.reciprocal_rank,
-                left_rank=ranks.overlap.get((issue_id(left), issue_id(right))),
-                right_rank=ranks.overlap.get((issue_id(right), issue_id(left))),
-                reciprocal_evidence=reciprocal_evidence,
-                reciprocal_diagnostics=reciprocal_diagnostics,
-            )
-            if candidate is not None:
-                qualified.append(candidate)
+    overlap_enabled = objectives is None or "overlap" in objectives
+    echo_enabled = objectives is None or "echo" in objectives
+    structure_enabled = objectives is None or "structure" in objectives
+    if overlap_enabled or structure_enabled:
+        for left_index, left in enumerate(active):
+            for right in active[left_index + 1 :]:
+                candidate = _qualify(
+                    "possible-overlap",
+                    left,
+                    right,
+                    score,
+                    threshold=overlap_threshold,
+                    exception_margin=policy.exception_margin,
+                    reciprocal_rank=policy.reciprocal_rank,
+                    left_rank=ranks.overlap.get((issue_id(left), issue_id(right))),
+                    right_rank=ranks.overlap.get((issue_id(right), issue_id(left))),
+                    reciprocal_evidence=reciprocal_evidence,
+                    reciprocal_diagnostics=reciprocal_diagnostics,
+                    semantic_enabled=overlap_enabled,
+                    structure_enabled=structure_enabled,
+                    legacy_mode=objectives is None,
+                )
+                if candidate is not None:
+                    qualified.append(candidate)
 
-    for active_issue in active:
-        echoes: list[dict[str, Any]] = []
-        dependency_echoes: list[dict[str, Any]] = []
-        for completed_issue in closed:
-            if issue_id(active_issue) == issue_id(completed_issue):
-                continue
-            candidate = _qualify(
-                "completed-work-echo",
-                active_issue,
-                completed_issue,
-                score,
-                threshold=echo_threshold,
-                exception_margin=policy.exception_margin,
-                reciprocal_rank=policy.reciprocal_rank,
-                left_rank=ranks.active_to_closed.get(
-                    (issue_id(active_issue), issue_id(completed_issue))
-                ),
-                right_rank=ranks.closed_to_active.get(
-                    (issue_id(completed_issue), issue_id(active_issue))
-                ),
-                reciprocal_evidence=reciprocal_evidence,
-                reciprocal_diagnostics=reciprocal_diagnostics,
-            )
-            if candidate is not None:
-                if candidate["lane"] == "dependency":
-                    dependency_echoes.append(candidate)
-                else:
-                    echoes.append(candidate)
-        qualified.extend(dependency_echoes)
-        if echoes:
-            qualified.append(min(echoes, key=_ranking_key))
+    if echo_enabled or structure_enabled:
+        for active_issue in active:
+            echoes: list[dict[str, Any]] = []
+            dependency_echoes: list[dict[str, Any]] = []
+            for completed_issue in closed:
+                if issue_id(active_issue) == issue_id(completed_issue):
+                    continue
+                candidate = _qualify(
+                    "completed-work-echo",
+                    active_issue,
+                    completed_issue,
+                    score,
+                    threshold=echo_threshold,
+                    exception_margin=policy.exception_margin,
+                    reciprocal_rank=policy.reciprocal_rank,
+                    left_rank=ranks.active_to_closed.get(
+                        (issue_id(active_issue), issue_id(completed_issue))
+                    ),
+                    right_rank=ranks.closed_to_active.get(
+                        (issue_id(completed_issue), issue_id(active_issue))
+                    ),
+                    reciprocal_evidence=reciprocal_evidence,
+                    reciprocal_diagnostics=reciprocal_diagnostics,
+                    semantic_enabled=echo_enabled,
+                    structure_enabled=structure_enabled,
+                    legacy_mode=objectives is None,
+                )
+                if candidate is not None:
+                    if candidate["lane"] == "dependency":
+                        dependency_echoes.append(candidate)
+                    else:
+                        echoes.append(candidate)
+            qualified.extend(dependency_echoes)
+            if echoes:
+                qualified.append(min(echoes, key=_ranking_key))
     return qualified
 
 
@@ -670,12 +696,17 @@ def _qualify(
     right_rank: int | None,
     reciprocal_evidence: _ReciprocalEvidence,
     reciprocal_diagnostics: dict[str, Any] | None = None,
+    semantic_enabled: bool = True,
+    structure_enabled: bool = True,
+    legacy_mode: bool = True,
 ) -> dict[str, Any] | None:
     left_id = issue_id(left)
     right_id = issue_id(right)
     similarity = score(left_id, right_id)
     context = structural_context(left, right)
     relationship = dependency_evidence(left, right)
+    if not semantic_enabled and not (structure_enabled and relationship is not None):
+        return None
     reciprocal = (
         reciprocal_rank > 0
         and left_rank is not None
@@ -689,11 +720,11 @@ def _qualify(
     if similarity < threshold:
         if similarity < max(-1.0, threshold - exception_margin):
             return None
-        if context.startswith("same parent "):
+        if legacy_mode and context.startswith("same parent "):
             admission_reason = "shared-parent-threshold-exception"
-        elif relationship is not None:
+        elif structure_enabled and relationship is not None:
             admission_reason = "dependency-threshold-exception"
-        elif context != "parent/child" and reciprocal:
+        elif semantic_enabled and context != "parent/child" and reciprocal:
             reciprocal_reason = reciprocal_evidence.reason(left, right)
             if reciprocal_reason is None:
                 _increment_reciprocal(
@@ -707,7 +738,7 @@ def _qualify(
 
     lane = (
         "dependency"
-        if relationship is not None
+        if relationship is not None and structure_enabled
         else "echo"
         if kind == "completed-work-echo"
         else "overlap"

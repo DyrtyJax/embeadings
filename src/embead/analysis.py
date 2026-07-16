@@ -123,6 +123,66 @@ class SimilarityIndex:
             raise KeyError(f"missing vector for issue {identifier!r}") from exc
 
 
+class MultiViewSimilarityIndex:
+    """Use whole-record recall plus addressable field-local similarities.
+
+    The maximum score is an intentionally simple experimental union rule. The
+    individual channel scores remain available so evaluation can determine
+    whether a future calibrated fusion is warranted without hiding provenance.
+    """
+
+    def __init__(
+        self,
+        whole_record: SimilarityIndex,
+        field_vectors: Mapping[str, Mapping[str, Vector]],
+    ) -> None:
+        self._whole_record = whole_record
+        self._fields = {
+            name: SimilarityIndex(vectors)
+            for name, vectors in sorted(field_vectors.items())
+            if vectors
+        }
+
+    @property
+    def ids(self) -> tuple[str, ...]:
+        return self._whole_record.ids
+
+    @property
+    def channels(self) -> tuple[str, ...]:
+        return ("whole_record", *self._fields)
+
+    def score(self, left_id: str, right_id: str) -> float:
+        return max(score for _channel, score in self.channel_scores(left_id, right_id))
+
+    def channel_scores(self, left_id: str, right_id: str) -> tuple[tuple[str, float], ...]:
+        scores = [("whole_record", self._whole_record.score(left_id, right_id))]
+        for name, index in self._fields.items():
+            if left_id in index.ids and right_id in index.ids:
+                scores.append((name, index.score(left_id, right_id)))
+        return tuple(sorted(scores, key=lambda item: (-item[1], item[0])))
+
+    def channel_rank(
+        self,
+        channel: str,
+        query_id: str,
+        target_id: str,
+        candidate_ids: Sequence[str],
+    ) -> int | None:
+        index = self._whole_record if channel == "whole_record" else self._fields.get(channel)
+        if index is None or query_id not in index.ids or target_id not in index.ids:
+            return None
+        available = [identifier for identifier in candidate_ids if identifier in index.ids]
+        ranked = index.ranked(query_id, available)
+        return next(
+            (
+                position
+                for position, (identifier, _score) in enumerate(ranked, start=1)
+                if identifier == target_id
+            ),
+            None,
+        )
+
+
 def normalize(vector: Vector) -> list[float]:
     """Return a unit vector, rejecting malformed embedding output."""
 

@@ -369,6 +369,29 @@ def _dependency_text(value: Any) -> str | None:
     return f"{source} → {target} ({relationship_type})"
 
 
+def _retrieval_provenance_text(value: Any) -> str | None:
+    provenance = _field(value, "retrieval_provenance", default={}) or {}
+    channels = _field(provenance, "channels", default=[]) or []
+    if not channels:
+        return None
+    rendered = []
+    for receipt in channels:
+        name = str(_field(receipt, "channel", default="unknown"))
+        score = _field(receipt, "pair_score", default=None)
+        ranks = _field(receipt, "ranks", default={}) or {}
+        rank_text = ""
+        if ranks:
+            rank_text = (
+                f" ranks {_field(ranks, 'issue_to_related', default='-')}"
+                f"/{_field(ranks, 'related_to_issue', default='-')}"
+            )
+        score_text = f" score {float(score):.2f}" if score is not None else ""
+        selected = " selected" if _field(receipt, "selected", default=False) else ""
+        rendered.append(f"{name}{score_text}{rank_text}{selected}")
+    rule = _field(provenance, "selection_rule", default="recorded-channel-union")
+    return f"{rule}: " + "; ".join(rendered)
+
+
 def _metadata_lines(payload: Mapping[str, Any]) -> list[str]:
     snapshot = payload.get("snapshot") or {}
     model = payload.get("model") or {}
@@ -556,6 +579,12 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
         dependency = _dependency_text(item)
         if dependency:
             detail.append(f"- Typed dependency: {_escape(dependency)}")
+        objective = _field(item, "objective", default=None)
+        if objective:
+            detail.append(f"- Review objective: {_escape(objective)}")
+        provenance = _retrieval_provenance_text(item)
+        if provenance:
+            detail.append(f"- Retrieval provenance: {_escape(provenance)}")
         candidate_evidence = _field(item, "candidate_evidence", default={}) or {}
         anchor = _field(item, "verification_anchor", default={}) or {}
         detail.extend(
@@ -969,6 +998,12 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         dependency = _dependency_text(item)
         if dependency:
             detail.append(f"- Typed dependency: {_escape(dependency)}")
+        objective = _field(item, "objective", default=None)
+        if objective:
+            detail.append(f"- Review objective: {_escape(objective)}")
+        provenance = _retrieval_provenance_text(item)
+        if provenance:
+            detail.append(f"- Retrieval provenance: {_escape(provenance)}")
         candidate_evidence = _field(item, "candidate_evidence", default={}) or {}
         anchor = _field(item, "verification_anchor", default={}) or {}
         detail.extend(

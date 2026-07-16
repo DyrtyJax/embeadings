@@ -74,7 +74,7 @@ the read-only policy. It contains pointers rather than source snippets. See
 | Concurrent-worktree release gate | Recovered all 3 known exact-file collisions across 4 genuine active worktrees | One repository; not universal recall |
 | Dogfooding | Found 2 real association/scope defects before v0.4.0 | Demonstrates workflow value, not broad precision |
 | Ruff scale surrogate | 17/20 top-packet pairs were at least contextually useful across 8,143 public issues | Converted GitHub corpus; no native Beads graph or worktrees |
-| Release validation | 256 tests passed on Linux, macOS, Windows, Python 3.11 and 3.14 | Test and synthetic-corpus evidence |
+| Release validation | 269 tests passed across Linux, macOS, Windows, Python 3.11 and 3.14; wheel/sdist checksums and provenance published | Supply-chain and test evidence, not semantic quality |
 | Repeatability | Evaluation outputs were byte-stable and non-mutating | Determinism does not make a weak lead correct |
 
 Read the [v0.4.0 worktree gate](docs/research/code-surface-v040-release-gate.md),

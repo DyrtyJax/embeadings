@@ -784,6 +784,7 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     lane_metrics = _field(candidate_policy, "lanes", default={}) or {}
     dependency_funnel = _field(candidate_policy, "dependency_funnel", default={}) or {}
     echo_target_hubs = _field(candidate_policy, "echo_target_hubs", default=[]) or []
+    echo_backfills = _field(candidate_policy, "echo_backfills", default=[]) or []
     review_budget = _field(candidate_policy, "review_budget", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
@@ -898,11 +899,36 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     if echo_target_hubs:
         lines.extend(["", "### Repeated completed targets", ""])
         for hub in echo_target_hubs:
+            omissions = _field(hub, "omissions_by_reason", default={}) or {}
             lines.append(
                 f"- `{_escape(_field(hub, 'related_issue_id', default='unknown'))}`: "
-                f"{_field(hub, 'qualified', default=0)} qualified; "
-                f"{_field(hub, 'admitted', default=0)} admitted; "
-                f"{_field(hub, 'omitted_by_target_cap', default=0)} omitted by diversity cap"
+                f"{_field(hub, 'qualified', default=0)} qualified = "
+                f"{_field(hub, 'admitted', default=0)} admitted + "
+                f"{_field(hub, 'omitted', default=0)} omitted "
+                "(target diversity="
+                f"{_field(omissions, 'completed-target-cap', default=0)}, "
+                f"one echo per active={_field(omissions, 'one-echo-per-active', default=0)}, "
+                f"per-issue={_field(omissions, 'per-issue-cap', default=0)}, "
+                f"lane={_field(omissions, 'lane-cap', default=0)}, "
+                f"run={_field(omissions, 'run-cap', default=0)})"
+            )
+    if echo_backfills:
+        lines.extend(["", "### Completed-target backfills", ""])
+        lines.append(
+            "Backfills increase target coverage; they are not evidence that the admitted pair is "
+            "more relevant than the omitted pair."
+        )
+        lines.append("")
+        for backfill in echo_backfills:
+            omitted_ids = ", ".join(
+                f"`{_escape(_field(item, 'candidate_id', default='unknown'))}`"
+                for item in (_field(backfill, "omitted_candidates", default=[]) or [])
+            )
+            admitted_id = _escape(_field(backfill, "admitted_candidate_id", default="unknown"))
+            lines.append(
+                f"- Active `{_escape(_field(backfill, 'issue_id', default='unknown'))}`: "
+                f"admitted `{admitted_id}` "
+                f"after target-cap omission(s): {omitted_ids or 'none recorded'}"
             )
     lines.extend(["", "## Typed dependency funnel", ""])
     if dependency_funnel:

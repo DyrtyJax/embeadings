@@ -242,6 +242,8 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
         "overlap",
     }
     assert payload["capped_typed_dependencies"] == []
+    assert payload["parameters"]["candidate_policy"]["echo_target_hubs"] == []
+    assert payload["parameters"]["candidate_policy"]["echo_backfills"] == []
     assert payload["batches"] == []
     assert payload["no_signal"] == {"count": 2, "issue_ids": ["demo-1", "demo-3"]}
     assert set(payload["timings_ms"]) == {

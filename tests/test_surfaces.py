@@ -8,6 +8,8 @@ import pytest
 
 from embead.models import IssueRecord
 from embead.surfaces import (
+    _associate_worktrees,
+    _Worktree,
     analyze_code_surfaces,
     extract_explicit_pointers,
     parse_worktree_mappings,
@@ -642,6 +644,52 @@ def test_explicit_mapping_validates_issue_and_registered_worktree(tmp_path: Path
         parse_worktree_mappings(["proj.1"])
     with pytest.raises(ValueError, match="duplicate"):
         parse_worktree_mappings([f"proj.1={tmp_path}", f"proj.1={tmp_path}"])
+
+
+def test_explicit_mapping_reserves_worktree_from_version_suffix_match(tmp_path: Path) -> None:
+    release = _Worktree(
+        path=tmp_path.resolve(),
+        head="release-head",
+        branch="codex/embead-kct-release-v0.4.0",
+    )
+
+    associations = _associate_worktrees(
+        ("embead-3ur.67.4", "embead-kct"),
+        (release,),
+        {"embead-kct": tmp_path},
+    )
+
+    assert associations == {"embead-kct": release}
+
+
+def test_version_component_is_not_a_numeric_suffix_match(tmp_path: Path) -> None:
+    release = _Worktree(
+        path=tmp_path.resolve(),
+        head="release-head",
+        branch="codex/release-v0.4.0",
+    )
+
+    assert _associate_worktrees(("embead-3ur.67.4",), (release,), {}) == {}
+
+
+def test_full_id_and_bead_token_auto_association_remain_supported(tmp_path: Path) -> None:
+    exact = _Worktree(tmp_path / "exact", "exact-head", "codex/proj.20-parser")
+    suffix = _Worktree(tmp_path / "suffix", "suffix-head", "codex/bead-21-cache")
+
+    associations = _associate_worktrees(("proj.20", "proj.21"), (exact, suffix), {})
+
+    assert associations == {"proj.20": exact, "proj.21": suffix}
+
+
+def test_duplicate_explicit_worktree_ownership_is_rejected(tmp_path: Path) -> None:
+    worktree = _Worktree(tmp_path.resolve(), "head", "codex/shared")
+
+    with pytest.raises(ValueError, match="only one issue"):
+        _associate_worktrees(
+            ("proj.first", "proj.second"),
+            (worktree,),
+            {"proj.first": tmp_path, "proj.second": tmp_path},
+        )
 
 
 def test_mapping_outside_population_explains_active_filter_requirements(tmp_path: Path) -> None:

@@ -13,6 +13,7 @@ from typing import Any
 
 from filelock import FileLock
 
+from .artifacts import PRIVATE_FILE_MODE, private_directory
 from .provider import EmbeddingProvider, Vector
 
 
@@ -21,8 +22,8 @@ class VectorCache:
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
-        self.root.mkdir(parents=True, exist_ok=True)
-        self._lock = FileLock(str(self.root / ".cache.lock"))
+        private_directory(self.root)
+        self._lock = FileLock(str(self.root / ".cache.lock"), mode=PRIVATE_FILE_MODE)
 
     @staticmethod
     def key_for(
@@ -86,7 +87,7 @@ class VectorCache:
         }
         path = self._path(key)
         with self._lock:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            private_directory(path.parent)
             fd, temporary_name = tempfile.mkstemp(prefix=f".{key}.", suffix=".tmp", dir=path.parent)
             temporary_path = Path(temporary_name)
             try:
@@ -101,6 +102,8 @@ class VectorCache:
                     handle.flush()
                     os.fsync(handle.fileno())
                 os.replace(temporary_path, path)
+                if os.name == "posix":
+                    path.chmod(PRIVATE_FILE_MODE)
             finally:
                 temporary_path.unlink(missing_ok=True)
 

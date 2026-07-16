@@ -23,6 +23,7 @@ from .analysis import (
     nearest_neighbors,
     package_candidate_batches,
 )
+from .artifacts import atomic_text, private_directory
 from .beads import BeadsAdapter
 from .cache import VectorCache
 from .doctor import diagnose
@@ -400,9 +401,13 @@ def _load_source(args: argparse.Namespace) -> tuple[WorkspaceSnapshot, tuple[Iss
 
 def _workspace_paths(workspace_id: str) -> tuple[Path, Path]:
     namespace = workspace_id[:16]
+    cache_root = user_cache_path("embeadings") / "vectors"
+    state_root = user_state_path("embeadings") / "runs"
+    private_directory(cache_root)
+    private_directory(state_root)
     return (
-        user_cache_path("embeadings") / "vectors" / namespace,
-        user_state_path("embeadings") / "runs" / namespace,
+        cache_root / namespace,
+        state_root / namespace,
     )
 
 
@@ -724,13 +729,7 @@ def _collisions(args: argparse.Namespace) -> int:
 
 
 def _atomic_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        temporary.write_text(text, encoding="utf-8")
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    atomic_text(path, text)
 
 
 def _json_text(payload: Any) -> str:
@@ -1078,7 +1077,9 @@ def _sweep(args: argparse.Namespace) -> int:
     batching_ms = round((time.monotonic() - phase_started) * 1000)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
     run_dir = args.output or state_path / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if args.output is None:
+        private_directory(state_path)
+    private_directory(run_dir)
     manifests: list[dict[str, Any]] = []
     model = _model_metadata(provider)
     snapshot_payload = asdict(snapshot)

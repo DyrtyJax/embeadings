@@ -521,8 +521,12 @@ full evidence. The CLI never treats a similarity score as a lifecycle verdict.
 - Installable as a normal package and user-level CLI with `uv tool`, `pipx`, or `pip`.
 - Supported on current macOS, Linux, and Windows.
 - MIT licensed.
-- Reproducible locked dependencies for development and release.
-- Model and dependency licenses documented in release artifacts.
+- Version-checked release artifacts with published SHA-256 checksums.
+- A pinned default model revision with its license linked from the public documentation.
+
+The v0.4 build reproduced byte-for-byte under the same documented build inputs, but the build
+toolchain is not yet fully pinned or independently attested. Do not describe the release as a
+reproducible or provenance-attested build until those controls ship.
 
 ## 19. Validation strategy
 
@@ -562,7 +566,9 @@ batching measured separately from Beads acquisition.
 
 - Calibrate semantic ranking and review-budget behavior on public large-corpus surrogates and native
   Beads repositories without turning evaluation controls into default workflow complexity.
-- Validate observed-to-observed code-surface behavior with multiple genuinely active worktrees.
+- Repeat observed-to-observed code-surface evaluation across additional repository layouts. The
+  v0.4 gate passed with four genuinely active worktrees in this repository; that single result is
+  not a universal precision or recall claim.
 - Preserve compatibility and non-mutation guarantees while simplifying low-value or duplicative
   surfaces.
 
@@ -574,8 +580,9 @@ batching measured separately from Beads acquisition.
   insufficient.
 - Hosted providers, semantic code retrieval, AST indexing, or external vector stores only behind
   optional evidence-provider contracts with independent privacy and quality gates.
-- Marketplace/package publication and community-catalog submission after the corresponding release
-  gates pass.
+- Marketplace plugin publication and community-catalog submission after their host-workflow and
+  contributor-readiness gates pass. The CLI already ships as a versioned GitHub release artifact;
+  a package-index release remains separate distribution work.
 
 ## 21. Open decisions
 

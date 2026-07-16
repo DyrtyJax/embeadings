@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 
 import pytest
 
@@ -82,3 +84,24 @@ def test_put_is_atomic_and_normalizes(tmp_path) -> None:
 
     assert cache.get(key, dimension=2) == pytest.approx([0.6, 0.8])
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not portable")
+def test_cache_restricts_directories_entries_and_lock_on_posix(tmp_path) -> None:
+    root = tmp_path / "cache"
+    root.mkdir(mode=0o755)
+    cache = VectorCache(root)
+    key = cache.key_for("one", model_id="model", model_revision="rev")
+
+    cache.put(key, [3, 4], model_id="model", model_revision="rev")
+    cache.get(key)
+
+    entry = root / key[:2] / f"{key}.json"
+
+    def mode(path):
+        return stat.S_IMODE(path.stat().st_mode)
+
+    assert mode(root) == 0o700
+    assert mode(entry.parent) == 0o700
+    assert mode(entry) == 0o600
+    assert mode(root / ".cache.lock") == 0o600

@@ -1,0 +1,89 @@
+name: Bug report
+description: Report a reproducible defect using synthetic or already-public data.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a defect. **Do not paste private issue text, tracker exports, credentials,
+        raw reports, local paths, private repository names, or unredacted screenshots.** Reproduce the
+        problem with synthetic data before submitting it publicly. Report vulnerabilities through the
+        Security page instead.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I confirm this report contains only synthetic or clearly public project data.
+          required: true
+        - label: I removed credentials, local paths, private identifiers, and raw tracker/report content.
+          required: true
+  - type: input
+    id: embeadings-version
+    attributes:
+      label: emBEADings version and commit
+      placeholder: "0.4.1; commit abc1234 if testing a checkout"
+    validations:
+      required: true
+  - type: input
+    id: tracker-version
+    attributes:
+      label: Tracker source and version
+      placeholder: "Beads 1.0.5 or Linear"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Python version
+      placeholder: "macOS 15, Python 3.13"
+    validations:
+      required: true
+  - type: dropdown
+    id: command
+    attributes:
+      label: Command area
+      options:
+        - doctor or readiness
+        - triage
+        - collisions
+        - neighbors
+        - sweep or batch
+        - Linear adapter
+        - plugin wrapper
+        - packaging or installation
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the contract you expected without including private project details.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Summarize the failure. Redact content rather than pasting a raw report.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Provide safe commands or a link to a public reproduction repository.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Include only safe version/check results from `embead doctor --json`; inspect them before posting.
+      render: json
+    validations:
+      required: false

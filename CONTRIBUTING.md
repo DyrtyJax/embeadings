@@ -22,17 +22,31 @@ Issues often contain private product plans, customer context, incidents, and sou
 
 ## Development workflow
 
-Create a virtual environment, install the development extras, and run the same checks as CI:
+Each clone or Git worktree must own its virtual environment. Use the repository bootstrap so an
+active environment from a sibling checkout cannot silently run the wrong code:
 
 ```bash
-python -m venv .venv
-.venv/bin/python -m pip install -e ".[dev]"
-.venv/bin/python scripts/validate.py
+python3 scripts/worktree_env.py
+. .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python scripts/validate.py
 ```
 
 The validation script is the canonical contributor and agent entry point. It checks formatting,
-then lint, then the full test suite, and exits at the first failure. On Windows, use
-`.venv\\Scripts\\python scripts\\validate.py`.
+then lint, then the full test suite, and exits at the first failure. It also verifies that the editable
+`embead` import resolves to the current checkout. On Windows, use
+`.venv\\Scripts\\python scripts\\validate.py` after running the bootstrap.
 
 Integration examples and fixtures must use synthetic Beads workspaces. Keep model artifacts,
 vectors, and generated reports out of the repository.
+
+This public repository intentionally tracks Beads' own aggregate interaction audit file while
+dogfooding the tracker. The prohibition on committed logs applies to emBEADings run reports, private
+tracker exports, evaluator transcripts, local paths, and other generated operational data. Do not add
+raw issue text or private identifiers to the public Beads audit trail.
+
+Before opening a pull request:
+
+- run `python scripts/validate.py` from the checkout-local environment;
+- keep behavior changes covered by synthetic tests;
+- update schemas and examples together when a public artifact changes; and
+- confirm `git status --short` contains no cache, report, model, or private evaluation artifact.

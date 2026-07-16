@@ -78,6 +78,23 @@ Keep all output and platform cache/state directories outside the evaluated repos
 - cold/warm runtime, cache accounting, and peak memory;
 - tracker, Git-visible, and physical-storage non-mutation evidence.
 
+## Artifact persistence, permissions, and retention
+
+emBEADings writes derived data only to explicit output/checkpoint paths or platform cache and state
+locations. On POSIX systems, cache roots, cache shards, state roots, and run directories are restricted
+to the invoking user (`0700`); atomic cache entries, reports, and checkpoints are restricted to that
+user (`0600`). Existing managed roots and replaced artifact files are tightened to the same modes.
+Other platforms retain their native access-control behavior, so evaluators should place artifacts in
+a user-private location rather than a shared directory.
+
+Treat every artifact as potentially sensitive even though checkpoints omit issue text and the vector
+cache stores derived vectors rather than raw records. Reports and batch manifests can contain issue
+titles, identifiers, repository paths, and locally derived evidence. Run directories and checkpoints
+persist until the evaluator removes them; vector caches intentionally persist across runs to provide
+warm performance. For a disposable evaluation, delete the run directory and checkpoint immediately
+after recording aggregate findings, and delete the workspace's vector-cache root when warm reuse is
+no longer needed. Do not publish raw artifacts from a private corpus.
+
 Do not enable a pairwise reranker in this checkpoint. The first gate isolates whether objective
 separation and field-local candidate generation improve recall and review packaging. A later verifier
 must be evaluated symmetrically in both issue orders and against permutation stability.

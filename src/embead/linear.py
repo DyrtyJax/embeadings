@@ -18,6 +18,7 @@ from dataclasses import replace
 from typing import Any, Final, TypeAlias
 from uuid import UUID
 
+from ._version import __version__
 from .models import DependencyLink, IssueRecord, RelationDiagnostics, WorkspaceSnapshot
 from .trackers import TrackerError
 
@@ -131,7 +132,7 @@ class _HTTPTransport:
             headers={
                 "Authorization": self._authorization,
                 "Content-Type": "application/json",
-                "User-Agent": "embeadings/0.3.0",
+                "User-Agent": f"embeadings/{__version__}",
             },
             method="POST",
         )

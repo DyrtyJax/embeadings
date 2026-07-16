@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "embeadings"
 dynamic = ["version"]
-description = "Read-only semantic neighborhoods and coordination review for work trackers"
+description = "Local-first coordination review for Beads and Linear"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -44,9 +44,11 @@ embead = "embead.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/DyrtyJax/embeadings"
-Documentation = "https://github.com/DyrtyJax/embeadings#readme"
+Documentation = "https://github.com/DyrtyJax/embeadings/blob/main/docs/README.md"
 Issues = "https://github.com/DyrtyJax/embeadings/issues"
 Repository = "https://github.com/DyrtyJax/embeadings.git"
+Changelog = "https://github.com/DyrtyJax/embeadings/blob/main/CHANGELOG.md"
+Releases = "https://github.com/DyrtyJax/embeadings/releases"
 
 [tool.hatch.version]
 path = "src/embead/_version.py"
@@ -56,6 +58,13 @@ packages = ["src/embead"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "schemas/v1" = "embead/schemas/v1"
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "src",
+  "schemas",
+  "LICENSE",
+]
 
 [tool.pytest.ini_options]
 addopts = "-q"

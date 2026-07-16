@@ -51,23 +51,26 @@ and evaluative rather than architectural rewrites:
 
 ## Recommendations
 
-### Do next
+### Original recommendations and current status
 
-1. **Evaluation harness and baselines.** Expand the synthetic corpus into task-level relevance cases.
+This July 2026 sweep helped define the initial roadmap. Several recommendations below are now
+shipped; the list is retained as decision history rather than presented as the current queue.
+
+1. **Evaluation harness and baselines — shipped and evolving.** Expand the synthetic corpus into task-level relevance cases.
    Compare Model2Vec with Beads mechanical duplicate search, keyword overlap, and one FastEmbed ONNX
    model. Record recall@k, false-positive categories, cold/warm time, cache behavior, and artifact
    size. Commit raw synthetic inputs and deterministic results.
-2. **Explainability and counterevidence.** Reports should state which canonical fields contributed,
+2. **Explainability and counterevidence — shipped.** Reports should state which canonical fields contributed,
    show structural relationships/differences, and surface parent-child or explicit later-phase
    language as counterevidence. Similarity alone should never be the explanation.
-3. **Doctor and cache status.** Add read-only diagnostics for Beads compatibility, workspace identity,
+3. **Doctor and cache status — doctor shipped; detailed cache status/repair deferred.** Add read-only diagnostics for Beads compatibility, workspace identity,
    provider/model availability, cache hits/misses/corruption, stale/deleted entries, and output paths.
    Add an explicit repair/purge command that touches only emBEADings state.
-4. **Worktree and move tests.** Verify that the Beads `project_id` namespaces state across sibling
+4. **Worktree and move tests — partially shipped.** Verify that the Beads `project_id` namespaces state across sibling
    worktrees and repository moves, while different projects never share vectors accidentally.
-5. **Structural filter parity.** Implement the promised status, priority, label, parent, ready, and
+5. **Structural filter parity — evidence-gated.** Implement the promised status, priority, label, parent, ready, and
    explicit-ID population filters by translating them to allowlisted `bd list --json` operations.
-6. **Interoperability contract.** Publish JSON Schemas and example manifests, with a capability/version
+6. **Interoperability contract — shipped.** Publish JSON Schemas and example manifests, with a capability/version
    handshake for consumers. Keep runtime-specific dispatch in separate packages.
 
 ### Evaluate before adopting

@@ -176,6 +176,32 @@ def test_non_parent_relation_is_not_hidden_by_parent_child_on_same_pair() -> Non
     result.dependency_funnel.validate()
 
 
+def test_typed_parent_child_is_not_reintroduced_by_legacy_dependency_projection() -> None:
+    parent = IssueRecord(id="A", title="A", status="open")
+    child = IssueRecord(
+        id="B",
+        title="B",
+        status="open",
+        parent_id="A",
+        dependencies=("A",),
+        dependency_links=(DependencyLink("B", "A", "parent-child"),),
+    )
+
+    result = rank_candidates(
+        (parent, child),
+        (parent, child),
+        Scores({("A", "B"): 0.9}),
+        policy(),
+    )
+
+    assert result.dependency_funnel is not None
+    assert result.dependency_funnel.total_non_parent_typed == 0
+    assert result.dependency_funnel.eligible_candidates == 0
+    assert result.lanes["dependency"].qualified == 0
+    assert all(candidate["lane"] != "dependency" for candidate in result.candidates)
+    result.dependency_funnel.validate()
+
+
 def test_dependency_conservation_error_receipt_contains_counts_only() -> None:
     funnel = DependencyFunnel(
         total_non_parent_typed=2,

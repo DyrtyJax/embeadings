@@ -1023,7 +1023,13 @@ def _direct_relationships(issue: Any, target_id: str) -> tuple[str, ...]:
         for link in tuple(getattr(issue, "dependency_links", ()) or ())
         if getattr(link, "target_id", None) == target_id
     }
-    if target_id in tuple(getattr(issue, "dependencies", ()) or ()):
+    # ``dependencies`` is the legacy untyped projection of dependency_links.
+    # Once the source supplies any typed relationship for this endpoint, that
+    # typed fact is authoritative. Otherwise a parent-child link projected into
+    # ``dependencies`` is incorrectly reintroduced as a second ``depends-on``
+    # edge and the selection metrics count a structural candidate that the
+    # typed-edge discovery funnel correctly excluded.
+    if not relationships and target_id in tuple(getattr(issue, "dependencies", ()) or ()):
         relationships.add("depends-on")
     return tuple(sorted(relationships))
 

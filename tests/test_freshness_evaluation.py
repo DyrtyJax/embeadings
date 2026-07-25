@@ -61,6 +61,24 @@ def test_shadow_packet_ranks_actions_without_changing_the_fixed_pool() -> None:
     assert packet["prefixes"]["top_10_is_strict_prefix_of_top_20"] is False
     assert {item["legacy_position"] for item in packet["ranked_candidates"]} == {1, 2}
     assert packet["summary"]["reviewed_endpoint_count"] == 4
+    assert packet["review_queues"] == {
+        "action": {
+            "budget": 20,
+            "available_count": 1,
+            "emitted_count": 1,
+            "omitted_count": 0,
+            "stopping_reason": "source-exhausted",
+            "candidate_ids": ["possible-overlap|A|B"],
+        },
+        "informational": {
+            "budget": 20,
+            "available_count": 1,
+            "emitted_count": 1,
+            "omitted_count": 0,
+            "stopping_reason": "source-exhausted",
+            "candidate_ids": ["possible-overlap|C|D"],
+        },
+    }
 
 
 def test_reverse_active_consumer_is_bounded_counterevidence() -> None:
@@ -156,6 +174,78 @@ def test_top_10_is_a_strict_prefix_of_top_20_when_the_pool_is_large_enough() -> 
     assert packet["prefixes"]["top_10_is_strict_prefix_of_top_20"] is True
 
 
+@pytest.mark.parametrize(
+    ("action_count", "action_budget", "expected_emitted", "expected_stop"),
+    [
+        (0, 20, 0, "source-exhausted"),
+        (3, 20, 3, "source-exhausted"),
+        (10, 10, 10, "source-exhausted"),
+        (21, 20, 20, "budget-reached"),
+    ],
+)
+def test_action_queue_is_sparse_and_never_backfilled(
+    action_count: int,
+    action_budget: int,
+    expected_emitted: int,
+    expected_stop: str,
+) -> None:
+    action_issues = tuple(
+        endpoint
+        for index in range(action_count)
+        for endpoint in (
+            issue(f"A-{index}", f"Duplicate work {index}"),
+            issue(f"B-{index}", f"Duplicate work {index}"),
+        )
+    )
+    informational_issues = (
+        issue("INFO-A", "Command argument builder"),
+        issue("INFO-B", "Command palette"),
+    )
+    pool = (
+        *(candidate(f"A-{index}", f"B-{index}") for index in range(action_count)),
+        candidate("INFO-A", "INFO-B"),
+    )
+
+    packet = build_freshness_shadow_packet(
+        pool,
+        (*action_issues, *informational_issues),
+        action_budget=action_budget,
+        informational_budget=1,
+    )
+
+    action = packet["review_queues"]["action"]
+    informational = packet["review_queues"]["informational"]
+    assert action["available_count"] == action_count
+    assert action["emitted_count"] == expected_emitted
+    assert action["stopping_reason"] == expected_stop
+    assert len(action["candidate_ids"]) == expected_emitted
+    assert informational["candidate_ids"] == ["possible-overlap|INFO-A|INFO-B"]
+    assert not set(action["candidate_ids"]) & set(informational["candidate_ids"])
+
+
+def test_action_and_informational_budgets_are_independent() -> None:
+    issues = tuple(issue(f"I-{index}", f"Distinct {index}") for index in range(12))
+    pool = tuple(candidate(f"I-{index}", f"I-{index + 6}") for index in range(6))
+
+    packet = build_freshness_shadow_packet(
+        pool,
+        issues,
+        action_budget=0,
+        informational_budget=2,
+    )
+
+    assert packet["review_queues"]["action"]["candidate_ids"] == []
+    assert packet["review_queues"]["action"]["stopping_reason"] == "source-exhausted"
+    assert packet["review_queues"]["informational"]["emitted_count"] == 2
+    assert packet["review_queues"]["informational"]["omitted_count"] == 4
+    assert packet["review_queues"]["informational"]["stopping_reason"] == "budget-reached"
+    assert packet["evaluation_rubric"]["queue_ratings"]["action"] == [
+        "actionable",
+        "likely_action_correct",
+        "known_positive_retained",
+    ]
+
+
 def test_fixed_pool_rejects_duplicates_and_unknown_endpoints() -> None:
     issues = (issue("A", "Alpha"), issue("B", "Beta"))
     duplicate = candidate("A", "B")
@@ -164,3 +254,5 @@ def test_fixed_pool_rejects_duplicates_and_unknown_endpoints() -> None:
         build_freshness_shadow_packet((duplicate, duplicate), issues)
     with pytest.raises(ValueError, match="absent"):
         build_freshness_shadow_packet((candidate("A", "C"),), issues)
+    with pytest.raises(ValueError, match="non-negative"):
+        build_freshness_shadow_packet((), (), action_budget=-1)

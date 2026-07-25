@@ -20,7 +20,7 @@ from .freshness_policy import (
     classify_freshness,
 )
 
-SHADOW_POLICY_VERSION = 1
+SHADOW_POLICY_VERSION = 2
 ACTIVE_STATUSES = frozenset({"open", "in_progress", "blocked", "deferred"})
 _ACTION_PRIORITY = {
     "duplicate": 0,
@@ -109,6 +109,22 @@ def _fingerprint(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _queue_receipt(items: Sequence[Mapping[str, Any]], *, budget: int) -> dict[str, Any]:
+    emitted = items[:budget]
+    available_count = len(items)
+    emitted_count = len(emitted)
+    return {
+        "budget": budget,
+        "available_count": available_count,
+        "emitted_count": emitted_count,
+        "omitted_count": available_count - emitted_count,
+        "stopping_reason": (
+            "source-exhausted" if emitted_count == available_count else "budget-reached"
+        ),
+        "candidate_ids": [str(item["candidate_id"]) for item in emitted],
+    }
+
+
 def build_freshness_shadow_packet(
     candidates: Sequence[Mapping[str, Any]],
     issues: Sequence[Any],
@@ -116,11 +132,15 @@ def build_freshness_shadow_packet(
     relationship_scope_complete: bool = True,
     structure_degraded: bool = False,
     context_limit: int = 4,
+    action_budget: int = 20,
+    informational_budget: int = 20,
 ) -> dict[str, Any]:
     """Compare legacy and freshness order from one fixed candidate sequence."""
 
     if context_limit < 1:
         raise ValueError("context_limit must be positive")
+    if action_budget < 0 or informational_budget < 0:
+        raise ValueError("freshness review budgets must be non-negative")
     issues_by_id = {_issue_id(issue): issue for issue in issues}
     if "" in issues_by_id or len(issues_by_id) != len(issues):
         raise ValueError("freshness evaluation requires unique non-empty issue IDs")
@@ -188,6 +208,8 @@ def build_freshness_shadow_packet(
     top_20 = [str(item["candidate_id"]) for item in ranked[:20]]
     action_counts = Counter(str(item["likely_action"]) for item in ranked)
     tier_counts = Counter(str(item["review_tier"]) for item in ranked)
+    action_items = [item for item in ranked if item["review_tier"] == "action"]
+    informational_items = [item for item in ranked if item["review_tier"] == "informational"]
     reviewed_endpoint_ids = {
         endpoint_id
         for item in ranked
@@ -215,6 +237,13 @@ def build_freshness_shadow_packet(
                 len(top_20) > len(top_10) and top_20[: len(top_10)] == top_10
             ),
         },
+        "review_queues": {
+            "action": _queue_receipt(action_items, budget=action_budget),
+            "informational": _queue_receipt(
+                informational_items,
+                budget=informational_budget,
+            ),
+        },
         "summary": {
             "by_likely_action": dict(sorted(action_counts.items())),
             "by_review_tier": dict(sorted(tier_counts.items())),
@@ -238,6 +267,17 @@ def build_freshness_shadow_packet(
                 "relationship_explained_false_concern_limit": 2,
             },
             "reviewer_minutes_limit": 25,
+            "queue_ratings": {
+                "action": [
+                    "actionable",
+                    "likely_action_correct",
+                    "known_positive_retained",
+                ],
+                "informational": [
+                    "useful",
+                    "relationship_explained_false_concern",
+                ],
+            },
             "ratings": [
                 "actionable",
                 "useful",

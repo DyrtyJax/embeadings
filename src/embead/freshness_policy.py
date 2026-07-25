@@ -47,6 +47,31 @@ _REFERENCE_CUE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+_LINEAGE_BEFORE_REFERENCE_CUE = re.compile(
+    r"\b(?:decision|split)\s+from[\s:,\-–—()]*$",
+    re.IGNORECASE,
+)
+_REREVIEW_BEFORE_REFERENCE_CUE = re.compile(
+    r"\b(?:found\s+by(?:\s+an?)?\s+)?re[\s-]?review(?:ed|ing)?"
+    r"(?:\s+of)?[\s:,\-–—()]*$",
+    re.IGNORECASE,
+)
+_REREVIEW_AFTER_REFERENCE_CUE = re.compile(
+    r"^[\s:,\-–—()]{0,16}re[\s-]?review(?:ed|ing)?\b",
+    re.IGNORECASE,
+)
+_REMOVED_BUT_AFTER_REFERENCE_CUE = re.compile(
+    r"^[\s:,\-–—()]{0,16}removed\b[\s\S]{0,64}\bbut\b",
+    re.IGNORECASE,
+)
+_FROM_BEFORE_REFERENCE_CUE = re.compile(
+    r"\bfrom[\s:,\-–—()]*$",
+    re.IGNORECASE,
+)
+_ADVERSARIAL_REVIEW_AFTER_REFERENCE_CUE = re.compile(
+    r"^[\s:,\-–—()]{0,16}adversarial\s+review\b",
+    re.IGNORECASE,
+)
 _EVIDENCE_ORDER = (
     "direct-parent-child",
     "direct-blocks",
@@ -63,6 +88,10 @@ _EVIDENCE_ORDER = (
     "lifecycle-active-active",
     "lifecycle-active-closed",
     "lifecycle-unknown",
+    "candidate-possible-overlap",
+    "candidate-completed-work-echo",
+    "reciprocal-local-evidence",
+    "semantic-threshold-admission",
     "semantic-candidate-only",
     "no-actionable-evidence",
 )
@@ -185,6 +214,7 @@ def classify_freshness(
         common_codes.add("lifecycle-unknown")
 
     if semantic_candidate:
+        common_codes.update(_semantic_candidate_codes(candidate_evidence))
         common_codes.add("semantic-candidate-only")
     if not exact_title and not references_with_cue:
         common_codes.add("no-actionable-evidence")
@@ -246,9 +276,28 @@ def _references_with_bounded_cue(issue: Any, target_id: str) -> bool:
         for match in boundary.finditer(text):
             start = max(0, match.start() - _REFERENCE_WINDOW)
             end = min(len(text), match.end() + _REFERENCE_WINDOW)
-            if _REFERENCE_CUE.search(text[start:end]):
+            before = text[start : match.start()]
+            after = text[match.end() : end]
+            if _reference_has_bounded_cue(before, after):
                 return True
     return False
+
+
+def _reference_has_bounded_cue(before: str, after: str) -> bool:
+    # Keep a token between the two sides so removing the identifier cannot
+    # synthesize a cue such as "builds on" from words that surrounded it.
+    if _REFERENCE_CUE.search(f"{before} issue-reference {after}"):
+        return True
+    if _LINEAGE_BEFORE_REFERENCE_CUE.search(before):
+        return True
+    if _REREVIEW_BEFORE_REFERENCE_CUE.search(before) or _REREVIEW_AFTER_REFERENCE_CUE.search(after):
+        return True
+    if _REMOVED_BUT_AFTER_REFERENCE_CUE.search(after):
+        return True
+    return bool(
+        _FROM_BEFORE_REFERENCE_CUE.search(before)
+        and _ADVERSARIAL_REVIEW_AFTER_REFERENCE_CUE.search(after)
+    )
 
 
 def _normalized_title(issue: Any) -> str:
@@ -283,6 +332,32 @@ def _has_semantic_candidate_evidence(candidate_evidence: Mapping[str, Any] | Non
         "completed-work-echo",
         "possible-overlap",
     }
+
+
+def _semantic_candidate_codes(candidate_evidence: Mapping[str, Any] | None) -> set[str]:
+    if not candidate_evidence:
+        return set()
+    codes: set[str] = set()
+    kind = str(candidate_evidence.get("kind", "")).strip().casefold()
+    if kind == "possible-overlap":
+        codes.add("candidate-possible-overlap")
+    elif kind == "completed-work-echo":
+        codes.add("candidate-completed-work-echo")
+
+    admission_reason = str(candidate_evidence.get("admission_reason", "")).strip().casefold()
+    if admission_reason == "semantic-threshold":
+        codes.add("semantic-threshold-admission")
+    elif admission_reason == "reciprocal-neighbor-threshold-exception":
+        signal_quality = str(candidate_evidence.get("signal_quality", "")).strip().casefold()
+        reciprocal_evidence = str(candidate_evidence.get("reciprocal_evidence", "")).strip()
+        if signal_quality == "discriminative-local-evidence" and reciprocal_evidence in {
+            "discriminative-field-phrase",
+            "discriminative-title-alignment",
+            "discriminative-title-token",
+            "sparse-title-alignment",
+        }:
+            codes.add("reciprocal-local-evidence")
+    return codes
 
 
 def _normalize_relationship_type(value: str) -> str:

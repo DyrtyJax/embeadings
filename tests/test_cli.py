@@ -5,6 +5,7 @@ from argparse import Namespace
 
 import pytest
 
+import embead.ranking as ranking_module
 from embead import __version__, cli
 from embead.models import DependencyLink, IssueRecord, WorkspaceSnapshot
 from embead.provider import HashingProvider
@@ -243,6 +244,11 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema_version"] == 1
+    assert payload["artifact_output"] == {
+        "mode": "artifact-directory",
+        "format": "json-and-markdown",
+    }
+    assert payload["output_directory"] == str(output)
     assert payload["parameters"]["candidate_policy"]["max_per_issue"] == 3
     assert payload["parameters"]["candidate_policy"]["max_echoes_per_target"] == 2
     assert payload["parameters"]["candidate_policy"]["max_echo_alternatives_per_active"] == 3
@@ -277,6 +283,90 @@ def test_sweep_writes_versioned_reports_outside_workspace(monkeypatch, tmp_path,
     assert list(output.glob("batch-*.json")) == []
 
 
+@pytest.mark.parametrize(
+    ("command", "report_type"),
+    [
+        ("sweep", "sweep"),
+        ("batch", "sweep"),
+        ("triage", "triage"),
+    ],
+)
+def test_multi_artifact_commands_honor_json_report_file(
+    monkeypatch, tmp_path, capsys, command, report_type
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    output = tmp_path / f"{command}.json"
+
+    assert cli.main([command, "--output", str(output), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert output.is_file()
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
+    assert payload["report_type"] == report_type
+    assert payload["artifact_output"] == {
+        "mode": "report-file",
+        "format": "json",
+    }
+    if report_type == "triage":
+        assert payload["source_report"]["model"]["model_revision"] == "1"
+        assert "parameters" not in payload["source_report"]
+    assert not (tmp_path / "state").exists()
+
+
+def test_sweep_report_file_extension_controls_format_independently_of_stdout(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    output = tmp_path / "sweep.md"
+
+    assert cli.main(["sweep", "--output", str(output), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["artifact_output"] == {
+        "mode": "report-file",
+        "format": "markdown",
+    }
+    assert output.read_text(encoding="utf-8").startswith("# emBEADings sweep")
+    assert not output.is_dir()
+
+
+def test_sweep_output_dir_is_unambiguous_and_complete(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    output = tmp_path / "report.json"
+
+    assert cli.main(["sweep", "--output-dir", str(output), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert output.is_dir()
+    assert payload["artifact_output"] == {
+        "mode": "artifact-directory",
+        "format": "json-and-markdown",
+    }
+    assert payload["output_directory"] == str(output)
+    assert (output / "report.json").is_file()
+    assert (output / "report.md").is_file()
+
+
+def test_sweep_rejects_conflicting_output_spellings(capsys) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["sweep", "--output", "report.json", "--output-dir", "artifacts"])
+
+    assert raised.value.code == 2
+    assert "not allowed with argument --output" in capsys.readouterr().err
+
+
+def test_analysis_help_distinguishes_report_files_from_artifact_directories(capsys) -> None:
+    with pytest.raises(SystemExit) as raised:
+        cli.main(["sweep", "--help"])
+
+    assert raised.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--output PATH" in help_text
+    assert "--output-dir DIRECTORY" in help_text
+    assert "Write one .json/.md report file" in help_text
+    assert "complete report and per-batch artifact set" in help_text
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not portable")
 def test_sweep_restricts_run_reports_and_state_root_on_posix(monkeypatch, tmp_path, capsys) -> None:
     _configure(monkeypatch, tmp_path)
@@ -295,6 +385,17 @@ def test_sweep_restricts_run_reports_and_state_root_on_posix(monkeypatch, tmp_pa
     assert mode(run) == 0o700
     assert mode(run / "report.json") == 0o600
     assert mode(run / "report.md") == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits are not portable")
+def test_sweep_restricts_explicit_report_file_on_posix(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    output = tmp_path / "report.json"
+
+    assert cli.main(["sweep", "--output", str(output), "--json"]) == 0
+    capsys.readouterr()
+
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
 
 
 def test_triage_is_opinionated_compact_and_deterministic(monkeypatch, tmp_path, capsys) -> None:
@@ -344,6 +445,116 @@ def test_triage_is_opinionated_compact_and_deterministic(monkeypatch, tmp_path, 
     assert json.loads((first_output / "triage.json").read_text()) == first
     full_report = json.loads((first_output / "report.json").read_text())
     assert full_report["analysis_fingerprint"] == first["analysis_fingerprint"]
+
+
+def test_triage_returns_semantic_lanes_with_count_only_degradation_receipt(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    original = ranking_module._dependency_discovery_funnel
+
+    def broken_funnel(*args, enabled, **kwargs):
+        if enabled:
+            return ranking_module.DependencyFunnel(
+                total_non_parent_typed=1,
+                eligible=1,
+                eligible_candidates=2,
+            )
+        return original(*args, enabled=enabled, **kwargs)
+
+    monkeypatch.setattr(ranking_module, "_dependency_discovery_funnel", broken_funnel)
+    output = tmp_path / "degraded-triage"
+    repeat_output = tmp_path / "degraded-triage-repeat"
+
+    def run(target):
+        assert (
+            cli.main(
+                [
+                    "--provider",
+                    "hashing",
+                    "triage",
+                    "--output",
+                    str(target),
+                    "--json",
+                ]
+            )
+            == 0
+        )
+        return json.loads(capsys.readouterr().out)
+
+    packet = run(output)
+    repeated_packet = run(repeat_output)
+    report = json.loads((output / "report.json").read_text())
+    assert repeated_packet == packet
+    assert packet["analysis_status"] == "degraded"
+    assert packet["degradations"] == report["degradations"]
+    assert packet["degradations"][0]["stage"] == "edge-to-candidate"
+    assert packet["degradations"][0]["degraded_lanes"] == ["dependency"]
+    assert packet["degradations"][0]["retained_lanes"] == ["echo", "overlap"]
+    assert set(packet["degradations"][0]["counts"]) == {
+        "total_non_parent_typed",
+        "inactive_or_closed_only",
+        "below_qualification",
+        "eligible",
+        "eligible_candidates",
+        "coalesced_eligible_edges",
+        "admitted",
+        "omitted_by_per_issue_cap",
+        "omitted_by_lane_cap",
+        "omitted_by_run_cap",
+    }
+    assert packet["lane_summary"]["dependency"] == {
+        "qualified": 0,
+        "admitted": 0,
+        "omitted": 0,
+    }
+    assert {candidate["lane"] for candidate in packet["candidates"]} <= {"echo", "overlap"}
+    assert "Dependency lane unavailable" in "\n".join(packet["warnings"])
+    assert "Analysis status: **degraded**" in (output / "triage.md").read_text()
+
+
+def test_degraded_triage_report_file_retains_diagnostic_provenance(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    original = ranking_module._dependency_discovery_funnel
+
+    def broken_funnel(*args, enabled, **kwargs):
+        if enabled:
+            return ranking_module.DependencyFunnel(
+                total_non_parent_typed=1,
+                eligible=1,
+                eligible_candidates=2,
+            )
+        return original(*args, enabled=enabled, **kwargs)
+
+    monkeypatch.setattr(ranking_module, "_dependency_discovery_funnel", broken_funnel)
+    output = tmp_path / "degraded-triage.json"
+
+    assert (
+        cli.main(
+            [
+                "--provider",
+                "hashing",
+                "triage",
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    packet = json.loads(capsys.readouterr().out)
+    assert json.loads(output.read_text(encoding="utf-8")) == packet
+    assert packet["analysis_status"] == "degraded"
+    assert packet["source_report"]["analysis_fingerprint"] == packet["analysis_fingerprint"]
+    assert packet["source_report"]["model"] == {
+        "model_id": "hashing/32",
+        "model_revision": "1",
+    }
+    assert packet["source_report"]["parameters"]["candidate_policy"]["max_total"] == 20
+    assert packet["degradations"][0]["stage"] == "edge-to-candidate"
 
 
 def test_empty_structure_sweep_skips_embeddings_and_preserves_funnel(
@@ -405,6 +616,8 @@ def test_empty_structure_sweep_skips_embeddings_and_preserves_funnel(
         "inactive_or_closed_only": 1,
         "below_qualification": 0,
         "eligible": 0,
+        "eligible_candidates": 0,
+        "coalesced_eligible_edges": 0,
         "admitted": 0,
         "omitted_by_per_issue_cap": 0,
         "omitted_by_lane_cap": 0,

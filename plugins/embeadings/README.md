@@ -13,6 +13,10 @@ newer, forces JSON output, rejects report/checkpoint file writes, and verifies t
 read-only contract before returning a report to the agent. It is the canonical launcher on Windows,
 macOS, and Linux. `scripts/run-embeadings` is only a POSIX convenience shim.
 
+Both `--output` and `--output-dir` are disabled at this boundary; the standalone CLI supports them,
+but plugin reports return through stdout so the host cannot accidentally create private artifacts in
+the repository.
+
 ## Prerequisites
 
 - Python 3.11 or later;

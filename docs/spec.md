@@ -102,10 +102,15 @@ embead doctor [--offline]
 embead capabilities [--json]
 ```
 
-All analysis commands are synchronous. `--json` selects machine-readable stdout; `--output`
-selects an explicit external artifact path where supported. `triage` is the opinionated bounded
-front door, while `sweep` exposes research and policy controls. `batch` is currently an alias for a
-synchronous sweep, not a separate scheduler.
+All analysis commands are synchronous. `--json` selects machine-readable stdout. For the
+multi-artifact `triage`, `sweep`, and `batch` commands, `--output-dir DIRECTORY` writes the complete
+JSON, Markdown, and per-batch set; `--output REPORT.json` or `--output REPORT.md` writes only the
+primary report in the extension-selected format. Extensionless `--output PATH` remains a
+backward-compatible directory spelling, as does any other non-report suffix. `neighbors` and
+`collisions` use `--output FILE` for their
+single atomic report, whose format follows `--json`. `triage` is the opinionated bounded front door,
+while `sweep` exposes research and policy controls. `batch` is currently an alias for a synchronous
+sweep, not a separate scheduler.
 
 Common population controls are deliberately narrower than the original proposal. `triage`,
 `sweep`, `batch`, and `collisions` accept stored status filters and optional epic inclusion where
@@ -125,9 +130,9 @@ scores as advisory. JSON output includes the embedding model and index generatio
 ### `triage`, `sweep`, and `batch`
 
 ```bash
-embead triage [--review-budget 20] [--size 9]
-embead sweep [--status STATUS] [--size 9] [--output PATH]
-embead batch [--status STATUS] [--size 9] [--output PATH]
+embead triage [--review-budget 20] [--size 9] [--output-dir DIRECTORY]
+embead sweep [--status STATUS] [--size 9] [--output-dir DIRECTORY]
+embead batch [--status STATUS] [--size 9] [--output-dir DIRECTORY]
 ```
 
 Builds deterministic, bounded semantic neighborhoods from a candidate population. Population

@@ -170,7 +170,11 @@ def _embedding_check(
     detail = (
         "Pinned model artifacts are present in the local Hugging Face cache."
         if cached
-        else "Pinned model artifacts are absent; a semantic command may download them."
+        else (
+            "Pinned model artifacts are absent. Run `embead readiness --json` to fetch them "
+            "before loading tracker issues; use `embead readiness --offline --json` to verify "
+            "a prepared cache without network access."
+        )
     )
     return {
         "status": status,

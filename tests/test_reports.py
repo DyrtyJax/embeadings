@@ -441,6 +441,8 @@ def test_triage_packet_is_compact_deterministic_and_traceable() -> None:
     assert first["analysis_fingerprint"] == second["analysis_fingerprint"]
     assert first_packet == second_packet
     assert first_packet["source_report"]["analysis_fingerprint"] == first["analysis_fingerprint"]
+    assert first_packet["source_report"]["model"] == MODEL
+    assert "parameters" not in first_packet["source_report"]
     assert "PRIVATE BODY" not in json.dumps(first_packet)
     assert first_packet["candidates"][0]["candidate_id"] == ("completed-work-echo|bd-1|bd-2")
     markdown = render_triage_markdown(first_packet)

@@ -32,11 +32,11 @@ read -rs "LINEAR_API_KEY?Linear API key: " && export LINEAR_API_KEY && printf '\
 
 embead --source linear --linear-team "$LINEAR_TEAM_UUID" \
   sweep --weekly-review-budget 20 --code-surfaces --json \
-  --output "$RUN_DIR/uuid-default"
+  --output-dir "$RUN_DIR/uuid-default"
 
 embead --source linear --linear-team "$LINEAR_TEAM_KEY" \
   sweep --weekly-review-budget 20 --code-surfaces --json \
-  --output "$RUN_DIR/key-repeat"
+  --output-dir "$RUN_DIR/key-repeat"
 ```
 
 Each sweep output is a directory; compare its `report.json` and batch artifacts. The UUID and key

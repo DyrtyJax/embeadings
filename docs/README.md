@@ -32,6 +32,7 @@ package version. Reports are advisory and must not grant tracker-write authority
 - [Private Linear protocol](evaluation-linear.md)
 - [Large-corpus and ICP protocol](evaluation-large-corpus.md)
 - [Ranked evaluation preparation](../scripts/prepare_ranked_evaluation.py)
+- [Freshness v1 shadow protocol](research/freshness-v1-shadow-protocol.md)
 
 Keep raw tracker data, worktree mappings, reports, caches, prompts, and ratings outside both the
 embeadings checkout and the evaluated repository. Publish only aggregate results that the repository

@@ -10,6 +10,11 @@ CLI. Support two installation modes from that one artifact:
 - persistent: `uv tool install embeadings` or `pipx install embeadings`;
 - one-shot: `uvx --from 'embeadings==VERSION' embead ...`.
 
+There is **no secondary distribution channel** in this decision. npm, standalone executables, and
+Homebrew remain rejected proposals rather than partially supported preview channels. The next review
+requires measured adoption evidence; package-name availability and maintainer curiosity are not
+promotion signals.
+
 For an interactive trial, an unpinned resolution is acceptable:
 
 ```bash
@@ -78,6 +83,32 @@ The following checks were made from a clean checkout at `0cc98e7`:
 - `npm view embeadings` returned `E404` on 2026-07-25. The unscoped name was unoccupied at that moment;
   availability can change and is not a reason to ship a placeholder or incomplete package.
 
+The repository also has a fresh-distribution CI gate. On every pull request and `main` push, clean
+GitHub-hosted Ubuntu, macOS, and Windows runners now:
+
+1. build a wheel and source distribution from that checkout;
+2. install the wheel into an isolated `uv tool` root;
+3. verify `--version`, corpus-free `doctor`, and the capabilities contract;
+4. exercise the same checks through `uvx --from PATH/TO/WHEEL`;
+5. uninstall the persistent tool and prove the command is no longer discoverable; and
+6. delete the isolated home, tool, cache, and state roots.
+
+The gate pins uv and the build frontend. It uses the local wheel because a pull-request revision does
+not exist on PyPI and must not be published merely to test installation. Each runner preserves a
+machine-readable `distribution-receipt-OS` artifact with:
+
+- artifact and resolved CLI versions;
+- Python, uv, and operating-system versions;
+- artifact size and materialized uv-cache size;
+- persistent install, version, capabilities, doctor, and uninstall timings;
+- one-shot version, capabilities, and doctor timings;
+- the explicit PATH intervention;
+- repository-status conservation and cleanup receipts; and
+- the limitations that were not measured.
+
+The matrix is considered measured only after all three jobs pass for the exact commit under review.
+Adding the workflow is not itself evidence that a particular run passed.
+
 The missing command reproduces the reported installation/PATH friction on one workstation. The same
 shell already had Node and npm, so npm would have reduced prerequisite setup for this user **if** it
 contained a standalone executable. It does not establish population-level demand for npm. Both
@@ -138,18 +169,26 @@ distribution.
 
 ### Stage 1 — verify fresh-session installation
 
-On clean macOS, Linux, and Windows environments, test:
+The required CI matrix now covers the bounded, corpus-free portion on clean macOS, Linux, and
+Windows environments:
 
-1. pinned uvx invocation;
-2. `uv tool install`, command discovery, upgrade, and uninstall;
-3. pipx install, command discovery, upgrade, and uninstall;
-4. `doctor` before model download;
-5. one offline semantic rerun after model prefetch; and
-6. the expected failure when `bd` is absent.
+1. pinned-artifact uvx invocation;
+2. `uv tool install`, command discovery, and uninstall;
+3. `doctor` before model download;
+4. capability negotiation; and
+5. cleanup plus repository non-mutation.
 
-Record time to first `doctor`, time to first triage, bytes downloaded, PATH intervention, error
-clarity, resolved package/CLI versions, and repository mutation. A successful command alone is not
-enough.
+The following remain external evaluation work because CI has neither a representative private corpus
+nor a tracker installation: pipx parity, upgrade from a previous published version, time to first
+semantic triage, model-prefetch and offline-repeat behavior, live `bd` discovery/failure, registry
+network-transfer bytes, registry provenance, and PATH repair across a real shell restart. The uv-cache
+size in the receipt is a repeatability and storage proxy, not network telemetry. Those limitations
+must not be described as passing because the corpus-free gate passes.
+
+Pipx remains a documented persistent alternative because it installs the identical PyPI wheel in an
+isolated environment. It is not independently certified by this matrix. A future pipx-specific defect
+or material evaluator demand is the trigger to add that second installer journey; duplicating every
+wheel assertion today would add CI time without testing a different artifact.
 
 ### Stage 2 — test standalone feasibility only when it buys reach
 
@@ -210,3 +249,22 @@ Stop the npm path if the standalone artifact:
 The next product evidence should come from the fresh-session plugin evaluation and native Beads ICP,
 not from registry count. Distribution should reduce a measured adoption barrier rather than become a
 parallel product.
+
+## Maintenance and rollback
+
+The supported-channel maintenance cost is one universal Python artifact, one console entry point, the
+existing PyPI trusted-publishing configuration, and three short distribution-journey jobs. Dependency
+updates to Python, uv, or the build frontend must keep the matrix green and update the recorded pin
+deliberately; they must not float in CI. Receipt artifacts are diagnostic evidence, not release
+artifacts and are governed by GitHub Actions retention.
+
+If the cross-platform gate becomes flaky, first distinguish registry/network setup from an artifact
+or CLI regression. A temporary rollback may remove only the failing runner or pin the last verified
+tool-runner version, with a tracking issue and the unsupported platform called out. It must not
+silently weaken the version, capabilities, doctor, uninstall, repository-conservation, or cleanup
+assertions on the remaining runners.
+
+If the channel decision itself is reversed, remove the secondary channel's publication job and mark
+its package deprecated before removing user-facing installation instructions. PyPI and the `embead`
+contract remain authoritative, so no secondary-channel rollback may require a schema fork or a second
+implementation. The current decision has no secondary package to unpublish or deprecate.

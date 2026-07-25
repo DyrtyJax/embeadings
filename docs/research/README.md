@@ -13,6 +13,7 @@ the report's rating rubric; it does not mean a confirmed collision or universal 
 | [Ruff review depth](ruff-review-depth-02.md) | Fixed-pool rating, recency scopes, and scale probe | Current precision-depth and performance evidence |
 | [Native Beads public diagnostic](beads-native-public-diagnostic-01.md) | Public Dolt-backed Beads tracker | Current structural diagnostic; not customer evidence |
 | [Objective-default decision](objective-default-public-decision-01.md) | Three public evaluator corpora | Current default-policy decision |
+| [Freshness v1 shadow protocol](freshness-v1-shadow-protocol.md) | Action-dense relationship-aware review | Implementation scaffold; evaluation pending |
 | [Retrieve–verify synthesis](retrieve-verify-context-2026.md) | Retrieval and model-context research | Current architectural rationale |
 
 ## Pilot history

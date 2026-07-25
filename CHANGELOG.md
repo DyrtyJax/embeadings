@@ -8,6 +8,10 @@
   lanes with deterministic, privacy-safe diagnostic receipts.
 - Distinguish complete artifact directories (`--output-dir`) from single JSON or Markdown report
   files (`--output`) while preserving legacy directory paths that do not use a report suffix.
+- Add shadow-only freshness evaluation primitives with bounded bidirectional relationship context,
+  conservative action labels, deterministic comparison packets, and no public behavior change.
+- Add fresh Ubuntu, macOS, and Windows distribution journeys for the canonical wheel through
+  persistent `uv tool` and one-shot `uvx`; retain the decision to ship no secondary channel yet.
 
 ## 0.4.2 — 2026-07-16
 

@@ -10,6 +10,10 @@
   files (`--output`) while preserving legacy directory paths that do not use a report suffix.
 - Add shadow-only freshness evaluation primitives with bounded bidirectional relationship context,
   conservative action labels, deterministic comparison packets, and no public behavior change.
+- Separate sparse freshness actions from independently budgeted informational discovery, recognize
+  audited explicit-lineage cues, and retain semantic-only uncertainty with finite admission receipts.
+- Prevent typed parent/child relationships from being reintroduced as legacy untyped dependencies,
+  restoring dependency-funnel conservation on the live self-dogfood tracker.
 - Add fresh Ubuntu, macOS, and Windows distribution journeys for the canonical wheel through
   persistent `uv tool` and one-shot `uvx`; retain the decision to ship no secondary channel yet.
 

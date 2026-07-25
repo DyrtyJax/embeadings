@@ -128,6 +128,20 @@ discovery breadth at sharply lower action density. The product should expose a s
 action queue and make the longer informational/discovery lane an explicit opt-in with its own
 budget and stopping signal.
 
+### Actionable-uncertainty audit
+
+The four actionable non-lineage misses did not support a safe new promotion rule. Two were unlinked
+active overlaps and two were active/closed implementation echoes, but their privacy-safe candidate
+receipts were semantic-threshold or reciprocal-local-evidence signatures also present among
+misleading pairs. Lifecycle, candidate kind, reciprocal admission, and cosine strength therefore
+do not identify a concrete shared contract on their own.
+
+Freshness-v2 retains these pairs as `uncertain` and records only finite evidence codes for candidate
+kind and admission path. No ordering promotion is made: recall for these four cases remains zero,
+false promotions remain zero, and the ordering delta is zero. A later recovery rule requires new
+locally derived contract evidence or independent field-level precision—not a broader similarity
+heuristic.
+
 ## Missed evidence
 
 Seven candidates contained an exact local reference to the other issue but remained `uncertain`.

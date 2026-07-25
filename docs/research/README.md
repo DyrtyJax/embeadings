@@ -12,8 +12,9 @@ the report's rating rubric; it does not mean a confirmed collision or universal 
 | [Ruff scale surrogate](ruff-scale-surrogate-01.md) | 8,143 converted public GitHub issues | Current scale/packet evidence; not native Beads validation |
 | [Ruff review depth](ruff-review-depth-02.md) | Fixed-pool rating, recency scopes, and scale probe | Current precision-depth and performance evidence |
 | [Native Beads public diagnostic](beads-native-public-diagnostic-01.md) | Public Dolt-backed Beads tracker | Current structural diagnostic; not customer evidence |
+| [Freshness v1 native public diagnostic](freshness-v1-native-public-01.md) | 2,187-record public native Beads snapshot | Revise; action-density and category gates failed |
 | [Objective-default decision](objective-default-public-decision-01.md) | Three public evaluator corpora | Current default-policy decision |
-| [Freshness v1 shadow protocol](freshness-v1-shadow-protocol.md) | Action-dense relationship-aware review | Implementation scaffold; evaluation pending |
+| [Freshness v1 shadow protocol](freshness-v1-shadow-protocol.md) | Action-dense relationship-aware review | Shadow-only; public diagnostic requires revision |
 | [Retrieve–verify synthesis](retrieve-verify-context-2026.md) | Retrieval and model-context research | Current architectural rationale |
 
 ## Pilot history

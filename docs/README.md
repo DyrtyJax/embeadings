@@ -8,6 +8,7 @@ complete; the research reports are supporting evidence, not required setup readi
 - [Project overview and quick start](../README.md)
 - [Synthetic output examples](../examples/README.md)
 - [Linear adapter](linear.md)
+- [Beads compatibility contract](beads-compatibility.md)
 - [Safe offline evaluation](evaluation.md)
 - [Performance and scale behavior](performance.md)
 
@@ -26,6 +27,7 @@ package version. Reports are advisory and must not grant tracker-write authority
 
 ## Evaluate a repository
 
+- [Fresh-session Codex and Claude Code plugin protocol](evaluation-agent-plugin.md)
 - [Private code-surface protocol](evaluation-code-surfaces.md)
 - [Private Linear protocol](evaluation-linear.md)
 - [Large-corpus and ICP protocol](evaluation-large-corpus.md)
@@ -40,6 +42,7 @@ owner has approved.
 - [Product and technical specification](spec.md)
 - [Ecosystem sweep](ecosystem-sweep.md)
 - [Embedding and storage decision](decisions/embedding-storage-alternatives.md)
+- [CLI distribution channels decision](decisions/cli-distribution-channels.md)
 - [Review-budget default decision](decisions/review-budget-default.md)
 - [Research and evaluation ledger](research/README.md)
 

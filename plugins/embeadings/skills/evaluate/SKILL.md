@@ -13,7 +13,8 @@ evaluation report.
 1. Run `python <plugin-root>/scripts/run_embeadings.py check` from the plugin root in this skill's installed
    path and record the CLI version.
 2. Before executing a report, independently identify likely duplicate work, missing sequencing, and
-   code-edit conflicts from the context available to you. Record that baseline privately.
+   code-edit conflicts from the context available to you. Record stable record pairs and concrete
+   actions privately, then seal the baseline before reading emBEADings output.
 3. From the implementation repository, run the triage and collision reports described by the other
    plugin skills. Default the semantic queue to twenty candidates unless the evaluation protocol
    specifies another budget.
@@ -34,7 +35,14 @@ misleading or irrelevant output. Calculate precision at `>=1` and at `2` for eac
 vocabulary-only matches, inspection-vs-edit path noise, hub effects, cap omissions, and whether the
 explanation names a concrete fact or contract to verify.
 
-Compare emBEADings-only findings with baseline-only findings. The final recommendation must answer:
+For code-surface leads, also keep exact-file and shared-module results separate, stratify
+explicit-only, observed-only, and corroborated evidence, and report results by `edit_intent`. Treat
+each `review_unit` in a `singleton-envelope` independently; siblings are not a semantic cluster.
+
+Compare emBEADings-only findings with baseline-only findings. Record whether each lead changed a
+decision, caused a new inspection, merely confirmed the baseline, or went unused. Account for known
+or baseline-discovered missed collisions without guessing an omission reason the report does not
+provide. The final recommendation must answer:
 
 - Did the bounded deterministic queue reduce review work or merely create another queue?
 - Did code and worktree evidence add information absent from the tracker?

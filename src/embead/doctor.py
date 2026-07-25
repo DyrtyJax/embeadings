@@ -47,14 +47,20 @@ def diagnose(
 def _source_check(source: str, linear_team: str | None) -> tuple[dict[str, Any], str | None]:
     if source == "linear":
         return _linear_source_check(linear_team), None
+    adapter = BeadsAdapter()
+    configured_binary = getattr(adapter, "binary", "bd")
+    resolve = getattr(adapter, "resolved_binary", None)
+    resolved_binary = resolve() if callable(resolve) else None
     try:
-        snapshot = BeadsAdapter().workspace_snapshot()
+        snapshot = adapter.workspace_snapshot()
     except (TrackerError, OSError, RuntimeError, ValueError) as exc:
         return {
             "name": "beads",
             "status": "blocked",
             "configured": False,
             "verified": False,
+            "configured_binary": configured_binary,
+            "resolved_binary": resolved_binary,
             "detail": str(exc),
         }, None
     return {
@@ -62,9 +68,13 @@ def _source_check(source: str, linear_team: str | None) -> tuple[dict[str, Any],
         "status": "ready",
         "configured": True,
         "verified": True,
+        "configured_binary": configured_binary,
+        "resolved_binary": resolved_binary,
         "tracker_version": snapshot.tracker_version or snapshot.beads_version,
         "workspace_identified": True,
-        "detail": "Beads context and version are readable through the read-only adapter.",
+        "detail": (
+            "Beads context and version satisfy the supported read-only JSON capability contract."
+        ),
     }, snapshot.workspace_id
 
 

@@ -6,6 +6,11 @@ from embead.provider import HashingProvider, Model2VecProvider
 
 
 class ReadyBeadsAdapter:
+    binary = "bd"
+
+    def resolved_binary(self) -> str:
+        return "/opt/tools/bd"
+
     def workspace_snapshot(self) -> WorkspaceSnapshot:
         return WorkspaceSnapshot(
             "workspace-doctor",
@@ -44,6 +49,8 @@ def test_doctor_is_corpus_free_and_reports_readiness(monkeypatch, tmp_path, caps
     assert payload["corpus_loaded"] is False
     assert payload["status"] == "ready"
     assert payload["source"]["tracker_version"] == "1.0.5"
+    assert payload["source"]["configured_binary"] == "bd"
+    assert payload["source"]["resolved_binary"] == "/opt/tools/bd"
     assert payload["embedding"]["artifacts_cached"] is True
     assert payload["cache"] == {
         "detail": (
@@ -142,3 +149,34 @@ def test_doctor_does_not_initialize_missing_cache(monkeypatch, tmp_path, capsys)
     capsys.readouterr()
 
     assert not vector_cache.exists()
+
+
+def test_beads_doctor_reports_executable_and_actionable_compatibility_failure(
+    monkeypatch, capsys
+) -> None:
+    class UnsupportedBeadsAdapter(ReadyBeadsAdapter):
+        binary = "custom-bd"
+
+        def resolved_binary(self) -> str:
+            return "/private/tools/custom-bd"
+
+        def workspace_snapshot(self) -> WorkspaceSnapshot:
+            raise doctor.TrackerError(
+                "Beads 1.0.4 is unsupported; emBEADings requires Beads >=1.0.5."
+            )
+
+    monkeypatch.setattr(doctor, "BeadsAdapter", UnsupportedBeadsAdapter)
+    monkeypatch.setattr(cli, "_provider", lambda _name: HashingProvider(dimension=8))
+
+    assert cli.main(["doctor", "--json"]) == 2
+
+    source = json.loads(capsys.readouterr().out)["source"]
+    assert source == {
+        "configured": False,
+        "configured_binary": "custom-bd",
+        "detail": "Beads 1.0.4 is unsupported; emBEADings requires Beads >=1.0.5.",
+        "name": "beads",
+        "resolved_binary": "/private/tools/custom-bd",
+        "status": "blocked",
+        "verified": False,
+    }

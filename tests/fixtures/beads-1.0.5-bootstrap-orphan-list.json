@@ -1,0 +1,25 @@
+[
+  {
+    "id": "bootstrap-child",
+    "title": "Bootstrap work discovered before its parent is present",
+    "description": "",
+    "status": "open",
+    "issue_type": "task",
+    "parent_id": "bootstrap-parent-not-in-snapshot",
+    "dependencies": [
+      {
+        "issue_id": "bootstrap-child",
+        "depends_on_id": "bootstrap-parent-not-in-snapshot",
+        "type": "parent-child"
+      }
+    ]
+  },
+  {
+    "id": "bootstrap-peer",
+    "title": "Independent bootstrap work",
+    "description": "",
+    "status": "open",
+    "issue_type": "task",
+    "dependencies": []
+  }
+]

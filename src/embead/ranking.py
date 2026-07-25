@@ -120,6 +120,8 @@ class DependencyFunnel:
     inactive_or_closed_only: int = 0
     below_qualification: int = 0
     eligible: int = 0
+    eligible_candidates: int = 0
+    coalesced_eligible_edges: int = 0
     admitted: int = 0
     omitted_by_per_issue_cap: int = 0
     omitted_by_lane_cap: int = 0
@@ -131,10 +133,68 @@ class DependencyFunnel:
 
     def validate(self) -> None:
         if self.total_non_parent_typed != self.excluded + self.eligible:
-            raise ValueError("typed dependency discovery funnel does not conserve")
+            raise DependencyConservationError("discovery", self)
+        if self.eligible != self.eligible_candidates + self.coalesced_eligible_edges:
+            raise DependencyConservationError("edge-to-candidate", self)
         omitted = self.omitted_by_per_issue_cap + self.omitted_by_lane_cap + self.omitted_by_run_cap
-        if self.eligible != self.admitted + omitted:
-            raise ValueError("typed dependency admission funnel does not conserve")
+        if self.eligible_candidates != self.admitted + omitted:
+            raise DependencyConservationError("admission", self)
+
+
+@dataclass(frozen=True, slots=True)
+class DependencyConservationReceipt:
+    """Count-only diagnostic for a dependency-lane accounting failure."""
+
+    stage: str
+    total_non_parent_typed: int
+    inactive_or_closed_only: int
+    below_qualification: int
+    eligible: int
+    eligible_candidates: int
+    coalesced_eligible_edges: int
+    admitted: int
+    omitted_by_per_issue_cap: int
+    omitted_by_lane_cap: int
+    omitted_by_run_cap: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "code": "typed-dependency-conservation-failed",
+            "lane": "dependency",
+            "stage": self.stage,
+            "counts": {
+                "total_non_parent_typed": self.total_non_parent_typed,
+                "inactive_or_closed_only": self.inactive_or_closed_only,
+                "below_qualification": self.below_qualification,
+                "eligible": self.eligible,
+                "eligible_candidates": self.eligible_candidates,
+                "coalesced_eligible_edges": self.coalesced_eligible_edges,
+                "admitted": self.admitted,
+                "omitted_by_per_issue_cap": self.omitted_by_per_issue_cap,
+                "omitted_by_lane_cap": self.omitted_by_lane_cap,
+                "omitted_by_run_cap": self.omitted_by_run_cap,
+            },
+        }
+
+
+class DependencyConservationError(ValueError):
+    """Typed dependency accounting failed without exposing tracker content."""
+
+    def __init__(self, stage: str, funnel: DependencyFunnel) -> None:
+        self.receipt = DependencyConservationReceipt(
+            stage=stage,
+            total_non_parent_typed=funnel.total_non_parent_typed,
+            inactive_or_closed_only=funnel.inactive_or_closed_only,
+            below_qualification=funnel.below_qualification,
+            eligible=funnel.eligible,
+            eligible_candidates=funnel.eligible_candidates,
+            coalesced_eligible_edges=funnel.coalesced_eligible_edges,
+            admitted=funnel.admitted,
+            omitted_by_per_issue_cap=funnel.omitted_by_per_issue_cap,
+            omitted_by_lane_cap=funnel.omitted_by_lane_cap,
+            omitted_by_run_cap=funnel.omitted_by_run_cap,
+        )
+        super().__init__(f"typed dependency {stage} funnel does not conserve")
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +214,7 @@ class CandidateRanking:
     reciprocal_diagnostics: dict[str, Any] | None = None
     cap_replacements: tuple[dict[str, Any], ...] = ()
     dependency_funnel: DependencyFunnel | None = None
+    degradation_receipts: tuple[dict[str, Any], ...] = ()
 
 
 def has_reviewable_typed_relationship(
@@ -219,6 +280,68 @@ def has_reviewable_typed_relationship(
 
 
 def rank_candidates(
+    population: Sequence[Any],
+    all_issues: Sequence[Any],
+    scorer: Scorer,
+    policy: CandidatePolicy,
+    *,
+    eligible_issue_ids: frozenset[str] | None = None,
+) -> CandidateRanking:
+    """Rank candidates, degrading only the dependency lane on conservation failure."""
+
+    try:
+        return _rank_candidates(
+            population,
+            all_issues,
+            scorer,
+            policy,
+            eligible_issue_ids=eligible_issue_ids,
+        )
+    except DependencyConservationError as exc:
+        requested_objectives = policy.objectives
+        semantic_objectives = (
+            frozenset({"echo", "overlap"})
+            if requested_objectives is None
+            else requested_objectives - {"structure"}
+        )
+        reservations = (
+            {
+                "dependency": 0,
+                "echo": policy.lane_reservations["echo"],
+                "overlap": policy.lane_reservations["overlap"],
+            }
+            if policy.lane_reservations is not None
+            else None
+        )
+        fallback = _rank_candidates(
+            population,
+            all_issues,
+            scorer,
+            replace(
+                policy,
+                objectives=semantic_objectives,
+                max_dependencies=0,
+                lane_reservations=reservations,
+            ),
+            eligible_issue_ids=eligible_issue_ids,
+        )
+        receipt = {
+            **exc.receipt.as_dict(),
+            "degraded_lanes": ["dependency"],
+            "retained_lanes": [
+                lane
+                for lane, objective in (("echo", "echo"), ("overlap", "overlap"))
+                if objective in semantic_objectives
+            ],
+        }
+        return replace(
+            fallback,
+            dependency_funnel=None,
+            degradation_receipts=(receipt,),
+        )
+
+
+def _rank_candidates(
     population: Sequence[Any],
     all_issues: Sequence[Any],
     scorer: Scorer,
@@ -390,6 +513,7 @@ def _dependency_discovery_funnel(
     records = {issue_id(item): item for item in all_issues}
     seen: set[tuple[str, str, str]] = set()
     total = inactive = below = eligible = 0
+    eligible_pairs: set[frozenset[str]] = set()
     for source in all_issues:
         source_id = issue_id(source)
         typed_links = [
@@ -442,11 +566,14 @@ def _dependency_discovery_funnel(
                 below += 1
             else:
                 eligible += 1
+                eligible_pairs.add(frozenset((source_id, target_id)))
     return DependencyFunnel(
         total_non_parent_typed=total,
         inactive_or_closed_only=inactive,
         below_qualification=below,
         eligible=eligible,
+        eligible_candidates=len(eligible_pairs),
+        coalesced_eligible_edges=eligible - len(eligible_pairs),
     )
 
 
@@ -865,22 +992,40 @@ def dependency_evidence(left: Any, right: Any) -> dict[str, str] | None:
 
     left_id = issue_id(left)
     right_id = issue_id(right)
-    relationship = _direct_relationship(left, right_id)
-    if relationship and relationship != "parent-child":
+    relationship = _direct_non_parent_relationship(left, right_id)
+    if relationship:
         return {"source_id": left_id, "target_id": right_id, "type": relationship}
-    relationship = _direct_relationship(right, left_id)
-    if relationship and relationship != "parent-child":
+    relationship = _direct_non_parent_relationship(right, left_id)
+    if relationship:
         return {"source_id": right_id, "target_id": left_id, "type": relationship}
     return None
 
 
 def _direct_relationship(issue: Any, target_id: str) -> str | None:
-    for link in tuple(getattr(issue, "dependency_links", ()) or ()):
-        if getattr(link, "target_id", None) == target_id:
-            return str(getattr(link, "relationship_type", "depends-on"))
+    relationships = _direct_relationships(issue, target_id)
+    if "parent-child" in relationships:
+        return "parent-child"
+    return relationships[0] if relationships else None
+
+
+def _direct_non_parent_relationship(issue: Any, target_id: str) -> str | None:
+    relationships = tuple(
+        relationship
+        for relationship in _direct_relationships(issue, target_id)
+        if relationship != "parent-child"
+    )
+    return relationships[0] if relationships else None
+
+
+def _direct_relationships(issue: Any, target_id: str) -> tuple[str, ...]:
+    relationships = {
+        str(getattr(link, "relationship_type", "depends-on"))
+        for link in tuple(getattr(issue, "dependency_links", ()) or ())
+        if getattr(link, "target_id", None) == target_id
+    }
     if target_id in tuple(getattr(issue, "dependencies", ()) or ()):
-        return "depends-on"
-    return None
+        relationships.add("depends-on")
+    return tuple(sorted(relationships))
 
 
 def _qualify(

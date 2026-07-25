@@ -295,6 +295,7 @@ def build_sweep_payload(
     thresholds: Any | None = None,
     candidate_policy: Any | None = None,
     capped_typed_dependencies: Iterable[Any] = (),
+    degradations: Iterable[Any] = (),
     no_signal: Any | None = None,
     excluded: Any | None = None,
     target_batch_size: int | None = None,
@@ -308,10 +309,20 @@ def build_sweep_payload(
     ordered_candidates = sorted(candidates, key=_candidate_key)
     normalized_batches = [_jsonable(item) for item in batches]
     normalized_batches.sort(key=lambda item: int(_field(item, "batch", "batch_number", default=0)))
+    normalized_degradations = sorted(
+        (_jsonable(item) for item in degradations),
+        key=lambda item: (
+            str(_field(item, "lane", default="")),
+            str(_field(item, "code", default="")),
+            str(_field(item, "stage", default="")),
+        ),
+    )
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "report_type": "sweep",
         "run_id": str(run_id),
+        "analysis_status": "degraded" if normalized_degradations else "complete",
+        "degradations": normalized_degradations,
         "policy": {
             "read_only": True,
             "tracker_mutation_allowed": False,
@@ -372,6 +383,8 @@ def _analysis_fingerprint(payload: Mapping[str, Any]) -> str:
             "no_signal",
             "excluded",
             "warnings",
+            "analysis_status",
+            "degradations",
             "code_surface_analysis",
         )
         if key in payload
@@ -429,15 +442,21 @@ def build_triage_payload(sweep: Mapping[str, Any]) -> dict[str, Any]:
     warnings = {str(warning) for warning in (_field(sweep, "warnings", default=[]) or [])}
     warnings.update(str(warning) for warning in (_field(analysis, "warnings", default=[]) or []))
     fingerprint = str(_field(sweep, "analysis_fingerprint", default=_analysis_fingerprint(sweep)))
+    source_report = {
+        "report_type": "sweep",
+        "analysis_fingerprint": fingerprint,
+        "model": _jsonable(_field(sweep, "model", default={})),
+    }
+    if _field(sweep, "degradations", default=[]) or []:
+        source_report["parameters"] = _jsonable(parameters)
     packet = {
         "schema_version": SCHEMA_VERSION,
         "report_type": "triage",
+        "analysis_status": str(_field(sweep, "analysis_status", default="complete")),
+        "degradations": _jsonable(_field(sweep, "degradations", default=[]) or []),
         "policy": _jsonable(_field(sweep, "policy", default={})),
         "analysis_fingerprint": fingerprint,
-        "source_report": {
-            "report_type": "sweep",
-            "analysis_fingerprint": fingerprint,
-        },
+        "source_report": source_report,
         "snapshot": {
             key: _jsonable(snapshot[key])
             for key in (
@@ -479,6 +498,9 @@ def build_triage_payload(sweep: Mapping[str, Any]) -> dict[str, Any]:
         },
         "warnings": sorted(warnings),
     }
+    artifact_output = _field(sweep, "artifact_output", default=None)
+    if artifact_output is not None:
+        packet["artifact_output"] = _jsonable(artifact_output)
     validate_artifact(packet)
     return packet
 
@@ -926,12 +948,15 @@ def render_triage_markdown(payload: Mapping[str, Any]) -> str:
     lanes = _field(payload, "lane_summary", default={}) or {}
     population = _field(payload, "population", default={}) or {}
     warnings = _field(payload, "warnings", default=[]) or []
+    degradations = _field(payload, "degradations", default=[]) or []
     lines = [
         "# emBEADings triage packet",
         "",
         f"> {READ_ONLY_NOTICE} {ADVISORY_NOTICE}",
         "",
         f"Analysis fingerprint: `{_escape(_field(payload, 'analysis_fingerprint'))}`",
+        "",
+        f"Analysis status: **{_escape(_field(payload, 'analysis_status', default='complete'))}**",
         "",
         "## Queue",
         "",
@@ -947,6 +972,18 @@ def render_triage_markdown(payload: Mapping[str, Any]) -> str:
             f"{_field(metrics, 'qualified', default=0)} qualified; "
             f"{_field(metrics, 'omitted', default=0)} omitted"
         )
+    if degradations:
+        lines.extend(["", "## Degraded analysis", ""])
+        for receipt in degradations:
+            retained = ", ".join(_field(receipt, "retained_lanes", default=[]) or []) or "none"
+            lines.append(
+                "- "
+                + _escape(_field(receipt, "lane", default="unknown"))
+                + " lane unavailable at "
+                + _escape(_field(receipt, "stage", default="unknown"))
+                + " conservation; retained lanes: "
+                + _escape(retained)
+            )
     if warnings:
         lines.extend(["", "## Warnings", ""])
         lines.extend(f"- {_escape(warning)}" for warning in warnings)
@@ -1017,12 +1054,15 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     diagnostics = payload.get("batch_diagnostics") or {}
     anchor_metrics = payload.get("anchor_metrics") or {}
     code_surface_analysis = payload.get("code_surface_analysis") or {}
+    degradations = payload.get("degradations") or []
     echo_count = sum(_kind_label(item) == "Completed-work echo" for item in candidates)
     overlap_count = sum(_kind_label(item) == "Possible overlap" for item in candidates)
     lines = [
         f"# emBEADings sweep {_escape(payload.get('run_id', 'unknown'))}",
         "",
         f"> {READ_ONLY_NOTICE} {ADVISORY_NOTICE}",
+        "",
+        f"Analysis status: **{_escape(payload.get('analysis_status', 'complete'))}**",
         "",
         "## Outcome",
         "",
@@ -1061,6 +1101,19 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         + " (non-generic finite-vocabulary anchors; not a human rating)",
         "",
     ]
+    if degradations:
+        lines.extend(["### Degraded analysis", ""])
+        for receipt in degradations:
+            retained = ", ".join(_field(receipt, "retained_lanes", default=[]) or []) or "none"
+            lines.append(
+                "- "
+                + _escape(_field(receipt, "lane", default="unknown"))
+                + " lane unavailable at "
+                + _escape(_field(receipt, "stage", default="unknown"))
+                + " conservation; retained lanes: "
+                + _escape(retained)
+            )
+        lines.append("")
     if code_surface_analysis:
         lines.extend(_code_surface_markdown(code_surface_analysis))
     if review_budget:
@@ -1165,6 +1218,8 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         inactive = _field(dependency_funnel, "inactive_or_closed_only", default=0)
         below = _field(dependency_funnel, "below_qualification", default=0)
         eligible = _field(dependency_funnel, "eligible", default=0)
+        eligible_candidates = _field(dependency_funnel, "eligible_candidates", default=eligible)
+        coalesced = _field(dependency_funnel, "coalesced_eligible_edges", default=0)
         admitted = _field(dependency_funnel, "admitted", default=0)
         per_issue = _field(dependency_funnel, "omitted_by_per_issue_cap", default=0)
         lane_cap = _field(dependency_funnel, "omitted_by_lane_cap", default=0)
@@ -1174,14 +1229,18 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 f"- Total non-parent typed edges: {total}",
                 f"- Inactive, closed-only, or outside review scope: {inactive}",
                 f"- Below structural qualification floor: {below}",
-                f"- Eligible: {eligible}",
+                f"- Eligible typed edges: {eligible}",
+                f"- Eligible candidate pairs: {eligible_candidates}",
+                f"- Additional eligible edges coalesced by pair: {coalesced}",
                 f"- Admitted: {admitted}",
                 f"- Omitted by dependency per-issue allowance: {per_issue}",
                 f"- Omitted by dependency lane cap: {lane_cap}",
                 f"- Omitted by run cap: {run_cap}",
                 f"- Discovery conservation: {total} = {inactive} + {below} + {eligible}",
+                "- Edge-to-candidate conservation: "
+                f"{eligible} = {eligible_candidates} + {coalesced}",
                 "- Admission conservation: "
-                f"{eligible} = {admitted} + {per_issue} + {lane_cap} + {run_cap}",
+                f"{eligible_candidates} = {admitted} + {per_issue} + {lane_cap} + {run_cap}",
             ]
         )
     else:

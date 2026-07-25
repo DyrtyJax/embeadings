@@ -1,9 +1,18 @@
 import json
 import subprocess
 
+import pytest
+
+import embead.ranking as ranking_module
 from embead.beads import BeadsAdapter
 from embead.models import DependencyLink, IssueRecord
-from embead.ranking import CandidatePolicy, has_reviewable_typed_relationship, rank_candidates
+from embead.ranking import (
+    CandidatePolicy,
+    DependencyConservationError,
+    DependencyFunnel,
+    has_reviewable_typed_relationship,
+    rank_candidates,
+)
 
 
 class Scores:
@@ -101,6 +110,139 @@ def test_dependency_admits_bounded_threshold_exception() -> None:
     assert result.candidates[0]["candidate_evidence"]["structural_corroboration"] == (
         "typed-dependency"
     )
+
+
+def test_dependency_funnel_bridges_typed_edges_to_pair_level_admission() -> None:
+    active_a = IssueRecord(
+        id="A",
+        title="A",
+        status="open",
+        dependency_links=(
+            DependencyLink("A", "B", "blocks"),
+            DependencyLink("A", "B", "relates-to"),
+        ),
+    )
+    active_b = IssueRecord(
+        id="B",
+        title="B",
+        status="open",
+        dependency_links=(DependencyLink("B", "A", "discovered-from"),),
+    )
+
+    result = rank_candidates(
+        (active_a, active_b),
+        (active_a, active_b),
+        Scores({("A", "B"): 0.9}),
+        policy(),
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0]["lane"] == "dependency"
+    assert result.dependency_funnel is not None
+    assert result.dependency_funnel.total_non_parent_typed == 3
+    assert result.dependency_funnel.eligible == 3
+    assert result.dependency_funnel.eligible_candidates == 1
+    assert result.dependency_funnel.coalesced_eligible_edges == 2
+    result.dependency_funnel.validate()
+
+
+def test_non_parent_relation_is_not_hidden_by_parent_child_on_same_pair() -> None:
+    active_a = IssueRecord(
+        id="A",
+        title="A",
+        status="open",
+        dependency_links=(
+            DependencyLink("A", "B", "parent-child"),
+            DependencyLink("A", "B", "relates-to"),
+        ),
+    )
+    active_b = IssueRecord(id="B", title="B", status="open")
+
+    result = rank_candidates(
+        (active_a, active_b),
+        (active_a, active_b),
+        Scores({("A", "B"): 0.9}),
+        policy(),
+    )
+
+    assert result.candidates[0]["lane"] == "dependency"
+    assert result.candidates[0]["dependency_evidence"] == {
+        "source_id": "A",
+        "target_id": "B",
+        "type": "relates-to",
+    }
+    assert result.dependency_funnel is not None
+    assert result.dependency_funnel.total_non_parent_typed == 1
+    result.dependency_funnel.validate()
+
+
+def test_dependency_conservation_error_receipt_contains_counts_only() -> None:
+    funnel = DependencyFunnel(
+        total_non_parent_typed=2,
+        eligible=1,
+        eligible_candidates=1,
+    )
+
+    with pytest.raises(DependencyConservationError) as raised:
+        funnel.validate()
+
+    assert raised.value.receipt.as_dict() == {
+        "code": "typed-dependency-conservation-failed",
+        "lane": "dependency",
+        "stage": "discovery",
+        "counts": {
+            "total_non_parent_typed": 2,
+            "inactive_or_closed_only": 0,
+            "below_qualification": 0,
+            "eligible": 1,
+            "eligible_candidates": 1,
+            "coalesced_eligible_edges": 0,
+            "admitted": 0,
+            "omitted_by_per_issue_cap": 0,
+            "omitted_by_lane_cap": 0,
+            "omitted_by_run_cap": 0,
+        },
+    }
+
+
+def test_dependency_conservation_failure_retains_healthy_semantic_lanes(
+    monkeypatch,
+) -> None:
+    issues = [
+        issue("A", dependencies=("B",)),
+        issue("B"),
+        issue("C"),
+        issue("D"),
+    ]
+    original = ranking_module._dependency_discovery_funnel
+
+    def broken_funnel(*args, enabled, **kwargs):
+        if enabled:
+            return DependencyFunnel(
+                total_non_parent_typed=1,
+                eligible=1,
+                eligible_candidates=2,
+            )
+        return original(*args, enabled=enabled, **kwargs)
+
+    monkeypatch.setattr(ranking_module, "_dependency_discovery_funnel", broken_funnel)
+
+    result = rank_candidates(
+        issues,
+        issues,
+        Scores({("A", "B"): 0.9, ("C", "D"): 0.95}),
+        policy(objectives=frozenset({"structure", "overlap"})),
+    )
+
+    assert result.dependency_funnel is None
+    assert {candidate["lane"] for candidate in result.candidates} == {"overlap"}
+    assert any(
+        {candidate["issue_id"], candidate["related_issue_id"]} == {"C", "D"}
+        for candidate in result.candidates
+    )
+    assert result.degradation_receipts[0]["stage"] == "edge-to-candidate"
+    assert result.degradation_receipts[0]["degraded_lanes"] == ["dependency"]
+    assert result.degradation_receipts[0]["retained_lanes"] == ["overlap"]
 
 
 def test_explicit_objectives_separate_structure_from_semantic_novelty() -> None:

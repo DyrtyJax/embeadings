@@ -14,7 +14,7 @@ MINIMUM_VERSION = (0, 4, 0)
 SUPPORTED_REPORTS = {"triage", "sweep", "collisions"}
 SUPPORTED_TRACKERS = {"beads", "linear"}
 VALUE_OPTIONS = {"--source", "--linear-team", "--provider"}
-WRITE_OPTIONS = {"--output", "--write-checkpoint"}
+WRITE_OPTIONS = {"--output", "--output-dir", "--write-checkpoint"}
 
 
 def fail(message: str) -> None:

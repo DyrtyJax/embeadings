@@ -118,6 +118,12 @@ external user state. Use `sweep` for experimental policy controls and `neighbors
 inspection. The default is a reviewer-capacity budget, not corpus coverage; see the
 [review-budget decision](https://github.com/DyrtyJax/embeadings/blob/v0.4.2/docs/decisions/review-budget-default.md).
 
+For `triage`, `sweep`, and `batch`, use `--output-dir DIRECTORY` when you want the complete JSON,
+Markdown, and per-batch artifact set. Use `--output report.json` or `--output report.md` for one
+primary report file; the extension chooses the file format independently of `--json` stdout.
+Any other `--output PATH` remains a backward-compatible directory spelling. `neighbors` and
+`collisions` always treat `--output` as one atomic report file.
+
 `collisions` reviews `open`, `in_progress`, and `blocked` work by default. It associates Git worktrees
 when a branch contains a full Bead ID or unambiguous `bead-N` suffix. Explicitly map an otherwise
 unassociated worktree with:

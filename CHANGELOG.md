@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Conserve typed dependency edges separately from pair-level candidates, including multi-type,
+  reciprocal, and mixed parent/child relationships.
+- Degrade only the dependency lane when its conservation audit fails, retaining healthy semantic
+  lanes with deterministic, privacy-safe diagnostic receipts.
+- Distinguish complete artifact directories (`--output-dir`) from single JSON or Markdown report
+  files (`--output`) while preserving legacy directory paths that do not use a report suffix.
+
 ## 0.4.2 — 2026-07-16
 
 Standard distribution and public proof.

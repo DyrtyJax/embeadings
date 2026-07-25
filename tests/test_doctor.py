@@ -137,6 +137,8 @@ def test_offline_doctor_blocks_when_pinned_model_is_not_cached(
     assert embedding["artifacts_cached"] is False
     assert embedding["network_policy"] == "offline"
     assert embedding["model_id"] == Model2VecProvider.DEFAULT_MODEL_ID
+    assert "embead readiness --json" in embedding["detail"]
+    assert "embead readiness --offline --json" in embedding["detail"]
 
 
 def test_doctor_does_not_initialize_missing_cache(monkeypatch, tmp_path, capsys) -> None:

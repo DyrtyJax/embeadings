@@ -186,6 +186,8 @@ def test_wrapper_forces_exactly_one_json_flag(
     [
         ("sweep", "--output", "report.json"),
         ("sweep", "--output=report.json"),
+        ("sweep", "--output-dir", "artifacts"),
+        ("sweep", "--output-dir=artifacts"),
         ("sweep", "--write-checkpoint", "checkpoint.json"),
         ("sweep", "--write-checkpoint=checkpoint.json"),
     ],

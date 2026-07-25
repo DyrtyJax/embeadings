@@ -37,8 +37,8 @@ Replace `TEAM` with the selected team ID, key, or exact name.
 
 Triage includes code-surface analysis when the current repository is the implementation repository;
 unavailable Git evidence fails soft with an explicit warning. Pass only options the user requested or
-that are necessary to select the tracker. Do not add `--output` or `--write-checkpoint`; the wrapper
-deliberately rejects writes.
+that are necessary to select the tracker. Do not add `--output`, `--output-dir`, or
+`--write-checkpoint`; the wrapper deliberately rejects writes.
 
 ## Judge
 

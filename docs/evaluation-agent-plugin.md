@@ -55,7 +55,7 @@ before Stage B. The public report must contain only aggregate baseline counts an
 
 Invoke the installed `evaluate` skill. Run the plugin `check`, followed by `triage` and `collisions`
 from the implementation repository. Preserve stdout only in the private scratch directory; do not
-pass `--output` or `--write-checkpoint`.
+pass `--output`, `--output-dir`, or `--write-checkpoint`.
 
 Allow at most 20 minutes for interpretation, excluding CLI runtime and one-time model preparation.
 Review the complete default semantic queue and collision leads in emitted order, stopping after 20

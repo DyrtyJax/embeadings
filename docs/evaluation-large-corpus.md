@@ -39,7 +39,7 @@ mkdir -p /external/ruff-beads/.beads
 cp /external/ruff-github/issues.jsonl /external/ruff-beads/.beads/issues.jsonl
 cd /external/ruff-beads
 bd init --from-jsonl --prefix ruff --skip-agents --skip-hooks
-embead triage --review-budget 20 --output /private/tmp/ruff-embead-triage
+embead triage --review-budget 20 --output-dir /private/tmp/ruff-embead-triage
 ```
 
 The 20-candidate packet tests the operational review queue; it is not a representative quality
@@ -50,7 +50,7 @@ caps and lane reservations can make those candidate sets differ instead of formi
 ```console
 embead sweep --objective echo --objective overlap \
   --weekly-review-budget 250 \
-  --output /private/tmp/ruff-embead-pool
+  --output-dir /private/tmp/ruff-embead-pool
 
 python scripts/prepare_ranked_evaluation.py \
   /private/tmp/ruff-embead-pool/report.json \

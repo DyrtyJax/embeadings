@@ -62,6 +62,11 @@ from .trackers import TrackerAdapter, TrackerError
 
 ACTIVE_STATUSES = {"open", "in_progress", "blocked", "deferred"}
 COLLISION_STATUSES = {"open", "in_progress", "blocked"}
+REPORT_FILE_FORMATS = {
+    ".json": "json",
+    ".md": "markdown",
+    ".markdown": "markdown",
+}
 REVIEW_RUBRIC = (
     "Verify each candidate against current source, documentation, and shipped behavior.",
     "Record counterevidence when similar wording reflects different scope.",
@@ -112,7 +117,12 @@ def _parser() -> argparse.ArgumentParser:
         help="Include temporary Beads runtime records (excluded by default)",
     )
     neighbors.add_argument("--json", action="store_true", dest="as_json")
-    neighbors.add_argument("--output", type=Path)
+    neighbors.add_argument(
+        "--output",
+        type=Path,
+        metavar="FILE",
+        help="Atomically write this single report (JSON with --json; Markdown otherwise)",
+    )
 
     triage = subparsers.add_parser(
         "triage",
@@ -135,7 +145,7 @@ def _parser() -> argparse.ArgumentParser:
     _ephemeral_argument(triage)
     _incremental_arguments(triage)
     _code_surface_arguments(triage, opt_in=False)
-    triage.add_argument("--output", type=Path)
+    _multi_artifact_output_arguments(triage)
     triage.add_argument("--json", action="store_true", dest="as_json")
     triage.set_defaults(
         echo_threshold=0.72,
@@ -176,7 +186,7 @@ def _parser() -> argparse.ArgumentParser:
     _semantic_retrieval_arguments(sweep)
     _incremental_arguments(sweep)
     _code_surface_arguments(sweep, opt_in=True)
-    sweep.add_argument("--output", type=Path)
+    _multi_artifact_output_arguments(sweep)
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
     batch = subparsers.add_parser("batch", help="Alias for a synchronous sweep")
@@ -192,7 +202,7 @@ def _parser() -> argparse.ArgumentParser:
     _semantic_retrieval_arguments(batch)
     _incremental_arguments(batch)
     _code_surface_arguments(batch, opt_in=True)
-    batch.add_argument("--output", type=Path)
+    _multi_artifact_output_arguments(batch)
     batch.add_argument("--json", action="store_true", dest="as_json")
 
     readiness = subparsers.add_parser(
@@ -240,9 +250,33 @@ def _parser() -> argparse.ArgumentParser:
     collisions.add_argument("--include-epics", action="store_true")
     _ephemeral_argument(collisions)
     _code_surface_arguments(collisions, opt_in=False)
-    collisions.add_argument("--output", type=Path)
+    collisions.add_argument(
+        "--output",
+        type=Path,
+        metavar="FILE",
+        help="Atomically write this single report (JSON with --json; Markdown otherwise)",
+    )
     collisions.add_argument("--json", action="store_true", dest="as_json")
     return parser
+
+
+def _multi_artifact_output_arguments(parser: argparse.ArgumentParser) -> None:
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument(
+        "--output",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "Write one .json/.md report file; any other path remains a "
+            "backward-compatible artifact directory"
+        ),
+    )
+    output.add_argument(
+        "--output-dir",
+        type=Path,
+        metavar="DIRECTORY",
+        help="Write the complete report and per-batch artifact set to DIRECTORY",
+    )
 
 
 def _candidate_policy_arguments(parser: argparse.ArgumentParser) -> None:
@@ -875,6 +909,7 @@ def _candidate_evidence(
         reciprocal_diagnostics=ranking.reciprocal_diagnostics,
         cap_replacements=ranking.cap_replacements,
         dependency_funnel=ranking.dependency_funnel,
+        degradation_receipts=ranking.degradation_receipts,
     )
 
 
@@ -898,6 +933,25 @@ def _review_lane_reservations(limit: int, lane_caps: dict[str, int]) -> dict[str
             "overlap": overlap,
         }
     return {lane: min(requested[lane], lane_caps[lane]) for lane in requested}
+
+
+def _sweep_output_paths(
+    args: argparse.Namespace,
+    state_path: Path,
+    run_id: str,
+) -> tuple[Path | None, Path | None, str | None]:
+    """Resolve a complete artifact directory or one explicit primary report file."""
+
+    output = args.output
+    output_dir = args.output_dir
+    if output_dir is not None:
+        return output_dir, None, None
+    if output is not None:
+        report_format = REPORT_FILE_FORMATS.get(output.suffix.casefold())
+        if report_format is not None:
+            return None, output, report_format
+        return output, None, None
+    return state_path / run_id, None, None
 
 
 def _sweep(args: argparse.Namespace) -> int:
@@ -1076,10 +1130,15 @@ def _sweep(args: argparse.Namespace) -> int:
     batches = packaging.batches
     batching_ms = round((time.monotonic() - phase_started) * 1000)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
-    run_dir = args.output or state_path / run_id
-    if args.output is None:
+    run_dir, report_file, report_file_format = _sweep_output_paths(
+        args,
+        state_path,
+        run_id,
+    )
+    if args.output is None and args.output_dir is None:
         private_directory(state_path)
-    private_directory(run_dir)
+    if run_dir is not None:
+        private_directory(run_dir)
     manifests: list[dict[str, Any]] = []
     model = _model_metadata(provider)
     snapshot_payload = asdict(snapshot)
@@ -1104,8 +1163,9 @@ def _sweep(args: argparse.Namespace) -> int:
             review_units=[{"issue_ids": list(unit)} for unit in review_batch.review_units],
         )
         manifests.append(manifest)
-        _atomic_text(run_dir / f"batch-{index}.json", _json_text(manifest))
-        _atomic_text(run_dir / f"batch-{index}.md", render_batch_markdown(manifest))
+        if run_dir is not None:
+            _atomic_text(run_dir / f"batch-{index}.json", _json_text(manifest))
+            _atomic_text(run_dir / f"batch-{index}.md", render_batch_markdown(manifest))
     summary_batches = [
         {
             "batch": item["batch"],
@@ -1162,6 +1222,11 @@ def _sweep(args: argparse.Namespace) -> int:
         ranking_warnings.append(
             f"Threshold comparison exposed {len(ranking.cap_replacements)} "
             "deterministic cap-driven replacements."
+        )
+    if ranking.degradation_receipts:
+        ranking_warnings.append(
+            "Dependency lane unavailable: its conservation audit failed; "
+            "healthy requested semantic lanes were retained."
         )
     if packaging.diagnostics.cross_batch_candidate_edges:
         ranking_warnings.append(
@@ -1272,6 +1337,7 @@ def _sweep(args: argparse.Namespace) -> int:
             "dropped_by_run_cap": ranking.dropped_by_run_cap,
         },
         capped_typed_dependencies=list(ranking.capped_typed_dependencies),
+        degradations=ranking.degradation_receipts,
         warnings=ranking_warnings,
         no_signal={"count": len(no_signal_ids), "issue_ids": no_signal_ids},
         excluded={
@@ -1300,9 +1366,21 @@ def _sweep(args: argparse.Namespace) -> int:
         "batching": batching_ms,
         "code_surface_analysis": code_surface_ms,
     }
-    payload["output_directory"] = str(run_dir)
-    _atomic_text(run_dir / "report.json", _json_text(payload))
-    _atomic_text(run_dir / "report.md", render_sweep_markdown(payload))
+    payload["artifact_output"] = (
+        {
+            "mode": "report-file",
+            "format": report_file_format,
+        }
+        if report_file is not None
+        else {
+            "mode": "artifact-directory",
+            "format": "json-and-markdown",
+        }
+    )
+    if run_dir is not None:
+        payload["output_directory"] = str(run_dir)
+        _atomic_text(run_dir / "report.json", _json_text(payload))
+        _atomic_text(run_dir / "report.md", render_sweep_markdown(payload))
     if args.write_checkpoint:
         _atomic_text(
             args.write_checkpoint,
@@ -1310,14 +1388,27 @@ def _sweep(args: argparse.Namespace) -> int:
         )
     if args.command == "triage":
         packet = build_triage_payload(payload)
-        _atomic_text(run_dir / "triage.json", _json_text(packet))
-        _atomic_text(run_dir / "triage.md", render_triage_markdown(packet))
+        if run_dir is not None:
+            _atomic_text(run_dir / "triage.json", _json_text(packet))
+            _atomic_text(run_dir / "triage.md", render_triage_markdown(packet))
         rendered = _json_text(packet) if args.as_json else render_triage_markdown(packet)
+        report_json = _json_text(packet)
+        report_markdown = render_triage_markdown(packet)
     else:
         rendered = _json_text(payload) if args.as_json else render_sweep_markdown(payload)
+        report_json = _json_text(payload)
+        report_markdown = render_sweep_markdown(payload)
+    if report_file is not None:
+        _atomic_text(
+            report_file,
+            report_json if report_file_format == "json" else report_markdown,
+        )
     sys.stdout.write(rendered)
     if not args.as_json:
-        sys.stdout.write(f"\nArtifacts: {run_dir}\n")
+        if report_file is not None:
+            sys.stdout.write(f"\nReport: {report_file}\n")
+        else:
+            sys.stdout.write(f"\nArtifacts: {run_dir}\n")
     return 0
 
 

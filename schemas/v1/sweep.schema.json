@@ -7,6 +7,11 @@
   "properties": {
     "schema_version": { "const": 1 },
     "report_type": { "const": "sweep" },
+    "analysis_status": { "enum": ["complete", "degraded"] },
+    "degradations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/degradation-receipt" }
+    },
     "analysis_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "run_id": { "type": "string", "minLength": 1 },
     "policy": { "$ref": "#/$defs/policy" },
@@ -44,10 +49,54 @@
     "code_surface_analysis": { "$ref": "#/$defs/code-surface-analysis" },
     "warnings": { "type": "array", "items": { "type": "string" } },
     "duration_ms": { "type": "number", "minimum": 0 },
+    "artifact_output": { "$ref": "#/$defs/artifact-output" },
     "output_directory": { "type": "string" }
   },
   "additionalProperties": true,
   "$defs": {
+    "artifact-output": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode", "format"],
+          "properties": {
+            "mode": { "const": "artifact-directory" },
+            "format": { "const": "json-and-markdown" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["mode", "format"],
+          "properties": {
+            "mode": { "const": "report-file" },
+            "format": { "enum": ["json", "markdown"] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "degradation-receipt": {
+      "type": "object",
+      "required": ["code", "lane", "stage", "counts", "degraded_lanes", "retained_lanes"],
+      "properties": {
+        "code": { "const": "typed-dependency-conservation-failed" },
+        "lane": { "const": "dependency" },
+        "stage": { "enum": ["discovery", "edge-to-candidate", "admission"] },
+        "counts": {
+          "type": "object",
+          "required": ["total_non_parent_typed", "inactive_or_closed_only", "below_qualification", "eligible", "eligible_candidates", "coalesced_eligible_edges", "admitted", "omitted_by_per_issue_cap", "omitted_by_lane_cap", "omitted_by_run_cap"],
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "degraded_lanes": { "const": ["dependency"] },
+        "retained_lanes": {
+          "type": "array",
+          "items": { "enum": ["echo", "overlap"] },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
     "policy": {
       "type": "object",
       "required": ["read_only", "tracker_mutation_allowed", "advisory", "notice"],
@@ -302,6 +351,8 @@
         "inactive_or_closed_only": { "type": "integer", "minimum": 0 },
         "below_qualification": { "type": "integer", "minimum": 0 },
         "eligible": { "type": "integer", "minimum": 0 },
+        "eligible_candidates": { "type": "integer", "minimum": 0 },
+        "coalesced_eligible_edges": { "type": "integer", "minimum": 0 },
         "admitted": { "type": "integer", "minimum": 0 },
         "omitted_by_per_issue_cap": { "type": "integer", "minimum": 0 },
         "omitted_by_lane_cap": { "type": "integer", "minimum": 0 },

@@ -178,7 +178,8 @@ default adapter invokes the installed `bd` binary with read-only and JSON flags.
 - never import, export, sync, update, create, close, reopen, label, or modify dependencies.
 
 The core consumes an internal `IssueRecord` schema so future adapters can be added without coupling
-the semantic algorithms to one Beads output version.
+the semantic algorithms to one Beads output version. The supported minimum and exact command/payload
+contract are documented in [Beads compatibility](beads-compatibility.md).
 
 The Linear adapter uses the public GraphQL API with an environment-provided personal API key or
 OAuth access token. It resolves one team, pages team issues and workspace relations without per-issue

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
@@ -23,6 +24,15 @@ class BeadsError(TrackerError):
 
 Runner: TypeAlias = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 _ALLOWED_COMMANDS = frozenset({"version", "context", "list"})
+MINIMUM_BEADS_VERSION = "1.0.5"
+BEADS_CAPABILITY_CONTRACT = (
+    "bd --readonly version --json, bd --readonly context --json, and "
+    "bd --readonly list --all --limit 0 --json"
+)
+_SEMVER_PATTERN = re.compile(
+    r"^v?(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
+    r"(?P<suffix>(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$"
+)
 _RFC3339_PATTERN = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
     r"(?:\.(?P<fraction>\d+))?(?P<offset>Z|[+-]\d{2}:\d{2})$"
@@ -46,11 +56,29 @@ class BeadsAdapter:
         self._binary = binary
         self._runner = runner
 
+    @property
+    def binary(self) -> str:
+        """Return the configured executable name or path without invoking it."""
+
+        return self._binary
+
+    def resolved_binary(self) -> str | None:
+        """Return the executable selected by PATH, if it is currently discoverable."""
+
+        resolved = shutil.which(self._binary)
+        return str(Path(resolved).resolve()) if resolved else None
+
     def _run(self, command: str, *arguments: str) -> str:
         if command not in _ALLOWED_COMMANDS:
             raise BeadsError(f"Beads command is not allowlisted: {command}")
         argv = [self._binary, "--readonly", command, *arguments]
-        result = self._runner(argv)
+        try:
+            result = self._runner(argv)
+        except OSError as exc:
+            raise BeadsError(
+                f"Beads executable {self._binary!r} could not be started. "
+                "Install a compatible bd release and ensure it is on PATH."
+            ) from exc
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
             if len(detail) > 500:
@@ -67,14 +95,19 @@ class BeadsAdapter:
 
     def version(self) -> str:
         payload = self._run_json("version")
+        version: str | None = None
         if isinstance(payload, str) and payload.strip():
-            return payload.strip()
-        if isinstance(payload, Mapping):
+            version = payload.strip()
+        elif isinstance(payload, Mapping):
             for key in ("version", "beads_version"):
                 value = payload.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()
-        raise BeadsError("bd version JSON has an unsupported shape")
+                    version = value.strip()
+                    break
+        if version is None:
+            raise BeadsError("bd version JSON has an unsupported shape")
+        _require_compatible_version(version)
+        return version
 
     def workspace_snapshot(self) -> WorkspaceSnapshot:
         payload = self._run_json("context")
@@ -136,6 +169,25 @@ class BeadsAdapter:
             source_warnings=source_warnings,
         )
         return snapshot, issues
+
+
+def _require_compatible_version(version: str) -> None:
+    match = _SEMVER_PATTERN.fullmatch(version)
+    if match is None:
+        raise BeadsError(
+            f"bd reported unrecognized version {version!r}; emBEADings requires Beads "
+            f">={MINIMUM_BEADS_VERSION} and the read-only JSON capability contract: "
+            f"{BEADS_CAPABILITY_CONTRACT}."
+        )
+    detected = tuple(int(match.group(field)) for field in ("major", "minor", "patch"))
+    minimum = tuple(int(part) for part in MINIMUM_BEADS_VERSION.split("."))
+    prerelease = match.group("suffix").startswith("-")
+    if detected < minimum or (detected == minimum and prerelease):
+        raise BeadsError(
+            f"Beads {version} is unsupported; emBEADings requires Beads "
+            f">={MINIMUM_BEADS_VERSION}. Upgrade bd and verify the read-only JSON "
+            f"capability contract: {BEADS_CAPABILITY_CONTRACT}."
+        )
 
 
 def _first(payload: Mapping[str, Any], *keys: str) -> Any:

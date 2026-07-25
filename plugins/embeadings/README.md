@@ -19,6 +19,18 @@ macOS, and Linux. `scripts/run-embeadings` is only a POSIX convenience shim.
 - `embeadings>=0.4.0` installed so `embead` is on `PATH`;
 - `bd` for Beads, or `LINEAR_API_KEY`/`LINEAR_ACCESS_TOKEN` plus a selected Linear team.
 
+For a pinned evaluation, install the exact release persistently so the plugin wrapper can discover
+`embead`:
+
+```sh
+uv tool install 'embeadings==VERSION'
+# or: pipx install 'embeadings==VERSION'
+```
+
+Replace `VERSION` with the release under test and record `embead --version`. `uvx --from
+embeadings embead ...` is useful for a direct one-shot CLI preview, but it does not make `embead`
+persistently discoverable by this plugin.
+
 For local development from the repository:
 
 ```sh
@@ -50,6 +62,15 @@ installed Codex version, then start a fresh task so the skill catalog is reloade
 Repository marketplace metadata is intentionally not included in this foundation. It can be added
 when installation policy, authentication timing, version release, and marketplace ownership are
 decided; local loading is sufficient to validate the host-neutral skill workflow first.
+
+## Evaluate the plugin
+
+Use the
+[fresh-session agent plugin protocol](../../docs/evaluation-agent-plugin.md)
+for a matched Codex and Claude Code diagnostic. It requires each agent to seal a direct-review
+baseline before invoking emBEADings, keeps raw private records outside both repositories, separates
+precision by evidence lane, and measures whether retrieved context changed a review decision.
+`singleton-envelope` members are independent review units, not a semantic cluster.
 
 ## Privacy boundary
 

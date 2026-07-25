@@ -1,10 +1,13 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from embead.beads import (
+    BEADS_CAPABILITY_CONTRACT,
+    MINIMUM_BEADS_VERSION,
     BeadsAdapter,
     BeadsError,
     _canonical_state_digest,
@@ -79,6 +82,27 @@ def test_beads_1_0_5_relationship_fixture_preserves_targets_direction_and_type()
         ("sample-child", "sample-prerequisite", "blocks"),
     ]
     assert records[1].dependency_links[0].relationship_type == "discovered-from"
+
+
+def test_beads_1_0_5_bootstrap_fixture_preserves_parent_absent_from_snapshot() -> None:
+    payload = json.loads((FIXTURES / "beads-1.0.5-bootstrap-orphan-list.json").read_text())
+    runner = FakeRunner([(0, payload, "")])
+
+    records = BeadsAdapter(runner=runner).list_issues()
+
+    assert {record.id for record in records} == {"bootstrap-child", "bootstrap-peer"}
+    child = records[0]
+    assert child.parent_id == "bootstrap-parent-not-in-snapshot"
+    assert child.dependencies == ("bootstrap-parent-not-in-snapshot",)
+    assert child.dependency_links[0].relationship_type == "parent-child"
+
+
+def test_unknown_list_envelope_fixture_fails_closed() -> None:
+    payload = json.loads((FIXTURES / "beads-unsupported-list-envelope.json").read_text())
+    runner = FakeRunner([(0, payload, "")])
+
+    with pytest.raises(BeadsError, match="unsupported shape"):
+        BeadsAdapter(runner=runner).list_issues()
 
 
 def test_current_shape_prefers_target_over_source_issue_id() -> None:
@@ -377,6 +401,78 @@ def test_workspace_snapshot_uses_stable_explicit_identity() -> None:
         ["bd", "--readonly", "context", "--json"],
         ["bd", "--readonly", "version", "--json"],
     ]
+
+
+@pytest.mark.parametrize("version", ["1.0.5", "v1.0.5", "1.0.6-rc.1", "1.1.0", "2.0.0+build"])
+def test_workspace_snapshot_accepts_minimum_and_newer_semantic_versions(version: str) -> None:
+    runner = FakeRunner(
+        [
+            (0, {"workspace_id": "workspace", "path": "/tmp/project/.beads"}, ""),
+            (0, {"version": version}, ""),
+        ]
+    )
+
+    assert BeadsAdapter(runner=runner).workspace_snapshot().beads_version == version
+
+
+@pytest.mark.parametrize("version", ["1.0.4", "0.40.0", "1.0.5-rc.1", "dev"])
+def test_workspace_snapshot_rejects_unvalidated_beads_versions_with_action(
+    version: str,
+) -> None:
+    runner = FakeRunner(
+        [
+            (0, {"workspace_id": "workspace", "path": "/tmp/project/.beads"}, ""),
+            (0, {"version": version}, ""),
+        ]
+    )
+
+    with pytest.raises(BeadsError) as error:
+        BeadsAdapter(runner=runner).workspace_snapshot()
+
+    assert MINIMUM_BEADS_VERSION in str(error.value)
+    assert BEADS_CAPABILITY_CONTRACT in str(error.value)
+
+
+def test_missing_executable_has_actionable_privacy_safe_failure() -> None:
+    private_path = "/private/repository/.beads"
+
+    def missing(_argv: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError(private_path)
+
+    with pytest.raises(BeadsError) as error:
+        BeadsAdapter(binary="missing-bd", runner=missing).workspace_snapshot()
+
+    assert "Install a compatible bd release" in str(error.value)
+    assert private_path not in str(error.value)
+
+
+def test_export_diagnostics_compare_content_not_mtime(tmp_path) -> None:
+    beads_dir = tmp_path / ".beads"
+    beads_dir.mkdir()
+    record = {
+        "id": "same-id",
+        "title": "Private title",
+        "status": "open",
+        "updated_at": "2026-07-14T00:00:00Z",
+    }
+    export = beads_dir / "issues.jsonl"
+    export.write_text(json.dumps(record) + "\n")
+    original = export.read_bytes()
+    current = export.stat().st_mtime_ns
+    os.utime(export, ns=(current + 1_000_000_000, current + 1_000_000_000))
+    runner = FakeRunner(
+        [
+            (0, {"project_id": "project", "beads_dir": str(beads_dir)}, ""),
+            (0, {"version": "1.0.5"}, ""),
+            (0, [record], ""),
+        ]
+    )
+
+    snapshot, _records = BeadsAdapter(runner=runner).load()
+
+    assert export.read_bytes() == original
+    assert snapshot.live_source_digest == snapshot.export_source_digest
+    assert snapshot.source_warnings == ()
 
 
 @pytest.mark.parametrize(

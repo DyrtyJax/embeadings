@@ -93,7 +93,7 @@ The shipped command inventory is:
 
 ```bash
 embead triage [--review-budget 20]
-embead neighbors ISSUE_ID [--limit N] [--include-closed]
+embead neighbors ISSUE_ID [--limit N] [--include-closed] [--orphans-only]
 embead sweep [--size 9]
 embead batch [--size 9]
 embead collisions [--worktree-map ISSUE_ID=PATH]
@@ -121,11 +121,16 @@ not translate parent, ready, label, or arbitrary issue-ID expressions into track
 ### `neighbors`
 
 ```bash
-embead neighbors ISSUE_ID [--limit N] [--include-closed]
+embead neighbors ISSUE_ID [--limit N] [--include-closed] [--orphans-only]
 ```
 
 Returns the nearest records with similarity scores and structural context. Human output must label
 scores as advisory. JSON output includes the embedding model and index generation.
+
+`--orphans-only` keeps only neighbors whose structural context is `none recorded`: the
+straggler question of high similarity with no tracker link. Because that property belongs to the
+pair rather than to the ranking, the filter is applied before `--limit`, so the limit bounds
+surviving neighbors rather than ranked ones. JSON output records the applied filter.
 
 ### `triage`, `sweep`, and `batch`
 
@@ -393,6 +398,11 @@ When their active-record frequency exceeds the configured bound, reports summari
 the number of pairs it would have created rather than emitting every pair. A non-hub shared surface
 or shared `path::symbol` can still qualify a pair. An exact path observed in either active worktree is
 never suppressed by the hub guard.
+
+`--explain-hub-guard [PAIRS]` (default 5 when bare) reports a bounded, deterministic sample of the
+suppressed pairs together with the hub surfaces that suppressed them, so the guard can be audited
+rather than trusted. The sample is drawn in issue-ID order and costs nothing when the flag is
+absent.
 
 The focused `collisions` command does not load an embedding model. Sweeps may include the same
 analysis additively. A shared path is a prompt to coordinate before implementation or merge, never a

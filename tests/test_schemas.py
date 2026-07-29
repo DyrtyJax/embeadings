@@ -240,6 +240,40 @@ def test_report_builders_produce_schema_valid_payloads() -> None:
     assert payloads["triage"]["analysis_fingerprint"] == payloads["sweep"]["analysis_fingerprint"]
 
 
+@pytest.mark.parametrize("report_type", ["sweep", "triage"])
+def test_degradation_receipt_carries_named_conservation_balance(report_type: str) -> None:
+    payload = _load(EXAMPLES, f"{report_type}.json")
+    payload["analysis_status"] = "degraded"
+    payload["degradations"] = [
+        {
+            "code": "typed-dependency-conservation-failed",
+            "lane": "dependency",
+            "stage": "admission",
+            "balance": {
+                "input": {"name": "eligible_candidates", "count": 2},
+                "parts": [{"name": "admitted", "count": 1}, {"name": "omitted", "count": 0}],
+                "unaccounted": 1,
+            },
+            "counts": {
+                "total_non_parent_typed": 2,
+                "inactive_or_closed_only": 0,
+                "below_qualification": 0,
+                "eligible": 2,
+                "eligible_candidates": 2,
+                "coalesced_eligible_edges": 0,
+                "admitted": 1,
+                "omitted_by_per_issue_cap": 0,
+                "omitted_by_lane_cap": 0,
+                "omitted_by_run_cap": 0,
+            },
+            "degraded_lanes": ["dependency"],
+            "retained_lanes": ["echo", "overlap"],
+        }
+    ]
+
+    Draft202012Validator(_load(SCHEMAS, f"{report_type}.schema.json")).validate(payload)
+
+
 def test_version_one_allows_additive_fields() -> None:
     payload = _load(EXAMPLES, "sweep.json")
     payload["future_diagnostic"] = {"reason": "synthetic"}

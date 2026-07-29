@@ -202,6 +202,47 @@ def test_typed_parent_child_is_not_reintroduced_by_legacy_dependency_projection(
     result.dependency_funnel.validate()
 
 
+def test_reparented_record_with_parent_and_typed_dependencies_conserves() -> None:
+    """Field-report shape: one record carrying a parent edge plus typed edges.
+
+    One typed edge points outside the family and one points at a sibling that is
+    already reachable through the parent lane. Before edge-to-candidate
+    conservation, the sibling edge left ``eligible`` without landing in
+    ``admitted`` or any cap counter.
+    """
+
+    parent = IssueRecord(id="P", title="P", status="open")
+    sibling = IssueRecord(id="S", title="S", status="open", parent_id="P")
+    outside = IssueRecord(id="O", title="O", status="open")
+    record = IssueRecord(
+        id="R",
+        title="R",
+        status="open",
+        parent_id="P",
+        dependencies=("P", "O", "S"),
+        dependency_links=(
+            DependencyLink("R", "P", "parent-child"),
+            DependencyLink("R", "O", "blocks"),
+            DependencyLink("R", "S", "relates-to"),
+        ),
+    )
+    population = (parent, sibling, outside, record)
+
+    for budget in (1, 5, 100):
+        result = rank_candidates(
+            population,
+            population,
+            Scores({("R", "O"): 0.9, ("R", "S"): 0.85, ("R", "P"): 0.95}),
+            policy(max_total=budget),
+        )
+
+        assert result.degradation_receipts == ()
+        assert result.dependency_funnel is not None
+        funnel = result.dependency_funnel
+        assert funnel.total_non_parent_typed == 2
+        funnel.validate()
+
+
 def test_dependency_conservation_error_receipt_contains_counts_only() -> None:
     funnel = DependencyFunnel(
         total_non_parent_typed=2,
@@ -216,6 +257,11 @@ def test_dependency_conservation_error_receipt_contains_counts_only() -> None:
         "code": "typed-dependency-conservation-failed",
         "lane": "dependency",
         "stage": "discovery",
+        "balance": {
+            "input": {"name": "total_non_parent_typed", "count": 2},
+            "parts": [{"name": "excluded", "count": 0}, {"name": "eligible", "count": 1}],
+            "unaccounted": 1,
+        },
         "counts": {
             "total_non_parent_typed": 2,
             "inactive_or_closed_only": 0,
@@ -229,6 +275,23 @@ def test_dependency_conservation_error_receipt_contains_counts_only() -> None:
             "omitted_by_run_cap": 0,
         },
     }
+
+
+def test_dependency_conservation_message_names_the_unaccounted_delta() -> None:
+    funnel = DependencyFunnel(
+        total_non_parent_typed=2,
+        eligible=2,
+        eligible_candidates=2,
+        admitted=1,
+    )
+
+    with pytest.raises(DependencyConservationError) as raised:
+        funnel.validate()
+
+    assert str(raised.value) == (
+        "typed dependency admission funnel does not conserve "
+        "(eligible_candidates=2, admitted=1, omitted=0, unaccounted=1)"
+    )
 
 
 def test_dependency_conservation_failure_retains_healthy_semantic_lanes(

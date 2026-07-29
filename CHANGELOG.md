@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.4.3 — 2026-07-29
+
+Field-report follow-ups: a broken headline command, and diagnostics you can act on.
+
+- Name the failing stage's terms and the resulting unaccounted delta in dependency conservation
+  errors, degradation receipts, and the human-readable warning, instead of reporting only that the
+  funnel does not conserve.
+- Add `neighbors --orphans-only` for high-similarity records with no recorded structural link,
+  applying the filter before `--limit` so the budget bounds surviving neighbors.
+- Add `collisions --explain-hub-guard [PAIRS]` to sample suppressed pairs alongside the hub surfaces
+  that suppressed them, making the guard auditable rather than merely counted.
+- Add a global `--fail-on-divergence` flag that exits 3 when live tracker data and the discoverable
+  export disagree, after the report is written.
+- Document the standard-library `venv` plus `pip` installation path for environments without `pipx`
+  or `uv`.
 - Conserve typed dependency edges separately from pair-level candidates, including multi-type,
   reciprocal, and mixed parent/child relationships.
 - Degrade only the dependency lane when its conservation audit fails, retaining healthy semantic

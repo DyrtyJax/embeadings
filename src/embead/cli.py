@@ -39,6 +39,7 @@ from .linear import LinearAdapter
 from .models import IssueRecord, WorkspaceSnapshot, canonical_text, semantic_field_texts
 from .provider import HashingProvider, Model2VecProvider, provider_readiness
 from .ranking import (
+    NO_STRUCTURAL_LINK,
     CandidatePolicy,
     CandidateRanking,
     has_reviewable_typed_relationship,
@@ -51,6 +52,7 @@ from .reports import (
     build_neighbors_payload,
     build_sweep_payload,
     build_triage_payload,
+    describe_conservation_balance,
     render_batch_markdown,
     render_collisions_markdown,
     render_neighbors_markdown,
@@ -80,6 +82,9 @@ PRODUCER_CAPABILITIES = (
 )
 
 
+DIVERGENCE_EXIT_CODE = 3
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="embead",
@@ -105,12 +110,28 @@ def _parser() -> argparse.ArgumentParser:
         default=os.environ.get("EMBEAD_PROVIDER", "model2vec"),
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--fail-on-divergence",
+        action="store_true",
+        help=(
+            "Exit "
+            f"{DIVERGENCE_EXIT_CODE} when live tracker data and the discoverable export disagree"
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     neighbors = subparsers.add_parser("neighbors", help="Find nearest semantic neighbors")
     neighbors.add_argument("issue_id")
     neighbors.add_argument("--limit", type=int, default=5)
     neighbors.add_argument("--include-closed", action="store_true")
+    neighbors.add_argument(
+        "--orphans-only",
+        action="store_true",
+        help=(
+            "Keep only neighbors with no recorded structural link; --limit then counts "
+            "surviving neighbors rather than ranked ones"
+        ),
+    )
     neighbors.add_argument(
         "--include-ephemeral",
         action="store_true",
@@ -406,6 +427,18 @@ def _code_surface_arguments(parser: argparse.ArgumentParser, *, opt_in: bool) ->
         help="Local Git reference used to identify committed worktree changes",
     )
     parser.add_argument(
+        "--explain-hub-guard",
+        type=int,
+        nargs="?",
+        const=5,
+        default=0,
+        metavar="PAIRS",
+        help=(
+            "Report up to this many suppressed pairs, with the hub surfaces that "
+            "suppressed them, so the guard can be audited (default when bare: 5)"
+        ),
+    )
+    parser.add_argument(
         "--max-hub-surface-issues",
         type=int,
         default=5,
@@ -431,6 +464,22 @@ def _load_source(args: argparse.Namespace) -> tuple[WorkspaceSnapshot, tuple[Iss
     else:
         adapter = BeadsAdapter()
     return adapter.load()
+
+
+def _divergence_exit(args: argparse.Namespace, snapshot: Any) -> int:
+    """Report requested source divergence as a distinct, CI-usable exit code."""
+
+    reasons = tuple(getattr(snapshot, "source_divergence_reasons", ()) or ())
+    if not getattr(args, "fail_on_divergence", False) or not reasons:
+        return 0
+    for warning in getattr(snapshot, "source_warnings", ()) or ():
+        print(f"embead: {warning}", file=sys.stderr)
+    print(
+        "embead: live tracker data diverges from the discoverable export "
+        f"({', '.join(reasons)}); the report above used live data.",
+        file=sys.stderr,
+    )
+    return DIVERGENCE_EXIT_CODE
 
 
 def _workspace_paths(workspace_id: str) -> tuple[Path, Path]:
@@ -730,6 +779,7 @@ def _surface_analysis(
         worktree_mappings=mappings,
         base_reference=args.base_ref,
         hub_surface_limit=args.max_hub_surface_issues,
+        hub_guard_sample_limit=args.explain_hub_guard,
         eligible_issue_ids=eligible_issue_ids,
     )
     return analysis.to_dict()
@@ -759,7 +809,7 @@ def _collisions(args: argparse.Namespace) -> int:
     if args.output:
         _atomic_text(args.output, rendered)
     sys.stdout.write(rendered)
-    return 0
+    return _divergence_exit(args, snapshot)
 
 
 def _atomic_text(path: Path, text: str) -> None:
@@ -787,32 +837,44 @@ def _neighbors(args: argparse.Namespace) -> int:
         by_id[args.issue_id],
         issues,
         vectors,
-        limit=args.limit,
+        # Orphan filtering is a property of the pair, not of the ranking, so the
+        # limit has to apply to the surviving neighbors. Rank everything first.
+        limit=(len(issues) if args.limit else 0) if args.orphans_only else args.limit,
         include_closed=args.include_closed,
         similarity_index=similarity_index,
     )
     evidence = []
     for neighbor in ranked:
         related = by_id[neighbor.issue_id]
+        context = _structural_context(by_id[args.issue_id], related)
+        if args.orphans_only and context != NO_STRUCTURAL_LINK:
+            continue
         evidence.append(
             {
                 **_issue_summary(related),
                 "similarity": round(neighbor.similarity, 6),
-                "structural_context": _structural_context(by_id[args.issue_id], related),
+                "structural_context": context,
             }
         )
+        if args.orphans_only and len(evidence) >= args.limit:
+            break
     payload = build_neighbors_payload(
         _issue_summary(by_id[args.issue_id]),
         evidence,
         snapshot=asdict(snapshot),
         model=_model_metadata(provider),
         cache=cache_stats,
+        filters={
+            "include_closed": bool(args.include_closed),
+            "structural_link": "none-recorded" if args.orphans_only else "any",
+            "limit": args.limit,
+        },
     )
     rendered = _json_text(payload) if args.as_json else render_neighbors_markdown(payload)
     if args.output:
         _atomic_text(args.output, rendered)
     sys.stdout.write(rendered)
-    return 0
+    return _divergence_exit(args, snapshot)
 
 
 def _candidate_evidence(
@@ -1223,10 +1285,12 @@ def _sweep(args: argparse.Namespace) -> int:
             f"Threshold comparison exposed {len(ranking.cap_replacements)} "
             "deterministic cap-driven replacements."
         )
-    if ranking.degradation_receipts:
+    for receipt in ranking.degradation_receipts:
+        balance = describe_conservation_balance(receipt.get("balance"))
         ranking_warnings.append(
-            "Dependency lane unavailable: its conservation audit failed; "
-            "healthy requested semantic lanes were retained."
+            "Dependency lane unavailable: its conservation audit failed"
+            + (f" ({balance})" if balance else "")
+            + "; healthy requested semantic lanes were retained."
         )
     if packaging.diagnostics.cross_batch_candidate_edges:
         ranking_warnings.append(
@@ -1409,7 +1473,7 @@ def _sweep(args: argparse.Namespace) -> int:
             sys.stdout.write(f"\nReport: {report_file}\n")
         else:
             sys.stdout.write(f"\nArtifacts: {run_dir}\n")
-    return 0
+    return _divergence_exit(args, snapshot)
 
 
 def main(argv: list[str] | None = None) -> int:

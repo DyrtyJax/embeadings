@@ -82,6 +82,20 @@
         },
         "pairs_omitted_by_hub_guard": { "type": "integer", "minimum": 0 },
         "pairs_omitted_by_module_guard": { "type": "integer", "minimum": 0 },
+        "hub_guard_sample": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["issue_id", "related_issue_id", "suppressing_paths", "suppressing_modules"],
+            "properties": {
+              "issue_id": { "type": "string", "minLength": 1 },
+              "related_issue_id": { "type": "string", "minLength": 1 },
+              "suppressing_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "suppressing_modules": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            },
+            "additionalProperties": false
+          }
+        },
         "surfaces": {
           "type": "array",
           "items": {

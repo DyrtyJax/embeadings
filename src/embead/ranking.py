@@ -113,6 +113,33 @@ class LaneMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class DependencyStageBalance:
+    """Named terms of one conservation identity, including the unaccounted delta."""
+
+    stage: str
+    input_name: str
+    input_count: int
+    parts: tuple[tuple[str, int], ...]
+
+    @property
+    def unaccounted(self) -> int:
+        return self.input_count - sum(count for _, count in self.parts)
+
+    def describe(self) -> str:
+        terms = [f"{self.input_name}={self.input_count}"]
+        terms.extend(f"{name}={count}" for name, count in self.parts)
+        terms.append(f"unaccounted={self.unaccounted}")
+        return ", ".join(terms)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "input": {"name": self.input_name, "count": self.input_count},
+            "parts": [{"name": name, "count": count} for name, count in self.parts],
+            "unaccounted": self.unaccounted,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class DependencyFunnel:
     """Privacy-safe conservation counts for non-parent typed dependencies."""
 
@@ -132,13 +159,42 @@ class DependencyFunnel:
         return self.inactive_or_closed_only + self.below_qualification
 
     def validate(self) -> None:
-        if self.total_non_parent_typed != self.excluded + self.eligible:
-            raise DependencyConservationError("discovery", self)
-        if self.eligible != self.eligible_candidates + self.coalesced_eligible_edges:
-            raise DependencyConservationError("edge-to-candidate", self)
         omitted = self.omitted_by_per_issue_cap + self.omitted_by_lane_cap + self.omitted_by_run_cap
-        if self.eligible_candidates != self.admitted + omitted:
-            raise DependencyConservationError("admission", self)
+        stages = (
+            (
+                "discovery",
+                "total_non_parent_typed",
+                self.total_non_parent_typed,
+                (("excluded", self.excluded), ("eligible", self.eligible)),
+            ),
+            (
+                "edge-to-candidate",
+                "eligible",
+                self.eligible,
+                (
+                    ("eligible_candidates", self.eligible_candidates),
+                    ("coalesced_eligible_edges", self.coalesced_eligible_edges),
+                ),
+            ),
+            (
+                "admission",
+                "eligible_candidates",
+                self.eligible_candidates,
+                (("admitted", self.admitted), ("omitted", omitted)),
+            ),
+        )
+        for stage, input_name, input_count, parts in stages:
+            if input_count != sum(count for _, count in parts):
+                raise DependencyConservationError(
+                    stage,
+                    self,
+                    balance=DependencyStageBalance(
+                        stage=stage,
+                        input_name=input_name,
+                        input_count=input_count,
+                        parts=parts,
+                    ),
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,12 +212,14 @@ class DependencyConservationReceipt:
     omitted_by_per_issue_cap: int
     omitted_by_lane_cap: int
     omitted_by_run_cap: int
+    balance: DependencyStageBalance | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "code": "typed-dependency-conservation-failed",
             "lane": "dependency",
             "stage": self.stage,
+            **({"balance": self.balance.as_dict()} if self.balance is not None else {}),
             "counts": {
                 "total_non_parent_typed": self.total_non_parent_typed,
                 "inactive_or_closed_only": self.inactive_or_closed_only,
@@ -180,9 +238,16 @@ class DependencyConservationReceipt:
 class DependencyConservationError(ValueError):
     """Typed dependency accounting failed without exposing tracker content."""
 
-    def __init__(self, stage: str, funnel: DependencyFunnel) -> None:
+    def __init__(
+        self,
+        stage: str,
+        funnel: DependencyFunnel,
+        *,
+        balance: DependencyStageBalance | None = None,
+    ) -> None:
         self.receipt = DependencyConservationReceipt(
             stage=stage,
+            balance=balance,
             total_non_parent_typed=funnel.total_non_parent_typed,
             inactive_or_closed_only=funnel.inactive_or_closed_only,
             below_qualification=funnel.below_qualification,
@@ -194,7 +259,10 @@ class DependencyConservationError(ValueError):
             omitted_by_lane_cap=funnel.omitted_by_lane_cap,
             omitted_by_run_cap=funnel.omitted_by_run_cap,
         )
-        super().__init__(f"typed dependency {stage} funnel does not conserve")
+        message = f"typed dependency {stage} funnel does not conserve"
+        if balance is not None:
+            message = f"{message} ({balance.describe()})"
+        super().__init__(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -965,6 +1033,9 @@ def _record_capped_dependency(
     )
 
 
+NO_STRUCTURAL_LINK = "none recorded"
+
+
 def structural_context(left: Any, right: Any) -> str:
     left_id = issue_id(left)
     right_id = issue_id(right)
@@ -984,7 +1055,7 @@ def structural_context(left: Any, right: Any) -> str:
         return f"{right_id} depends on {left_id} ({relationship})"
     if left_parent and left_parent == right_parent:
         return f"same parent {left_parent}"
-    return "none recorded"
+    return NO_STRUCTURAL_LINK
 
 
 def dependency_evidence(left: Any, right: Any) -> dict[str, str] | None:

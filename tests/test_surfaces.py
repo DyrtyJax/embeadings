@@ -266,6 +266,48 @@ def test_explicit_hub_path_is_summarized_instead_of_emitting_every_pair() -> Non
     )
 
 
+def test_hub_guard_sample_names_the_suppressing_surfaces() -> None:
+    issues = [
+        IssueRecord(id=f"proj-{index}", title="Review docs/architecture/session.md")
+        for index in range(6)
+    ]
+
+    analysis = analyze_code_surfaces(
+        issues,
+        workspace_path=None,
+        hub_surface_limit=5,
+        hub_guard_sample_limit=2,
+    )
+
+    assert analysis.pairs_omitted_by_hub_guard == 15
+    assert analysis.hub_guard_sample == (
+        {
+            "issue_id": "proj-0",
+            "related_issue_id": "proj-1",
+            "suppressing_paths": ["docs/architecture/session.md"],
+            "suppressing_modules": ["docs/architecture"],
+        },
+        {
+            "issue_id": "proj-0",
+            "related_issue_id": "proj-2",
+            "suppressing_paths": ["docs/architecture/session.md"],
+            "suppressing_modules": ["docs/architecture"],
+        },
+    )
+
+
+def test_hub_guard_sample_is_empty_unless_requested() -> None:
+    issues = [
+        IssueRecord(id=f"proj-{index}", title="Review docs/architecture/session.md")
+        for index in range(6)
+    ]
+
+    analysis = analyze_code_surfaces(issues, workspace_path=None, hub_surface_limit=5)
+
+    assert analysis.pairs_omitted_by_hub_guard == 15
+    assert analysis.hub_guard_sample == ()
+
+
 def test_non_hub_second_path_preserves_one_pair_behind_hub_guard() -> None:
     issues = [
         IssueRecord(

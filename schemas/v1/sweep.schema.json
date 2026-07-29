@@ -83,6 +83,36 @@
         "code": { "const": "typed-dependency-conservation-failed" },
         "lane": { "const": "dependency" },
         "stage": { "enum": ["discovery", "edge-to-candidate", "admission"] },
+        "balance": {
+          "type": "object",
+          "required": ["input", "parts", "unaccounted"],
+          "properties": {
+            "input": {
+              "type": "object",
+              "required": ["name", "count"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "count": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            },
+            "parts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "count"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "count": { "type": "integer", "minimum": 0 }
+                },
+                "additionalProperties": false
+              }
+            },
+            "unaccounted": { "type": "integer" }
+          },
+          "additionalProperties": false
+        },
         "counts": {
           "type": "object",
           "required": ["total_non_parent_typed", "inactive_or_closed_only", "below_qualification", "eligible", "eligible_candidates", "coalesced_eligible_edges", "admitted", "omitted_by_per_issue_cap", "omitted_by_lane_cap", "omitted_by_run_cap"],
@@ -140,6 +170,20 @@
         "hub_surfaces": { "type": "array" },
         "pairs_omitted_by_hub_guard": { "type": "integer", "minimum": 0 },
         "pairs_omitted_by_module_guard": { "type": "integer", "minimum": 0 },
+        "hub_guard_sample": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["issue_id", "related_issue_id", "suppressing_paths", "suppressing_modules"],
+            "properties": {
+              "issue_id": { "type": "string", "minLength": 1 },
+              "related_issue_id": { "type": "string", "minLength": 1 },
+              "suppressing_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "suppressing_modules": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            },
+            "additionalProperties": false
+          }
+        },
         "surfaces": { "type": "array" },
         "collisions": { "type": "array" },
         "warnings": { "type": "array", "items": { "type": "string" } }

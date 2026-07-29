@@ -181,6 +181,7 @@ def build_neighbors_payload(
     snapshot: Any,
     model: Any,
     cache: Any | None = None,
+    filters: Any | None = None,
 ) -> dict[str, Any]:
     """Build the versioned machine payload for a nearest-neighbor query."""
 
@@ -188,6 +189,7 @@ def build_neighbors_payload(
     payload = {
         "schema_version": SCHEMA_VERSION,
         "report_type": "neighbors",
+        "filters": _jsonable(filters or {}),
         "policy": {
             "read_only": True,
             "tracker_mutation_allowed": False,
@@ -509,6 +511,24 @@ def _escape(value: Any) -> str:
     return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
 
 
+def describe_conservation_balance(balance: Any) -> str:
+    """Render the named terms of a conservation identity, including the delta."""
+
+    if not balance:
+        return ""
+    source = _field(balance, "input", default={}) or {}
+    name = _field(source, "name")
+    if name is None:
+        return ""
+    terms = [f"{name}={_field(source, 'count', default=0)}"]
+    terms.extend(
+        f"{_field(part, 'name')}={_field(part, 'count', default=0)}"
+        for part in _field(balance, "parts", default=[]) or []
+    )
+    terms.append(f"unaccounted={_field(balance, 'unaccounted', default=0)}")
+    return ", ".join(terms)
+
+
 def _counterevidence_text(value: Any) -> str:
     counterevidence = _field(value, "counterevidence", default=[])
     if isinstance(counterevidence, str):
@@ -616,10 +636,23 @@ def render_neighbors_markdown(payload: Mapping[str, Any]) -> str:
         "## Nearest semantic neighbors",
         "",
     ]
+    orphans_only = _field(payload.get("filters"), "structural_link") == "none-recorded"
+    if orphans_only:
+        lines.extend(
+            [
+                "Filtered to neighbors with no recorded structural link.",
+                "",
+            ]
+        )
     if not neighbors:
         lines.extend(
             [
-                "No semantic neighbors were found in the selected population.",
+                (
+                    "No semantic neighbors without a recorded structural link were found "
+                    "in the selected population."
+                    if orphans_only
+                    else "No semantic neighbors were found in the selected population."
+                ),
                 "",
             ]
         )
@@ -788,6 +821,38 @@ def render_batch_markdown(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _hub_guard_sample_markdown(analysis: Mapping[str, Any]) -> list[str]:
+    """Show which hub surfaces suppressed a bounded sample of pairs."""
+
+    sample = _field(analysis, "hub_guard_sample", default=[]) or []
+    if not sample:
+        return []
+    omitted = _field(analysis, "pairs_omitted_by_hub_guard", default=0)
+    lines = [
+        "### Hub guard sample",
+        "",
+        f"{len(sample)} of {omitted} suppressed pairs, with the shared hub surfaces that "
+        "suppressed them. Suppressed pairs share only hub surfaces, so they are weak "
+        "evidence by construction.",
+        "",
+    ]
+    for item in sample:
+        surfaces = [
+            *(_field(item, "suppressing_paths", default=[]) or []),
+            *(_field(item, "suppressing_modules", default=[]) or []),
+        ]
+        lines.append(
+            "- `"
+            + _escape(_field(item, "issue_id", default="unknown"))
+            + "` ↔ `"
+            + _escape(_field(item, "related_issue_id", default="unknown"))
+            + "` — shared only: "
+            + _escape(", ".join(f"`{item}`" for item in surfaces) or "none")
+        )
+    lines.append("")
+    return lines
+
+
 def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
     collisions = _field(analysis, "collisions", default=[]) or []
     hub_surfaces = _field(analysis, "hub_surfaces", default=[]) or []
@@ -833,6 +898,7 @@ def _code_surface_markdown(analysis: Mapping[str, Any]) -> list[str]:
                 + " active records)"
             )
         lines.append("")
+    lines.extend(_hub_guard_sample_markdown(analysis))
     if not collisions:
         lines.extend(["No code-surface collisions were found.", ""])
         return lines
@@ -976,12 +1042,15 @@ def render_triage_markdown(payload: Mapping[str, Any]) -> str:
         lines.extend(["", "## Degraded analysis", ""])
         for receipt in degradations:
             retained = ", ".join(_field(receipt, "retained_lanes", default=[]) or []) or "none"
+            balance = describe_conservation_balance(_field(receipt, "balance"))
             lines.append(
                 "- "
                 + _escape(_field(receipt, "lane", default="unknown"))
                 + " lane unavailable at "
                 + _escape(_field(receipt, "stage", default="unknown"))
-                + " conservation; retained lanes: "
+                + " conservation"
+                + (f" ({_escape(balance)})" if balance else "")
+                + "; retained lanes: "
                 + _escape(retained)
             )
     if warnings:
@@ -1105,12 +1174,15 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
         lines.extend(["### Degraded analysis", ""])
         for receipt in degradations:
             retained = ", ".join(_field(receipt, "retained_lanes", default=[]) or []) or "none"
+            balance = describe_conservation_balance(_field(receipt, "balance"))
             lines.append(
                 "- "
                 + _escape(_field(receipt, "lane", default="unknown"))
                 + " lane unavailable at "
                 + _escape(_field(receipt, "stage", default="unknown"))
-                + " conservation; retained lanes: "
+                + " conservation"
+                + (f" ({_escape(balance)})" if balance else "")
+                + "; retained lanes: "
                 + _escape(retained)
             )
         lines.append("")

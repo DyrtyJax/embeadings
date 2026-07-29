@@ -166,6 +166,7 @@ class CodeSurfaceAnalysis:
     pairs_omitted_by_module_guard: int
     surfaces: tuple[dict[str, Any], ...]
     collisions: tuple[CodeSurfaceCollision, ...]
+    hub_guard_sample: tuple[dict[str, Any], ...] = ()
     warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
@@ -241,12 +242,15 @@ def analyze_code_surfaces(
     runner: GitRunner = _default_git_runner,
     max_collision_evidence: int = 8,
     hub_surface_limit: int = 5,
+    hub_guard_sample_limit: int = 0,
     eligible_issue_ids: frozenset[str] | None = None,
 ) -> CodeSurfaceAnalysis:
     """Build explicit and observed surfaces, then derive bounded pairwise collisions."""
 
     if hub_surface_limit < 1:
         raise ValueError("hub surface issue limit must be positive")
+    if hub_guard_sample_limit < 0:
+        raise ValueError("hub guard sample limit cannot be negative")
     ordered_issues = sorted(issues, key=lambda item: str(getattr(item, "id", "")))
     issue_ids = tuple(str(getattr(issue, "id", "")) for issue in ordered_issues)
     warnings: list[str] = []
@@ -331,10 +335,11 @@ def analyze_code_surfaces(
     by_issue: dict[str, list[CodePointer]] = defaultdict(list)
     for pointer in pointers:
         by_issue[pointer.issue_id].append(pointer)
-    collisions, hub_surfaces, hub_omissions, module_omissions = _collisions(
+    collisions, hub_surfaces, hub_omissions, module_omissions, hub_guard_sample = _collisions(
         by_issue,
         max_evidence=max_collision_evidence,
         hub_surface_limit=hub_surface_limit,
+        hub_guard_sample_limit=hub_guard_sample_limit,
         eligible_issue_ids=eligible_issue_ids,
     )
     explicit_ids = {
@@ -383,6 +388,7 @@ def analyze_code_surfaces(
         hub_surfaces=hub_surfaces,
         pairs_omitted_by_hub_guard=hub_omissions,
         pairs_omitted_by_module_guard=module_omissions,
+        hub_guard_sample=hub_guard_sample,
         surfaces=surfaces,
         collisions=collisions,
         warnings=tuple(warnings),
@@ -511,8 +517,15 @@ def _collisions(
     *,
     max_evidence: int,
     hub_surface_limit: int,
+    hub_guard_sample_limit: int = 0,
     eligible_issue_ids: frozenset[str] | None = None,
-) -> tuple[tuple[CodeSurfaceCollision, ...], tuple[dict[str, Any], ...], int, int]:
+) -> tuple[
+    tuple[CodeSurfaceCollision, ...],
+    tuple[dict[str, Any], ...],
+    int,
+    int,
+    tuple[dict[str, Any], ...],
+]:
     path_issues: dict[str, set[str]] = defaultdict(set)
     module_issues: dict[str, set[str]] = defaultdict(set)
     for issue_id, pointers in by_issue.items():
@@ -549,6 +562,7 @@ def _collisions(
     results: list[CodeSurfaceCollision] = []
     omitted_by_hub_guard = 0
     omitted_by_module_guard = 0
+    hub_guard_sample: list[dict[str, Any]] = []
     issue_ids = sorted(by_issue)
     for index, issue_id in enumerate(issue_ids):
         for related_id in issue_ids[index + 1 :]:
@@ -598,6 +612,19 @@ def _collisions(
             if not shared_paths and not shared_symbols and not non_hub_shared_modules:
                 if all_shared_paths or left_modules & right_modules:
                     omitted_by_hub_guard += 1
+                    if len(hub_guard_sample) < hub_guard_sample_limit:
+                        hub_guard_sample.append(
+                            {
+                                "issue_id": issue_id,
+                                "related_issue_id": related_id,
+                                "suppressing_paths": sorted(all_shared_paths & hub_paths)[
+                                    :max_evidence
+                                ],
+                                "suppressing_modules": sorted(
+                                    left_modules & right_modules & hub_modules
+                                )[:max_evidence],
+                            }
+                        )
                 continue
             if (
                 not shared_paths
@@ -706,7 +733,13 @@ def _collisions(
             ),
         )
     )
-    return collisions, hub_surfaces, omitted_by_hub_guard, omitted_by_module_guard
+    return (
+        collisions,
+        hub_surfaces,
+        omitted_by_hub_guard,
+        omitted_by_module_guard,
+        tuple(hub_guard_sample),
+    )
 
 
 def _select_repository_context(

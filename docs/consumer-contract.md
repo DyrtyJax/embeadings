@@ -95,8 +95,14 @@ collisions separately because they do not consume this budget.
 
 `dependency_funnel` distinguishes a corpus with no typed structure from one whose typed edges are
 closed-only, below the qualification floor, or eligible but capped. Its fields are mutually
-exclusive aggregate counts and satisfy two producer-checked conservation equations. Consumers can
-therefore explain a zero-candidate dependency lane without exposing issue bodies or edge endpoints.
+exclusive aggregate counts and satisfy three producer-checked conservation equations: discovery,
+edge-to-candidate, and admission. Consumers can therefore explain a zero-candidate dependency lane
+without exposing issue bodies or edge endpoints.
+
+When one of those equations fails, the dependency lane is degraded rather than the run aborted, and
+the emitted receipt carries a `balance` object naming the failing stage's terms and the resulting
+`unaccounted` delta. The same terms appear in the human-readable warning. A conservation failure is
+a producer defect; the delta is what makes it reportable without exposing tracker content.
 In incremental mode, an otherwise comparable edge with no changed active endpoint is counted as
 inactive for that review scope.
 
@@ -121,11 +127,22 @@ Different live/export digests produce a non-content warning even when record cou
 `source_divergence_reasons` supplies only controlled metadata categories such as `status`,
 `dependency_structure`, or `record_count`; it never identifies records or includes issue text.
 
+Divergence is a warning, not a failure: live data is always used and the report is always written.
+For CI, the global `--fail-on-divergence` flag turns a non-empty `source_divergence_reasons` into
+exit code 3 after the report is emitted, keeping it distinguishable from exit code 2 (error) and
+exit code 0 (clean). `neighbors`, `collisions`, `triage`, `sweep`, and `batch` honor it; `doctor`
+does not, because it deliberately never loads the issue corpus.
+
 Linear snapshots may include additive `relation_diagnostics`. It conserves the workspace relation
 query into retained, collapsed, and omitted counts, then divides omitted relations into outbound
 team-boundary, inbound team-boundary, and neither-endpoint-selected buckets with bounded type counts.
 The selected-team warning is the human-readable counterpart. Consumers must not infer that omitted
 external issues were analyzed: v1 deliberately does not fetch those endpoint records.
+
+Code-surface analysis may include an additive `hub_guard_sample`: a bounded, deterministic list of
+pairs the hub guard suppressed, each naming only the shared hub paths and modules that suppressed
+it. It is present only when `--explain-hub-guard` is passed, is empty otherwise, and exposes no
+surfaces that `hub_surfaces` does not already report. It is an audit aid, not a queue of leads.
 
 Code-surface analysis may include additive `repository_context` and
 `pairs_omitted_by_module_guard` fields. The former distinguishes invoking-worktree provenance from a

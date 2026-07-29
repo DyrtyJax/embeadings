@@ -189,6 +189,138 @@ def test_neighbors_json_stdout_is_machine_readable(monkeypatch, tmp_path, capsys
     assert {item["id"] for item in payload["neighbors"]} == {"demo-2", "demo-3"}
 
 
+LINKED_ISSUES = (
+    IssueRecord(
+        id="demo-1",
+        title="Persist authentication tokens",
+        description="Keep users signed in across browser restarts",
+        status="open",
+    ),
+    IssueRecord(
+        id="demo-2",
+        title="Keep authentication tokens across restarts",
+        description="Store signed-in authentication tokens between browser sessions",
+        status="open",
+        dependency_links=(DependencyLink("demo-2", "demo-1", "relates-to"),),
+    ),
+    IssueRecord(
+        id="demo-3",
+        title="Remember login state",
+        description="Store authentication tokens between sessions",
+        status="open",
+    ),
+)
+
+
+class LinkedAdapter:
+    def load(self):
+        return (
+            WorkspaceSnapshot("workspace-test", "1.0.5", "/tmp/demo/.beads"),
+            LINKED_ISSUES,
+        )
+
+
+def test_neighbors_orphans_only_keeps_unlinked_neighbors(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "BeadsAdapter", LinkedAdapter)
+
+    assert cli.main(["neighbors", "demo-1", "--json"]) == 0
+    everything = json.loads(capsys.readouterr().out)
+    # The linked neighbor outranks the orphan, so the filter is doing real work.
+    assert [item["id"] for item in everything["neighbors"]] == ["demo-2", "demo-3"]
+
+    assert cli.main(["neighbors", "demo-1", "--orphans-only", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert [item["id"] for item in payload["neighbors"]] == ["demo-3"]
+    assert all(item["structural_context"] == "none recorded" for item in payload["neighbors"])
+    assert payload["filters"]["structural_link"] == "none-recorded"
+
+
+def test_neighbors_orphans_only_limit_counts_surviving_neighbors(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "BeadsAdapter", LinkedAdapter)
+
+    # demo-2 outranks demo-3 but is linked; a rank-then-filter implementation
+    # would spend the budget on it and return nothing.
+    assert cli.main(["neighbors", "demo-1", "--limit", "1", "--orphans-only", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert [item["id"] for item in payload["neighbors"]] == ["demo-3"]
+
+
+def test_neighbors_orphans_only_reports_an_empty_filtered_population(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "BeadsAdapter", LinkedAdapter)
+
+    assert cli.main(["neighbors", "demo-2", "--orphans-only", "--limit", "0", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["neighbors"] == []
+
+    assert cli.main(["neighbors", "demo-2", "--orphans-only", "--limit", "0"]) == 0
+
+    assert (
+        "No semantic neighbors without a recorded structural link were found"
+        in capsys.readouterr().out
+    )
+
+
+class DivergentAdapter:
+    def load(self):
+        snapshot = WorkspaceSnapshot(
+            "workspace-test",
+            "1.0.5",
+            "/tmp/demo/.beads",
+            live_issue_count=len(ISSUES),
+            export_issue_count=len(ISSUES) - 1,
+            source_divergence_reasons=("record_count", "issue_identity"),
+            source_warnings=(
+                "Live Beads data contains 3 issues while the discoverable JSONL export "
+                "contains 2; live data was used.",
+            ),
+        )
+        return snapshot, ISSUES
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["neighbors", "demo-1", "--include-closed", "--json"],
+        ["collisions", "--json"],
+        ["triage", "--json"],
+    ],
+)
+def test_fail_on_divergence_exits_nonzero_after_writing_the_report(
+    monkeypatch, tmp_path, capsys, argv
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "BeadsAdapter", DivergentAdapter)
+
+    assert cli.main(argv) == 0
+    capsys.readouterr()
+
+    assert cli.main(["--fail-on-divergence", *argv]) == cli.DIVERGENCE_EXIT_CODE
+
+    captured = capsys.readouterr()
+    assert captured.out
+    assert "record_count, issue_identity" in captured.err
+    assert "contains 2" in captured.err
+
+
+def test_divergence_exit_code_is_distinct_from_the_error_exit_code() -> None:
+    assert cli.DIVERGENCE_EXIT_CODE == 3
+
+
+def test_fail_on_divergence_is_quiet_when_the_export_agrees(monkeypatch, tmp_path, capsys) -> None:
+    _configure(monkeypatch, tmp_path)
+
+    assert cli.main(["--fail-on-divergence", "neighbors", "demo-1", "--json"]) == 0
+    assert capsys.readouterr().err == ""
+
+
 def test_neighbors_can_load_linear_source(monkeypatch, tmp_path, capsys) -> None:
     captured: list[str] = []
 
@@ -509,8 +641,21 @@ def test_triage_returns_semantic_lanes_with_count_only_degradation_receipt(
         "omitted": 0,
     }
     assert {candidate["lane"] for candidate in packet["candidates"]} <= {"echo", "overlap"}
-    assert "Dependency lane unavailable" in "\n".join(packet["warnings"])
-    assert "Analysis status: **degraded**" in (output / "triage.md").read_text()
+    assert packet["degradations"][0]["balance"] == {
+        "input": {"name": "eligible", "count": 1},
+        "parts": [
+            {"name": "eligible_candidates", "count": 2},
+            {"name": "coalesced_eligible_edges", "count": 0},
+        ],
+        "unaccounted": -1,
+    }
+    delta = "eligible=1, eligible_candidates=2, coalesced_eligible_edges=0, unaccounted=-1"
+    assert f"Dependency lane unavailable: its conservation audit failed ({delta})" in "\n".join(
+        packet["warnings"]
+    )
+    triage_markdown = (output / "triage.md").read_text()
+    assert "Analysis status: **degraded**" in triage_markdown
+    assert f"conservation ({delta})" in triage_markdown
 
 
 def test_degraded_triage_report_file_retains_diagnostic_provenance(
@@ -681,6 +826,55 @@ def test_collisions_is_corpus_read_only_and_does_not_load_embedding_provider(
     assert json.loads(output.read_text()) == payload
 
 
+def test_explain_hub_guard_requests_and_renders_a_bounded_sample(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _configure(monkeypatch, tmp_path)
+    requested: list[int] = []
+
+    def analysis(args, _snapshot, _issues, eligible_issue_ids=None):
+        requested.append(args.explain_hub_guard)
+        return {
+            "repository_available": True,
+            "issue_count": 2,
+            "hub_surface_limit": 5,
+            "hub_surfaces": [
+                {"kind": "path", "surface": "docs/CLAUDE.md", "issue_count": 9},
+            ],
+            "pairs_omitted_by_hub_guard": 1297,
+            "hub_guard_sample": [
+                {
+                    "issue_id": "demo-1",
+                    "related_issue_id": "demo-3",
+                    "suppressing_paths": ["docs/CLAUDE.md"],
+                    "suppressing_modules": [],
+                }
+            ][: args.explain_hub_guard],
+            "surfaces": [],
+            "collisions": [],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(cli, "_surface_analysis", analysis)
+
+    assert cli.main(["collisions"]) == 0
+    assert "Hub guard sample" not in capsys.readouterr().out
+    assert requested == [0]
+
+    assert cli.main(["collisions", "--explain-hub-guard"]) == 0
+    rendered = capsys.readouterr().out
+
+    assert requested == [0, 5]
+    assert "### Hub guard sample" in rendered
+    assert "1 of 1297 suppressed pairs" in rendered
+    assert "`demo-1` ↔ `demo-3`" in rendered
+    assert "docs/CLAUDE.md" in rendered
+
+    assert cli.main(["collisions", "--explain-hub-guard", "25"]) == 0
+    capsys.readouterr()
+    assert requested == [0, 5, 25]
+
+
 def test_collisions_excludes_deferred_by_default_but_keeps_it_opt_in(monkeypatch, capsys) -> None:
     snapshot = WorkspaceSnapshot("workspace-test", "1.0.5", "/tmp/demo/.beads")
     issues = (
@@ -734,7 +928,12 @@ def test_surface_analysis_passes_the_invoking_worktree(monkeypatch, tmp_path) ->
 
     monkeypatch.setattr(cli, "analyze_code_surfaces", analyze)
     result = cli._surface_analysis(
-        Namespace(worktree_map=[], base_ref="origin/main", max_hub_surface_issues=5),
+        Namespace(
+            worktree_map=[],
+            base_ref="origin/main",
+            max_hub_surface_issues=5,
+            explain_hub_guard=0,
+        ),
         WorkspaceSnapshot("workspace-test", "1.0.5", str(tmp_path / "owner")),
         [],
     )

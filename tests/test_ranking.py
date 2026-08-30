@@ -57,6 +57,32 @@ def policy(**overrides):
     return CandidatePolicy(**values)
 
 
+_ABSENT_CLOSE_REASON = object()
+
+
+def beads_echo_pair(close_reason=_ABSENT_CLOSE_REASON):
+    closed = {
+        "id": "demo-closed",
+        "title": "Coordinate cache invalidation",
+        "status": "closed",
+    }
+    if close_reason is not _ABSENT_CLOSE_REASON:
+        closed["close_reason"] = close_reason
+    payload = [
+        {
+            "id": "demo-active",
+            "title": "Coordinate cache invalidation",
+            "status": "open",
+        },
+        closed,
+    ]
+
+    def runner(argv):
+        return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
+
+    return BeadsAdapter(runner=runner).list_issues()
+
+
 def test_reviewable_typed_relationship_boundary_matches_structural_funnel() -> None:
     active_a = IssueRecord(
         id="A",
@@ -688,6 +714,129 @@ def test_completed_echo_keeps_only_best_eligible_closed_record() -> None:
     assert len(result.candidates) == 1
     assert result.candidates[0]["kind"] == "completed-work-echo"
     assert result.candidates[0]["related_issue_id"] == "B"
+
+
+@pytest.mark.parametrize(
+    "close_reason",
+    [
+        "Rehomed as demo-active; not completed.",
+        "rEhOmEd As demo-active; NoT cOmPlEtEd.",
+        "True duplicate of demo-active; keep demo-active as the canonical active record.",
+    ],
+    ids=("rehome-not-completed", "mixed-case-rehome", "duplicate-canonical-active"),
+)
+def test_explicit_pair_local_close_disposition_suppresses_completed_echo(
+    close_reason: str,
+) -> None:
+    active, closed = beads_echo_pair(close_reason)
+
+    result = rank_candidates(
+        [active],
+        [active, closed],
+        Scores({("demo-active", "demo-closed"): 0.99}),
+        policy(objectives=frozenset({"echo"})),
+    )
+
+    assert result.candidates == ()
+
+
+@pytest.mark.parametrize(
+    ("close_reason", "reason_code"),
+    [
+        ("Duplicate of demo-active.", "canonical-active-retained"),
+        ("Merged into demo-active.", "subsumed-into-active"),
+        ("Folded into demo-active.", "subsumed-into-active"),
+        ("Absorbed into demo-active.", "subsumed-into-active"),
+        (
+            "Rehomed as demo-active. Not cancelled and not done.",
+            "rehomed-not-completed",
+        ),
+    ],
+    ids=(
+        "exact-duplicate",
+        "merged-into-active",
+        "folded-into-active",
+        "absorbed-into-active",
+        "rehome-not-done-next-sentence",
+    ),
+)
+def test_short_pair_local_disposition_suppresses_with_finite_reason_code(
+    close_reason: str,
+    reason_code: str,
+) -> None:
+    active, closed = beads_echo_pair(close_reason)
+
+    result = rank_candidates(
+        [active],
+        [active, closed],
+        Scores({("demo-active", "demo-closed"): 0.99}),
+        policy(objectives=frozenset({"echo"})),
+    )
+
+    assert result.candidates == ()
+    assert result.echo_disposition_omissions == {reason_code: 1}
+
+
+def test_closed_only_incremental_scope_reevaluates_pair_local_disposition() -> None:
+    active, closed = beads_echo_pair("Rehomed as demo-active; not completed.")
+
+    result = rank_candidates(
+        [active],
+        [active, closed],
+        Scores({("demo-active", "demo-closed"): 0.99}),
+        policy(objectives=frozenset({"echo"})),
+        eligible_issue_ids=frozenset({"demo-closed"}),
+    )
+
+    assert result.candidates == ()
+    assert result.echo_disposition_omissions == {"rehomed-not-completed": 1}
+
+
+@pytest.mark.parametrize(
+    "close_reason",
+    [
+        "Implemented and verified.",
+        "This work was rehomed; not completed.",
+        "Rehomed as demo-active-copy; not completed.",
+        "Merged PR #42; follow-up filed as demo-active.",
+        "Shipped release; demo-active tracks follow-up.",
+        "Merged into demo-active-copy.",
+        "Folded into demo-other.",
+        "Duplicate of demo-active-copy.",
+        "Not merged into demo-active.",
+        "Might be folded into demo-active.",
+        "Could be absorbed into demo-active.",
+        _ABSENT_CLOSE_REASON,
+    ],
+    ids=(
+        "generic-completion",
+        "ambiguous-rehome",
+        "different-id",
+        "merged-pull-request-follow-up",
+        "shipped-follow-up",
+        "subsumed-prefix-id",
+        "subsumed-wrong-id",
+        "duplicate-prefix-id",
+        "negated-merge",
+        "tentative-fold",
+        "tentative-absorb",
+        "absent",
+    ),
+)
+def test_non_pair_local_close_reason_preserves_completed_echo(close_reason) -> None:
+    active, closed = beads_echo_pair(close_reason)
+
+    result = rank_candidates(
+        [active],
+        [active, closed],
+        Scores({("demo-active", "demo-closed"): 0.99}),
+        policy(objectives=frozenset({"echo"})),
+    )
+
+    assert [
+        (candidate["kind"], candidate["issue_id"], candidate["related_issue_id"])
+        for candidate in result.candidates
+    ] == [("completed-work-echo", "demo-active", "demo-closed")]
 
 
 def test_policy_rejects_unbounded_or_invalid_controls() -> None:

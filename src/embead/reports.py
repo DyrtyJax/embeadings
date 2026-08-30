@@ -106,6 +106,9 @@ def _record(value: Any) -> dict[str, Any]:
     record = _jsonable(value)
     if not isinstance(record, dict):
         raise TypeError("issues and evidence must be mapping-like objects")
+    # Lifecycle source text can inform bounded ranking decisions but is never
+    # report content, even when a caller passes a full IssueRecord directly.
+    record.pop("close_reason", None)
     if "id" not in record:
         issue_id = _field(value, "issue_id")
         if issue_id is not None:
@@ -1118,6 +1121,9 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
     dependency_funnel = _field(candidate_policy, "dependency_funnel", default={}) or {}
     echo_target_hubs = _field(candidate_policy, "echo_target_hubs", default=[]) or []
     echo_backfills = _field(candidate_policy, "echo_backfills", default=[]) or []
+    echo_disposition_omissions = (
+        _field(candidate_policy, "echo_disposition_omissions", default={}) or {}
+    )
     review_budget = _field(candidate_policy, "review_budget", default={}) or {}
     capped_dependencies = payload.get("capped_typed_dependencies") or []
     diagnostics = payload.get("batch_diagnostics") or {}
@@ -1266,6 +1272,15 @@ def render_sweep_markdown(payload: Mapping[str, Any]) -> str:
                 f"lane={_field(omissions, 'lane-cap', default=0)}, "
                 f"run={_field(omissions, 'run-cap', default=0)})"
             )
+    if echo_disposition_omissions:
+        lines.extend(["", "### Explicit close dispositions", ""])
+        lines.append(
+            "Pair-local lifecycle metadata omitted contradictory completed-work echoes without "
+            "including close-reason text."
+        )
+        lines.append("")
+        for reason, count in sorted(echo_disposition_omissions.items()):
+            lines.append(f"- `{_escape(reason)}`: {count}")
     if echo_backfills:
         lines.extend(["", "### Completed-target backfills", ""])
         lines.append(

@@ -972,6 +972,7 @@ def _candidate_evidence(
         cap_replacements=ranking.cap_replacements,
         dependency_funnel=ranking.dependency_funnel,
         degradation_receipts=ranking.degradation_receipts,
+        echo_disposition_omissions=ranking.echo_disposition_omissions,
     )
 
 
@@ -1107,6 +1108,7 @@ def _sweep(args: argparse.Namespace) -> int:
         if scope is not None
         else None
     )
+    ranking_scope_ids = scope.changed_ids if scope is not None else None
     code_surface_payload: dict[str, Any] | None = None
     code_surface_ms = 0
     if args.code_surfaces or args.worktree_map or (objectives and "collision" in objectives):
@@ -1176,7 +1178,7 @@ def _sweep(args: argparse.Namespace) -> int:
         max_echo_candidates=lane_caps["echo"],
         max_overlap_candidates=lane_caps["overlap"],
         lane_reservations=lane_reservations,
-        eligible_issue_ids=active_scope_ids,
+        eligible_issue_ids=ranking_scope_ids,
         objectives=objectives,
     )
     candidates = list(ranking.candidates)
@@ -1266,6 +1268,12 @@ def _sweep(args: argparse.Namespace) -> int:
             f"{ranking.dropped_by_echo_target_cap} repeated echo pairs; "
             "the next qualified candidates were considered."
         )
+    if ranking.echo_disposition_omissions:
+        ranking_warnings.append(
+            "Explicit pair-local close dispositions omitted "
+            f"{sum(ranking.echo_disposition_omissions.values())} contradictory completed-work "
+            "echoes."
+        )
     if ranking.dropped_by_run_cap:
         ranking_warnings.append(
             f"Run candidate cap omitted {ranking.dropped_by_run_cap} qualified pairs."
@@ -1321,6 +1329,15 @@ def _sweep(args: argparse.Namespace) -> int:
         "mode": scope.mode if scope else "full",
         "changed_active_count": (
             len(active_scope_ids) if active_scope_ids is not None else len(population_ids)
+        ),
+        "changed_closed_count": (
+            sum(
+                issue.id in scope.changed_ids
+                and issue.status.casefold() in {"closed", "done", "completed", "resolved"}
+                for issue in review_issues
+            )
+            if scope
+            else 0
         ),
         "unchanged_active_count": len(unchanged_ids),
         "unknown_timestamp_count": len(scope.unknown_timestamp_ids) if scope else 0,
@@ -1398,6 +1415,11 @@ def _sweep(args: argparse.Namespace) -> int:
             "dropped_by_echo_target_cap": ranking.dropped_by_echo_target_cap,
             "echo_target_hubs": list(ranking.echo_target_hubs),
             "echo_backfills": list(ranking.echo_backfills),
+            **(
+                {"echo_disposition_omissions": ranking.echo_disposition_omissions}
+                if ranking.echo_disposition_omissions
+                else {}
+            ),
             "dropped_by_run_cap": ranking.dropped_by_run_cap,
         },
         capped_typed_dependencies=list(ranking.capped_typed_dependencies),

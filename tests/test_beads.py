@@ -66,6 +66,37 @@ def test_list_invocation_is_read_only_and_parses_current_shape() -> None:
     assert records[0].updated_at == "2026-07-14T05:30:00-07:00"
 
 
+def test_list_parses_optional_close_reason_without_synthesizing_one() -> None:
+    runner = FakeRunner(
+        [
+            (
+                0,
+                [
+                    {
+                        "id": "demo-closed",
+                        "title": "Coordinate cache invalidation",
+                        "status": "closed",
+                        "close_reason": "Rehomed as demo-active; not completed.",
+                    },
+                    {
+                        "id": "demo-active",
+                        "title": "Coordinate cache invalidation",
+                        "status": "open",
+                    },
+                ],
+                "",
+            )
+        ]
+    )
+
+    records = BeadsAdapter(runner=runner).list_issues()
+
+    assert [getattr(record, "close_reason", None) for record in records] == [
+        "Rehomed as demo-active; not completed.",
+        "",
+    ]
+
+
 def test_beads_1_0_5_relationship_fixture_preserves_targets_direction_and_type() -> None:
     payload = json.loads((FIXTURES / "beads-1.0.5-list.json").read_text())
     runner = FakeRunner([(0, payload, "")])

@@ -504,6 +504,7 @@ def _parse_issue(raw: Any) -> IssueRecord:
         ),
         design=_optional_string(raw, "design", "design_notes"),
         notes=_optional_string(raw, "notes", "current_notes"),
+        close_reason=_optional_string(raw, "close_reason"),
         updated_at=_optional_string(raw, "updated_at", "updatedAt"),
         ephemeral=_parse_bool(raw.get("ephemeral"), field_name="ephemeral"),
     )

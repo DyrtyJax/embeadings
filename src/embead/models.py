@@ -57,6 +57,7 @@ class IssueRecord:
     notes: str = ""
     updated_at: str = ""
     ephemeral: bool = False
+    close_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)

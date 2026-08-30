@@ -26,6 +26,9 @@ LANES = ("dependency", "echo", "overlap")
 REVIEW_OBJECTIVES = frozenset({"collision", "overlap", "echo", "structure"})
 DEFAULT_ECHO_THRESHOLD = 0.72
 DEFAULT_OVERLAP_THRESHOLD = 0.82
+ECHO_DISPOSITION_REHOMED = "rehomed-not-completed"
+ECHO_DISPOSITION_CANONICAL_ACTIVE = "canonical-active-retained"
+ECHO_DISPOSITION_SUBSUMED = "subsumed-into-active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,6 +286,7 @@ class CandidateRanking:
     cap_replacements: tuple[dict[str, Any], ...] = ()
     dependency_funnel: DependencyFunnel | None = None
     degradation_receipts: tuple[dict[str, Any], ...] = ()
+    echo_disposition_omissions: dict[str, int] | None = None
 
 
 def has_reviewable_typed_relationship(
@@ -440,6 +444,7 @@ def _rank_candidates(
     reciprocal_evidence = _ReciprocalEvidence.build((*active, *closed))
 
     reciprocal_diagnostics = _empty_reciprocal_diagnostics()
+    echo_disposition_omissions: dict[str, int] = defaultdict(int)
     requested = _qualifying_candidates(
         active,
         closed,
@@ -452,6 +457,7 @@ def _rank_candidates(
         reciprocal_diagnostics=reciprocal_diagnostics,
         objectives=policy.objectives,
         eligible_issue_ids=eligible_issue_ids,
+        echo_disposition_omissions=echo_disposition_omissions,
     )
     if eligible_issue_ids is not None:
         requested = [
@@ -555,6 +561,7 @@ def _rank_candidates(
         reciprocal_diagnostics=reciprocal_diagnostics,
         cap_replacements=replacements,
         dependency_funnel=dependency_funnel,
+        echo_disposition_omissions=dict(sorted(echo_disposition_omissions.items())) or None,
     )
 
 
@@ -661,10 +668,13 @@ class _Ranks:
         *,
         eligible_issue_ids: frozenset[str] | None = None,
     ) -> _Ranks:
+        changed_closed = eligible_issue_ids is not None and bool(
+            {issue_id(item) for item in closed} & eligible_issue_ids
+        )
         eligible_active = (
-            [item for item in active if issue_id(item) in eligible_issue_ids]
-            if eligible_issue_ids is not None
-            else active
+            active
+            if eligible_issue_ids is None or changed_closed
+            else [item for item in active if issue_id(item) in eligible_issue_ids]
         )
         if not eligible_active:
             return cls(overlap={}, active_to_closed={}, closed_to_active={})
@@ -690,6 +700,7 @@ def _qualifying_candidates(
     reciprocal_diagnostics: dict[str, Any] | None = None,
     objectives: frozenset[str] | None = None,
     eligible_issue_ids: frozenset[str] | None = None,
+    echo_disposition_omissions: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     score = _score_function(scorer)
     qualified: list[dict[str, Any]] = []
@@ -729,10 +740,13 @@ def _qualifying_candidates(
                 qualified.append(candidate)
 
     if echo_enabled or structure_enabled:
+        changed_closed = eligible_issue_ids is not None and bool(
+            {issue_id(item) for item in closed} & eligible_issue_ids
+        )
         active_echoes = (
-            [item for item in active if issue_id(item) in eligible_issue_ids]
-            if eligible_issue_ids is not None
-            else active
+            active
+            if eligible_issue_ids is None or changed_closed
+            else [item for item in active if issue_id(item) in eligible_issue_ids]
         )
         by_closed_id = {issue_id(item): item for item in closed}
         echo_pairs = _pairs_at_or_above(
@@ -740,6 +754,7 @@ def _qualifying_candidates(
             closed,
             scorer,
             max(-1.0, echo_threshold - policy.exception_margin),
+            eligible_issue_ids=eligible_issue_ids,
         )
         echo_targets: dict[str, list[str]] = defaultdict(list)
         for active_id, closed_id in echo_pairs:
@@ -775,6 +790,11 @@ def _qualifying_candidates(
                     if candidate["lane"] == "dependency":
                         dependency_echoes.append(candidate)
                     else:
+                        disposition = _completed_echo_disposition(active_issue, completed_issue)
+                        if disposition is not None:
+                            if echo_disposition_omissions is not None:
+                                echo_disposition_omissions[disposition] += 1
+                            continue
                         echoes.append(candidate)
             qualified.extend(dependency_echoes)
             # Retain qualified alternatives until selection. The selector still
@@ -784,6 +804,110 @@ def _qualifying_candidates(
                 sorted(echoes, key=_ranking_key)[: policy.max_echo_alternatives_per_active]
             )
     return qualified
+
+
+def _completed_echo_disposition(active_issue: Any, closed_issue: Any) -> str | None:
+    """Return bounded pair-local counterevidence without exposing tracker text."""
+
+    close_reason = getattr(closed_issue, "close_reason", "")
+    if not isinstance(close_reason, str) or not close_reason.strip():
+        return None
+    identifier = (
+        rf"(?<![\w-]){re.escape(issue_id(active_issue).casefold())}"
+        rf"(?![\w-]|\.[\w])"
+    )
+    normalized = close_reason.casefold()
+
+    rehome_to_active = re.compile(
+        rf"\b(?:rehomed|moved)\s+"
+        rf"(?:as|to|into|under)\s+(?:issue\s+)?{identifier}"
+    )
+    for match in rehome_to_active.finditer(normalized):
+        if _negated_or_modal(normalized, match.start()):
+            continue
+        for incomplete_match in re.finditer(
+            r"\bnot\s+(?:been\s+)?(?:completed|done)\b", normalized
+        ):
+            if _same_bounded_clause(normalized, match, incomplete_match, limit=96):
+                return ECHO_DISPOSITION_REHOMED
+        following = _immediately_following_sentence(normalized, match, limit=96)
+        if following is not None and re.match(
+            r"\s*(?:(?:this|the)\s+(?:work|record|issue)\s+(?:is|was)\s+)?"
+            r"(?:not\s+cancelled\s+and\s+)?not\s+done\b",
+            following,
+        ):
+            return ECHO_DISPOSITION_REHOMED
+
+    duplicate_target = re.compile(rf"\bduplicate\s+of\s+(?:issue\s+)?{identifier}")
+    for target_match in duplicate_target.finditer(normalized):
+        if not _negated_or_modal(normalized, target_match.start()):
+            return ECHO_DISPOSITION_CANONICAL_ACTIVE
+
+    subsumed_target = re.compile(
+        rf"\b(?:merged|folded|absorbed)\s+into\s+(?:issue\s+)?{identifier}"
+    )
+    for target_match in subsumed_target.finditer(normalized):
+        if not _negated_or_modal(normalized, target_match.start()):
+            return ECHO_DISPOSITION_SUBSUMED
+
+    superseded_target = re.compile(rf"\bsuperseded\s+by\s+(?:issue\s+)?{identifier}")
+    retained_active = re.compile(
+        rf"\b(?:keep|retain|retained|retaining)\b[^.!?\n]{{0,48}}{identifier}"
+        rf"[^.!?\n]{{0,48}}\bcanonical\s+(?:active\s+)?record\b|"
+        rf"\b(?:keep|retain|retained|retaining)\b[^.!?\n]{{0,48}}"
+        rf"\bcanonical\s+(?:active\s+)?record\b[^.!?\n]{{0,48}}{identifier}"
+    )
+    for target_match in superseded_target.finditer(normalized):
+        if _negated_or_modal(normalized, target_match.start()):
+            continue
+        for retained_match in retained_active.finditer(normalized):
+            if not _negated_or_modal(normalized, retained_match.start()) and _same_bounded_clause(
+                normalized, target_match, retained_match, limit=128
+            ):
+                return ECHO_DISPOSITION_CANONICAL_ACTIVE
+    return None
+
+
+def _negated_or_modal(text: str, start: int) -> bool:
+    prefix = text[max(0, start - 28) : start]
+    return bool(
+        re.search(
+            r"(?:\b(?:not|never|may|might|should|could|would)\b|n't)"
+            r"[^.!?;\n]{0,20}$",
+            prefix,
+        )
+    )
+
+
+def _same_bounded_clause(
+    text: str, left: re.Match[str], right: re.Match[str], *, limit: int
+) -> bool:
+    start = min(left.start(), right.start())
+    end = max(left.end(), right.end())
+    return end - start <= limit and re.search(r"[.!?\n]", text[start:end]) is None
+
+
+def _immediately_following_sentence(text: str, match: re.Match[str], *, limit: int) -> str | None:
+    terminators = [
+        position
+        for delimiter in (".", "!", "?", "\n")
+        if (position := text.find(delimiter, match.end())) >= 0
+    ]
+    if not terminators:
+        return None
+    sentence_end = min(terminators)
+    if sentence_end - match.end() > limit:
+        return None
+    following_start = sentence_end + 1
+    following_terminators = [
+        position
+        for delimiter in (".", "!", "?", "\n")
+        if (position := text.find(delimiter, following_start)) >= 0
+    ]
+    following_end = min(following_terminators, default=len(text))
+    if following_end - following_start > limit:
+        return None
+    return text[following_start:following_end]
 
 
 def _select_candidates(

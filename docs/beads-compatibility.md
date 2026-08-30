@@ -19,7 +19,8 @@ The installed `bd` must:
 - return either an issue array or one recognized issue envelope;
 - provide non-empty issue IDs, titles, and statuses;
 - represent labels, parentage, and typed dependencies using one of the validated aliases; and
-- preserve dependency direction by identifying the target separately from the source.
+- preserve dependency direction by identifying the target separately from the source; and
+- provide `close_reason` as a string when that optional lifecycle field is present.
 
 The minimum version is an admission check, not a promise that every future Beads payload is
 compatible. emBEADings continues to validate every response and fails closed on unknown or malformed
@@ -32,6 +33,21 @@ A child can legitimately reference a parent that is absent from the returned iss
 during bootstrap, filtering, or partial synchronization. emBEADings preserves that parent ID and
 typed edge as external structural evidence; it does not fabricate a parent record or discard the
 relationship. Self-dependencies and malformed targets still fail closed.
+
+## Close dispositions
+
+The optional Beads `close_reason` is retained as lifecycle metadata and participates in metadata-only
+incremental fingerprints. It is not embedding input and its text is never copied into reports.
+Completed-work echo ranking recognizes only three bounded, pair-local contradictions: work
+explicitly rehomed or moved to the exact paired active ID and marked not completed/not done in the
+same clause or an immediately following short sentence; a record marked `duplicate of` the exact
+paired active ID (or superseded by it with explicit canonical-record retention); or work explicitly
+merged, folded, or absorbed into that ID. Those semantic echo pairs are omitted before queue
+selection and reported only as count-by-code diagnostics. Missing, generic, ambiguous, negated,
+tentative, or different-ID reasons preserve ordinary completed-work echo behavior. A follow-up merely
+filed or tracked by the active ID is not a recognized disposition. A close-reason-only change on a
+closed endpoint re-evaluates its qualifying active/closed pairs in an incremental run. Linear does
+not synthesize this Beads-specific field.
 
 ## What read-only means
 

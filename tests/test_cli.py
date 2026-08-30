@@ -168,6 +168,77 @@ def test_explicit_echo_objective_emits_field_provenance(monkeypatch, tmp_path, c
     assert "Retrieval provenance: max-semantic-view" in markdown
 
 
+def test_closed_only_incremental_disposition_is_counted_without_leaking_reason(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    raw_close_reason = "Rehomed as demo-active; not completed."
+    issues = (
+        IssueRecord(
+            id="demo-active",
+            title="Coordinate cache invalidation",
+            status="open",
+            updated_at="2026-07-01T00:00:00Z",
+        ),
+        IssueRecord(
+            id="demo-closed",
+            title="Coordinate cache invalidation",
+            status="closed",
+            close_reason=raw_close_reason,
+            updated_at="2026-07-14T00:00:00Z",
+        ),
+    )
+
+    class CloseReasonAdapter:
+        def load(self):
+            return WorkspaceSnapshot("close-reason-test", "1.0.5", None), issues
+
+    _configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "BeadsAdapter", CloseReasonAdapter)
+    output = tmp_path / "close-reason-sweep"
+
+    assert (
+        cli.main(
+            [
+                "--provider",
+                "hashing",
+                "sweep",
+                "--objective",
+                "echo",
+                "--echo-threshold",
+                "-1",
+                "--reciprocal-rank",
+                "0",
+                "--changed-since",
+                "2026-07-10T00:00:00Z",
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    json_report = (output / "report.json").read_text(encoding="utf-8")
+    markdown = (output / "report.md").read_text(encoding="utf-8")
+    assert payload["candidates"] == []
+    assert payload["parameters"]["filters"]["incremental_scope"] == {
+        "checkpoint_created_at": None,
+        "changed_active_count": 0,
+        "changed_closed_count": 1,
+        "deleted_since_checkpoint_count": 0,
+        "mode": "changed-since",
+        "unchanged_active_count": 1,
+        "unknown_timestamp_count": 0,
+    }
+    assert payload["parameters"]["candidate_policy"]["echo_disposition_omissions"] == {
+        "rehomed-not-completed": 1
+    }
+    assert raw_close_reason not in json_report
+    assert raw_close_reason not in markdown
+    assert "`rehomed-not-completed`: 1" in markdown
+
+
 def test_readiness_help_is_tracker_neutral(capsys) -> None:
     with pytest.raises(SystemExit) as raised:
         cli.main(["--help"])
@@ -1377,6 +1448,7 @@ def test_changed_since_scopes_candidates_reports_unchanged_and_writes_checkpoint
     assert payload["parameters"]["filters"]["incremental_scope"] == {
         "checkpoint_created_at": None,
         "changed_active_count": 1,
+        "changed_closed_count": 0,
         "deleted_since_checkpoint_count": 0,
         "mode": "changed-since",
         "unchanged_active_count": 1,

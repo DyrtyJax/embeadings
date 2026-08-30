@@ -1,12 +1,15 @@
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from embead.beads import BeadsAdapter
 from embead.incremental import (
     build_checkpoint,
     ensure_external_path,
     load_checkpoint,
+    record_fingerprint,
     scope_since_timestamp,
 )
 from embead.models import IssueRecord
@@ -58,6 +61,47 @@ def test_checkpoint_detects_new_changed_unchanged_and_deleted_without_text(tmp_p
     assert scope.unchanged_ids == {"same"}
     assert scope.changed_ids == {"changed", "new"}
     assert scope.deleted_ids == {"deleted"}
+
+
+def test_close_reason_changes_metadata_fingerprint_without_exposing_text() -> None:
+    def parse(close_reason: str) -> IssueRecord:
+        payload = [
+            {
+                "id": "demo-closed",
+                "title": "Coordinate cache invalidation",
+                "status": "closed",
+                "updated_at": "2026-07-01T00:00:00Z",
+                "close_reason": close_reason,
+            }
+        ]
+
+        def runner(argv: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(argv, 0, json.dumps(payload), "")
+
+        return BeadsAdapter(runner=runner).list_issues()[0]
+
+    original_reason = "Implemented and verified."
+    revised_reason = "Rehomed as demo-active; not completed."
+    original = parse(original_reason)
+    revised = parse(revised_reason)
+
+    assert record_fingerprint(original) != record_fingerprint(revised)
+    checkpoint_text = json.dumps(build_checkpoint((revised,), workspace_id="workspace"))
+    assert all(reason not in checkpoint_text for reason in (original_reason, revised_reason))
+
+
+def test_absent_close_reason_preserves_pre_field_checkpoint_fingerprint() -> None:
+    issue = IssueRecord(
+        "demo-active",
+        "Coordinate cache invalidation",
+        status="open",
+        updated_at="2026-07-01T00:00:00Z",
+    )
+
+    # Golden value produced by v0.4.3 before IssueRecord gained close_reason.
+    assert record_fingerprint(issue) == (
+        "23be6bc9b0f6fc990b2c4378769d828d761180b98d17370f6a2b8e2983a52b88"
+    )
 
 
 def test_checkpoint_rejects_future_cross_workspace_and_malformed_state(tmp_path) -> None:

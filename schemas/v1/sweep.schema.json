@@ -348,6 +348,16 @@
           "items": { "$ref": "#/$defs/cap-replacement" }
         },
         "dependency_funnel": { "$ref": "#/$defs/dependency-funnel" },
+        "echo_disposition_omissions": {
+          "type": "object",
+          "properties": {
+            "rehomed-not-completed": { "type": "integer", "minimum": 1 },
+            "canonical-active-retained": { "type": "integer", "minimum": 1 },
+            "subsumed-into-active": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        },
         "dropped_by_lane_cap": { "type": "integer", "minimum": 0 },
         "lane_caps": {
           "type": "object",

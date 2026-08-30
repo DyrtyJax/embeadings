@@ -257,6 +257,15 @@ configuration, not universal truth, and every report records the effective value
 
 An active record whose closest completed neighbor exceeds a configured threshold is a review
 candidate. The report says “verify against current project state,” never “close.”
+For Beads, an optional close reason is bounded lifecycle counterevidence rather than semantic text.
+An otherwise qualified semantic echo is omitted only when the reason references the exact paired
+active ID and says the work was rehomed/moved and not completed/not done in the same clause or an
+immediately following bounded sentence; marks the record `duplicate of` that ID (or superseded by it
+with explicit canonical-record retention); or says the work was merged, folded, or absorbed into
+that ID. Reports expose only stable count-by-code omission diagnostics, never close-reason text.
+Missing, generic, ambiguous, negated, tentative, and different-ID reasons do not affect ranking;
+neither does ordinary follow-up/filed/tracked-by prose. Linear behavior is unchanged. Incremental
+runs re-evaluate qualifying pairs when either endpoint's review-relevant metadata changes.
 
 ### Deferred-work proximity
 
